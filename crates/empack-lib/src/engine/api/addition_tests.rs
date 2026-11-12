@@ -610,6 +610,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     fs::write(root.path().join("pack/unrelated.pw.toml"), b"invalid = [").unwrap();
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || UpdateRequest {
+        pins: Default::default(),
         source_revision: None,
         group: AdditionGroup::from_resolved(&requested).unwrap(),
         content: crate::engine::dependency_content::materialized(acquired_project(&requested)),
@@ -1645,7 +1646,9 @@ mod independent_batch {
             let batch = DependencyBatchRequest {
                 source_revision: None,
                 policy: BatchPolicy::ContinueIndependent,
-                change: DependencyBatchChange::Update,
+                change: DependencyBatchChange::Update {
+                    pins: Default::default(),
+                },
                 items: NonEmpty::new(vec![broken(), item(&extra)]).unwrap(),
             };
             let prepared = ready(&engine, root.path(), batch).await;
@@ -1699,6 +1702,103 @@ mod independent_batch {
             engine.shutdown().await;
             assert_eq!(governor.status().reserved, ResourceRequest::default());
         }
+    }
+    #[tokio::test]
+    async fn partial_pinned_update_publishes_only_successful_groups_author_pins() {
+        use empack_core::{identity::*, model::*};
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let original = crate::engine::addition::tests::fixture(
+            &[("a", "Project1", "Version1"), ("b", "Project2", "Version1")],
+            &["a", "b"],
+            &[],
+            true,
+        );
+        let pin =
+            |version| PinSelector::ModrinthVersion(ModrinthVersionId::parse(version).unwrap());
+        let mut intent = original.intent().clone();
+        for root in intent.roots.values_mut() {
+            root.selection = DependencySelection::ProviderPin(pin("Version1"));
+        }
+        let codec = crate::engine::documents::DocumentCodec;
+        let source = codec
+            .decode_intent(&codec.encode_intent(&intent).unwrap(), "author")
+            .unwrap();
+        let mut lock = original.lock().clone();
+        lock.intent_revision = source.semantic_revision();
+        let current =
+            ResolvedProject::validate(intent.clone(), lock, source.semantic_revision()).unwrap();
+        fs::write(root.path().join("empack.yml"), source.original()).unwrap();
+        fs::write(
+            root.path().join("empack.lock"),
+            codec.encode_lock(&current).unwrap(),
+        )
+        .unwrap();
+        let a = crate::engine::addition::tests::fixture(
+            &[("a", "Project1", "Version2")],
+            &["a"],
+            &[],
+            true,
+        );
+        let b = crate::engine::addition::tests::fixture(
+            &[("b", "Project2", "Version2")],
+            &["b"],
+            &[],
+            true,
+        );
+        let mut failed = item(&a);
+        *failed.content.values_mut().next().unwrap() =
+            broken().content.into_values().next().unwrap();
+        let pins = [
+            (DependencyKey::parse("a").unwrap(), pin("Version2")),
+            (DependencyKey::parse("b").unwrap(), pin("Version2")),
+        ]
+        .into();
+        let (engine, governor) = engine(state.path().join("state"));
+        let prepared = ready(
+            &engine,
+            root.path(),
+            DependencyBatchRequest {
+                source_revision: None,
+                policy: BatchPolicy::ContinueIndependent,
+                change: DependencyBatchChange::Update { pins },
+                items: NonEmpty::new(vec![failed, item(&b)]).unwrap(),
+            },
+        )
+        .await;
+        let expected_changes = [(DependencyKey::parse("b").unwrap(), pin("Version2"))].into();
+        assert_eq!(
+            prepared.view().update().unwrap().author_pin_changes,
+            expected_changes
+        );
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let outcome = handle.wait().await;
+        let OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted {
+            receipt: ExecutionReceipt::Update(receipt),
+            ..
+        }) = &*outcome
+        else {
+            panic!("expected partial pinned update")
+        };
+        assert_eq!(receipt.author_pin_changes, expected_changes);
+        assert_eq!(receipt.batch.as_ref().unwrap().blocked[0].requests, [0]);
+        intent
+            .roots
+            .get_mut(&DependencyKey::parse("b").unwrap())
+            .unwrap()
+            .selection = DependencySelection::ProviderPin(pin("Version2"));
+        assert_eq!(receipt.project.intent(), &intent);
+        assert_eq!(
+            receipt.project.lock().dependencies[&DependencyKey::parse("a").unwrap()],
+            current.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+        );
+        engine.release_completed(handle.id());
+        drop((outcome, handle));
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
     fn group_for(project: &ResolvedProject) -> AdditionGroup {
         AdditionGroup::from_resolved(project).unwrap()

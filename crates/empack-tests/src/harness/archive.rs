@@ -120,6 +120,25 @@ pub struct Member {
     pub small: Option<Vec<u8>>,
 }
 
+pub const BOOTSTRAP_PATH: &str = ".empack-tools/empack-bootstrap.jar";
+
+/// Independent source-build record, rather than the product's inventory oracle.
+pub fn assert_bootstrap_member(member: &Member) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let record: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("bootstrap/target/empack-bootstrap.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(member.sha256, record["jar_sha256"].as_str().unwrap());
+    assert_eq!(
+        member.bytes,
+        std::fs::metadata(root.join("bootstrap/target/empack-bootstrap.jar"))
+            .unwrap()
+            .len()
+    );
+    assert_eq!(member.mode, 0o644);
+}
+
 pub fn distribution_inventory(path: &Path, format: &str) -> BTreeMap<String, Member> {
     use sha2::{Digest, Sha256};
     let mut members = BTreeMap::new();

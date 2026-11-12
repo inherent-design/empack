@@ -3,6 +3,20 @@ use std::process::{Command, Output};
 
 use crate::fixtures::WorkflowProjectFixture;
 
+/// Resolve the host JVM before a fixture places its own `java` first on PATH.
+pub fn java_bin() -> PathBuf {
+    let name = if cfg!(windows) { "java.exe" } else { "java" };
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        let program = PathBuf::from(home).join("bin").join(name);
+        assert!(program.is_file(), "JAVA_HOME must select an available JVM");
+        return program;
+    }
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| directory.join(name))
+        .find(|program| program.is_absolute() && program.is_file())
+        .expect("Bootstrap integration requires a JVM on PATH or at JAVA_HOME")
+}
+
 /// Resolve the empack binary path.
 ///
 /// Checks in order:
@@ -430,7 +444,7 @@ pub fn expected_cli_version() -> String {
 pub fn expected_automation_version() -> String {
     let version = expected_cli_version();
     if version == "0.0.0-dev" {
-        "0.8.4-beta".to_owned()
+        "0.8.5-beta".to_owned()
     } else {
         version
     }

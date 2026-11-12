@@ -11,7 +11,9 @@ pub enum BatchPolicy {
 #[derive(Clone)]
 pub enum DependencyBatchChange {
     Add(ExistingDependencyPolicy),
-    Update,
+    Update {
+        pins: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
+    },
 }
 #[derive(Clone)]
 pub struct DependencyBatchItem {
@@ -111,6 +113,14 @@ pub(in crate::engine::api) async fn prepare_batch(
                     "Batch replacement selection contains an unrequested dependency"
                 );
             }
+            if let DependencyBatchChange::Update { pins } = &request.change {
+                ensure!(
+                    pins.keys()
+                        .all(|key| current.intent().roots.contains_key(key)
+                            && groups.iter().any(|group| group.roots().contains_key(key))),
+                    "Exact update pins must name requested provider author roots"
+                );
+            }
             let components = match request.policy {
                 BatchPolicy::AllRequested => vec![(0..groups.len()).collect()],
                 BatchPolicy::ContinueIndependent => independent_components(&current, &groups)?,
@@ -134,8 +144,8 @@ pub(in crate::engine::api) async fn prepare_batch(
     };
     let (kind, existing) = match request.change {
         DependencyBatchChange::Add(policy) => (DependencyChange::Add, policy),
-        DependencyBatchChange::Update => (
-            DependencyChange::Update,
+        DependencyBatchChange::Update { pins } => (
+            DependencyChange::Update(pins),
             ExistingDependencyPolicy::UpdateSameIdentity,
         ),
     };
@@ -151,7 +161,8 @@ pub(in crate::engine::api) async fn prepare_batch(
                 revision,
                 &existing,
             )?;
-            prepare_change(project.clone(), merged, kind, config, scope).await
+            let selected_kind = scoped_change(&kind, &merged.group);
+            prepare_change(project.clone(), merged, selected_kind, config, scope).await
         }
         .await;
         match result {
@@ -199,11 +210,23 @@ pub(in crate::engine::api) async fn prepare_batch(
     )?;
     // Recompute once against the same document generation. This catches cross-component
     // invariants and retains failed groups' existing intent, placements and exact selections.
+    let kind = scoped_change(&kind, &request.group);
     let prepared = prepare_change(project, request, kind, config, scope).await?;
     Ok(prepared.map(|mut prepared| {
         prepared.view.batch = Some(report);
         prepared
     }))
+}
+fn scoped_change(kind: &DependencyChange, group: &AdditionGroup) -> DependencyChange {
+    match kind {
+        DependencyChange::Update(pins) => DependencyChange::Update(
+            pins.iter()
+                .filter(|(key, _)| group.roots().contains_key(*key))
+                .map(|(key, pin)| (key.clone(), pin.clone()))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 fn merge(
     current: &ResolvedProject,

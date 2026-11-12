@@ -54,6 +54,7 @@ impl DisplayProvider for LiveDisplayProvider {
     fn progress(&self) -> Box<dyn ProgressProvider> {
         Box::new(LiveProgressProvider {
             parent: self.multi_progress.clone(),
+            display: self.display.clone(),
         })
     }
 
@@ -126,18 +127,25 @@ impl StatusProvider for LiveStatusProvider {
 /// Live implementation of ProgressProvider with owned state
 struct LiveProgressProvider {
     parent: Arc<MultiProgress>,
+    display: Arc<Display>,
 }
 
 impl ProgressProvider for LiveProgressProvider {
+    fn message(&self, message: &str) {
+        self.parent.suspend(|| {
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr().lock(), "{message}");
+        });
+    }
+
     fn bar(&self, total: u64) -> Box<dyn ProgressTracker> {
-        let progress_bar = indicatif::ProgressBar::new(total);
+        let progress_bar = self.display.progress().bar(total).bar().clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = indicatif::ProgressBar::new_spinner();
-        progress_bar.set_message(message.to_string());
+        let progress_bar = self.display.progress().spinner(message).bar().clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
@@ -145,6 +153,7 @@ impl ProgressProvider for LiveProgressProvider {
     fn multi(&self) -> Box<dyn MultiProgressProvider> {
         Box::new(LiveMultiProgressProvider {
             parent: self.parent.clone(),
+            display: self.display.clone(),
         })
     }
 }
@@ -152,18 +161,19 @@ impl ProgressProvider for LiveProgressProvider {
 /// Multi-progress provider with owned state
 struct LiveMultiProgressProvider {
     parent: Arc<MultiProgress>,
+    display: Arc<Display>,
 }
 
 impl MultiProgressProvider for LiveMultiProgressProvider {
-    fn add_bar(&self, total: u64, _message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = indicatif::ProgressBar::new(total);
+    fn add_bar(&self, total: u64, message: &str) -> Box<dyn ProgressTracker> {
+        let progress_bar = self.display.progress().bar(total).bar().clone();
+        progress_bar.set_message(message.to_owned());
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn add_spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = indicatif::ProgressBar::new_spinner();
-        progress_bar.set_message(message.to_string());
+        let progress_bar = self.display.progress().spinner(message).bar().clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }

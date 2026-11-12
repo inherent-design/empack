@@ -80,10 +80,14 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
     assert_eq!(
         members.keys().map(String::as_str).collect::<Vec<_>>(),
         [
+            ".empack-tools/empack-bootstrap.jar",
             ".minecraft/.empack-consumer/release.json",
             "instance.cfg",
             "mmc-pack.json",
         ]
+    );
+    empack_tests::harness::archive::assert_bootstrap_member(
+        &members[".empack-tools/empack-bootstrap.jar"],
     );
     let bytes = |name: &str| members[name].small.as_ref().unwrap().as_slice();
     assert_eq!(
@@ -111,10 +115,15 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let prepare = format!(
-        "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {hash} --layout prism --side client"
+    let bootstrap = format!(
+        "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} --",
+        empack_tests::harness::process::expected_automation_version()
     );
-    let wrapper = "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --";
+    let prepare = format!(
+        "{bootstrap} --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {hash} --layout prism --side client"
+    );
+    let wrapper =
+        format!("{bootstrap} --workdir \"$INST_DIR\" --yes instance launch --java-runtime --");
     let configuration = std::str::from_utf8(bytes("instance.cfg")).unwrap();
     for setting in [
         "ConfigVersion=1.2".to_owned(),

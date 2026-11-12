@@ -44,7 +44,7 @@ With explicit Minecraft and loader versions, initialization records those exact 
 
 Imported overrides are recorded as local dependencies with accepted content in the lock. When you edit an imported file that is also its managed destination, `sync` and `update` protect the previously recorded bytes. Use `empack adopt KEY` with its exact dependency key from `empack.yml` to deliberately accept the edit, then build again. This does not require changing the pack version. Custom source trees declared separately from dependencies retain their ordinary fresh-build behavior.
 
-Modrinth public resolution needs no API key. For CurseForge, provide your client key through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version control. Resolution and referenced downloads require network access.
+Modrinth public resolution needs no API key. CurseForge requests use the bundled client key. A nonempty `EMPACK_KEY_CURSEFORGE` overrides it; keep private overrides out of the manifest and version control. Resolution and referenced downloads require network access.
 
 Edit `empack.yml` directly or use authoring commands. Common provider mods can use `label: modrinth:SELECTOR`; use a mapping for side, content kind or exact policy. Non-default role and placement decisions belong to optional `empack.bindings.yml`. Commit `empack.yml`, `empack.lock` and bindings when present to share reproducible author sources. Build requires satisfied intent and does not implicitly update dependencies. Removal of a manifest root does not grant permission to delete user files or required shared dependencies.
 
@@ -55,11 +55,14 @@ Provider selectors, explicit pins, typed local/URL content, named file plans and
 ```bash
 empack outdated --strict --json --release-policy prefer-stable
 empack --dry-run update sodium --release-policy stable-only
+empack --dry-run update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
 empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric
 ```
 
-`outdated` distinguishes the locked version, policy-permitted candidate, compatible candidate and newest observed upstream selection. Unavailable evidence is reported as unknown, not up to date. The required-dependency closure is checked separately from each row. Known incompatibility declarations also include retained selections, but the report does not decide whether their final client/server placements overlap. A limited declaration scan retains the available rows and marks its list incomplete. Candidate compatibility remains `not-assessed` until update preparation. Neither assessment nor preparation proves that configurations or gameplay will work.
+Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
+
+`outdated` distinguishes the locked version, policy-permitted candidate, Minecraft/loader-compatible candidate and newest observed upstream selection. Unavailable evidence is reported as unknown, not up to date. The required-dependency closure is checked separately from each row. Known incompatibility declarations also include retained selections, but the report does not decide whether their final client/server placements overlap. A limited declaration scan retains the available rows and marks its list incomplete. Candidate compatibility remains `not-assessed` until update preparation. Neither assessment nor preparation proves that configurations or gameplay will work. Use `outdated KEY…` to assess exact author roots, `--details` for held/manual rows and all candidate identities, and `--quiet` to suppress stderr progress. JSON retains full selected evidence and its scope. See [assessment semantics](design/assessment.md).
 
 A migration plan leaves the author files unchanged. Applying the same command without `--plan` resolves again and requires approval of the native changes. Valid locked selections stay selected. Use `--loader-version` for an exact loader and repeat `--accept-version` for explicitly accepted alternative game versions; the candidate replaces the previous alternative list. Replacing a project requires `--replace KEY=modrinth:CANONICAL_ID` or `KEY=curseforge:NUMERIC_ID` and deliberately resets that root to compatible version policy. It does not convert configurations, worlds or private files.
 
@@ -177,6 +180,8 @@ Recovery diagnostics print an inspection command retaining both selections. Insp
 Workdir and relative input paths resolve from the directory where empack was invoked. Relative `--state-dir` and `--cache-dir` paths use that same directory, independently of `--workdir`. A relative initialization destination is a child of the selected workdir. State holds durable operation and recovery records; cache content is disposable.
 
 Configuration precedence, from lowest to highest, is defaults, `.env`, `.env.local`, inherited environment variables, then explicit CLI options. Dotenv files are read from the invocation directory; selecting `--workdir` does not load that project's dotenv files. Quote paths containing spaces in dotenv files and pass each CLI path as one argument. The corresponding environment variables are `EMPACK_WORKDIR`, `EMPACK_STATE_DIR` and `EMPACK_CACHE_DIR`.
+
+Command results and requested JSON use stdout. Checking messages, provisional catalog/acquisition progress, warnings and errors use stderr. Progress reports observed records or bytes, not an estimated completion percentage, and does not change the final result. `outdated --quiet` hides its progress while retaining reports and errors.
 
 Help and version display flags remain available when unrelated dotenv files are malformed. Ordinary commands, including `version` and an invocation with no command, load configuration and report malformed dotenv as an error. With valid configuration, invoking no command prints help guidance without creating project or host state.
 

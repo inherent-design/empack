@@ -13,6 +13,10 @@ pub enum DiagnosticCode {
     /// The selected executable cannot satisfy the release's engine requirement.
     IncompatibleEngine,
     StaleSnapshot,
+    /// Author/bindings semantics changed; reconcile intent rather than native recovery.
+    AuthoringChanged,
+    /// An explicit update group must include retained dependency context.
+    DependencyResolutionRequired,
     DigestMismatch,
     SizeMismatch,
     InvalidDigest,
@@ -74,6 +78,18 @@ impl Diagnostic {
         use DiagnosticCode::*;
         if let Some(value) = error.downcast_ref::<Self>() {
             return value.clone();
+        }
+        if error.is::<super::documents::AuthoringChanged>() {
+            return Self::new(AuthoringChanged, phase);
+        }
+        if matches!(
+            error.downcast_ref::<empack_core::addition::AdditionError>(),
+            Some(
+                empack_core::addition::AdditionError::RequiredBy(_)
+                    | empack_core::addition::AdditionError::RetainedSelectionConflict(_)
+            )
+        ) {
+            return Self::new(DependencyResolutionRequired, phase);
         }
         if error.is::<super::api::RuntimeRecoveryRequired>() {
             let mut diagnostic = Self::new(RuntimeRecoveryRequired, DiagnosticPhase::Execution);

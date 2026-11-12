@@ -653,7 +653,7 @@ async fn update_mixed(
         NonEmpty::new(inputs)?,
         ReleasePolicy::PreferStable,
         SourceEvidencePolicy::Compatibility,
-        Change::Update,
+        Change::Update(Default::default()),
         AdditionServices {
             catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
             transport: HttpAcquisition::for_loopback_tests(),

@@ -23,7 +23,7 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::model::NonEmpty;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 mod adoption;
 mod identification;
 
@@ -130,7 +130,7 @@ pub(super) async fn update_with_services(
         inputs,
         releases,
         evidence,
-        Change::Update,
+        Change::Update(Default::default()),
         services,
         BatchPolicy::AllRequested,
     )
@@ -205,7 +205,7 @@ pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServi
 }
 enum Change {
     Add(ExistingDependencyPolicy),
-    Update,
+    Update(BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>),
     Adopt,
 }
 
@@ -255,13 +255,14 @@ pub(super) async fn update_batch_with_services(
     evidence: SourceEvidencePolicy,
     services: AdditionServices,
     policy: BatchPolicy,
+    pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
 ) -> Result<()> {
     change_with_services(
         session,
         inputs,
         releases,
         evidence,
-        Change::Update,
+        Change::Update(pins),
         services,
         policy,
     )
@@ -277,7 +278,7 @@ async fn change_with_services(
     batch: BatchPolicy,
 ) -> Result<()> {
     let releases = releases.into();
-    let update = matches!(&change, Change::Update);
+    let update = matches!(&change, Change::Update(_));
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -427,7 +428,7 @@ async fn change_with_services(
                 source_revision: Some(revision), policy: batch, items: NonEmpty::new(items)?,
                 change: match change {
                     Change::Add(existing) => DependencyBatchChange::Add(existing),
-                    Change::Update => DependencyBatchChange::Update,
+                    Change::Update(pins) => DependencyBatchChange::Update { pins },
                     Change::Adopt => unreachable!("adoption is not a dependency batch"),
                 },
             }.into()
@@ -437,7 +438,7 @@ async fn change_with_services(
                 source_revision: Some(revision), group: addition.group().clone(),
                 content: addition.content().clone(), existing,
             }.into(),
-            Change::Update => UpdateRequest {
+            Change::Update(pins) => UpdateRequest { pins,
                 source_revision: Some(revision), group: addition.group().clone(),
                 content: addition.content().clone(),
             }.into(),
@@ -486,6 +487,16 @@ async fn publish_update(
             },
         ));
     }
+    for (key, pin) in &view.author_pin_changes {
+        let version = match pin {
+            empack_core::identity::PinSelector::ModrinthVersion(id) => id.to_string(),
+            empack_core::identity::PinSelector::CurseForgeFile(id) => id.to_string(),
+        };
+        session
+            .display()
+            .status()
+            .info(&format!("Author pin {}: {version}", key.as_str()));
+    }
     if !view.references.is_empty() {
         session.display().status().info(&format!(
             "Record {} exact references; payloads verify when acquired",
@@ -497,9 +508,19 @@ async fn publish_update(
         let ExecutionReceipt::Update(receipt) = receipt else {
             anyhow::bail!("Unexpected update receipt");
         };
+        let authoring = if receipt.author_pin_changes.is_empty() {
+            "preserved authored intent".to_owned()
+        } else {
+            format!(
+                "{} authored pins changed; unrelated intent retained",
+                receipt.author_pin_changes.len()
+            )
+        };
         Ok(format!(
-            "Checked {} selected dependencies: {} selections changed, {} retained; preserved authored intent",
-            receipt.selected.len(), receipt.changed_selections.len(), receipt.selected.len() - receipt.changed_selections.len()
+            "Checked {} selected dependencies: {} selections changed, {} retained; {authoring}",
+            receipt.selected.len(),
+            receipt.changed_selections.len(),
+            receipt.selected.len() - receipt.changed_selections.len()
         ))
     })
     .await

@@ -1919,6 +1919,110 @@ async fn required_subscription_is_captured_and_late_revocation_prevents_installa
 }
 
 #[tokio::test]
+async fn prism_read_only_profile_tolerates_launcher_saves_but_rejects_component_changes() {
+    for change in [
+        "replacement",
+        "cache",
+        "game",
+        "extra",
+        "disabled",
+        "missing",
+        "unknown",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let (engine, _) = super::super::tests::engine(host.path().join("state"));
+        let input = || {
+            let mut input = request(&[("options", "options.txt", b"seed", FilePolicy::Seed)]);
+            input.layout = Some(InstanceLayout::Prism);
+            input
+        };
+        apply(&engine, root.path(), input()).await;
+        let options = root.path().join(".minecraft/options.txt");
+        fs::write(&options, b"player settings").unwrap();
+        let profile_path = root.path().join("mmc-pack.json");
+        let mut profile: serde_json::Value =
+            serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+        profile["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"uid":"user.component", "version":"1"}));
+        fs::write(&profile_path, serde_json::to_vec(&profile).unwrap()).unwrap();
+        let Preparation::Ready(prepared) = engine
+            .prepare(root.path().to_owned(), input())
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            replacement: prepared.view().replacement(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            run_runtime: false,
+        };
+        match change {
+            "replacement" => {}
+            "cache" => {
+                profile["components"][0]["cachedName"] = serde_json::json!("Minecraft 雪");
+                profile["components"][0]["cachedRequires"] =
+                    serde_json::json!([{"uid":"org.lwjgl3", "suggests":"3.3.3"}]);
+            }
+            "game" => profile["components"][0]["version"] = serde_json::json!("1.21.2"),
+            "extra" => profile["components"][1]["version"] = serde_json::json!("2"),
+            "disabled" => profile["components"][0]["disabled"] = serde_json::json!(true),
+            "missing" => {
+                profile["components"].as_array_mut().unwrap().remove(0);
+            }
+            "unknown" => profile["components"][0]["unknownSetting"] = serde_json::json!(true),
+            _ => unreachable!(),
+        }
+        let bytes = if change == "replacement" {
+            fs::read(&profile_path).unwrap()
+        } else {
+            serde_json::to_vec_pretty(&profile).unwrap()
+        };
+        let temporary = root.path().join("profile-save.tmp");
+        fs::write(&temporary, &bytes).unwrap();
+        fs::rename(temporary, &profile_path).unwrap();
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        let outcome = operation.wait().await;
+        if matches!(change, "replacement" | "cache") {
+            assert!(
+                matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+                ),
+                "{change}: unexpected operation outcome"
+            );
+        } else {
+            let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) =
+                &*outcome
+            else {
+                panic!("{change}: unexpected operation outcome")
+            };
+            assert_eq!(
+                error
+                    .downcast_ref::<crate::engine::diagnostics::Diagnostic>()
+                    .unwrap()
+                    .code,
+                crate::engine::diagnostics::DiagnosticCode::StaleSnapshot,
+                "{change}: {error:#}"
+            );
+        }
+        assert_eq!(
+            fs::read(&profile_path).unwrap(),
+            bytes,
+            "{change}: profile was rewritten"
+        );
+        assert_eq!(fs::read(&options).unwrap(), b"player settings");
+        drop(outcome);
+        assert!(engine.release_completed(operation.id()));
+    }
+}
+
+#[tokio::test]
 async fn prism_runtime_and_content_publish_together_and_keep_extra_components() {
     use super::super::tests::inventory as snapshot;
     use crate::engine::diagnostics::{Diagnostic, DiagnosticCode};

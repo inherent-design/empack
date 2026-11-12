@@ -115,6 +115,91 @@ fn update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities() {
 }
 
 #[test]
+fn reviewed_update_pins_preserve_other_intent_and_require_the_dependent_group() {
+    let base = fixture(
+        &[
+            ("root", "Project1", "Version1"),
+            ("dependency", "Project2", "Version1"),
+            ("other", "Project3", "Version1"),
+        ],
+        &["root", "dependency", "other"],
+        &[("root", "dependency")],
+        true,
+    );
+    let pin = |id| PinSelector::ModrinthVersion(ModrinthVersionId::parse(id).unwrap());
+    let mut intent = base.intent().clone();
+    for (key, root) in &mut intent.roots {
+        if key.as_str() == "root" {
+            root.selection = DependencySelection::Automatic;
+            root.releases = Some(ReleasePolicy::Any);
+        } else {
+            root.selection = DependencySelection::ProviderPin(pin("Version1"));
+        }
+    }
+    let source = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "intent")
+        .unwrap();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = source.semantic_revision();
+    let current =
+        ResolvedProject::validate(intent.clone(), lock, source.semantic_revision()).unwrap();
+    let prior = DocumentCodec
+        .decode_prior_lock(&DocumentCodec.encode_lock(&current).unwrap(), "lock")
+        .unwrap();
+    let requested = fixture(
+        &[
+            ("root", "Project1", "Version2"),
+            ("dependency", "Project2", "Version2"),
+        ],
+        &["root", "dependency"],
+        &[("root", "dependency")],
+        true,
+    );
+    let pins = std::collections::BTreeMap::from([
+        (key("root"), pin("Version2")),
+        (key("dependency"), pin("Version2")),
+    ]);
+    let group = AdditionGroup::from_resolved(&requested).unwrap();
+    let candidate =
+        AdditionCandidate::prepare_update_with_pins(&source, &prior, &group, &pins).unwrap();
+    for key in ["root", "dependency"] {
+        intent.roots.get_mut(&self::key(key)).unwrap().selection =
+            DependencySelection::ProviderPin(pin("Version2"));
+    }
+    intent.roots.get_mut(&key("root")).unwrap().releases = None;
+    assert_eq!(candidate.project().intent(), &intent);
+    assert_eq!(
+        candidate.project().lock().dependencies[&key("other")],
+        current.lock().dependencies[&key("other")]
+    );
+    let partial = fixture(
+        &[("dependency", "Project2", "Version2")],
+        &["dependency"],
+        &[],
+        true,
+    );
+    let error = AdditionCandidate::prepare_update_with_pins(
+        &source,
+        &prior,
+        &AdditionGroup::from_resolved(&partial).unwrap(),
+        &std::collections::BTreeMap::from([(key("dependency"), pin("Version2"))]),
+    )
+    .err()
+    .unwrap();
+    assert!(
+        matches!(error.downcast_ref::<empack_core::addition::AdditionError>(), Some(empack_core::addition::AdditionError::RequiredBy(keys)) if keys == &[key("root")])
+    );
+    for invalid in [
+        std::collections::BTreeMap::from([(key("other"), pin("Version2"))]),
+        std::collections::BTreeMap::from([(key("root"), pin("Version3"))]),
+    ] {
+        assert!(
+            AdditionCandidate::prepare_update_with_pins(&source, &prior, &group, &invalid).is_err()
+        );
+    }
+}
+
+#[test]
 fn adoption_preserves_existing_root_roles_and_adds_only_new_roots() {
     let current = fixture(
         &[

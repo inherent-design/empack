@@ -567,10 +567,13 @@ class AttemptPolicy(unittest.TestCase):
             attempt.mkdir()
             args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,
                                    product_features="default", product_profile="release", suites=["cli"])
+            target_base = root / "shared build space Ω"
             with patch("verify.ROOT", root):
-                artifact = product(args, attempt, dict(os.environ), "fixture-host")
+                artifact = product(args, attempt, dict(os.environ, CARGO_TARGET_DIR=str(target_base)), "fixture-host")
             self.assertEqual(artifact["profile"], "release")
             self.assertEqual(Path(artifact["path"]).parent.name, "release")
+            self.assertEqual(Path(artifact["path"]).parent.parent.parent, (target_base / "verification-product").resolve())
+            self.assertFalse((root / "target").exists(), "configured target must not create another build tree")
             self.assertEqual(artifact["version"], "1.2.3")
             self.assertIn("release", (attempt / "product-build.log").read_text())
             self.assertEqual((attempt / "product-version.log").read_text().strip(), "empack 1.2.3")

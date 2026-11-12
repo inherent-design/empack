@@ -147,6 +147,13 @@ impl CliConfig {
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
+        let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+        // Interoperability is an executable property, independent of user
+        // configuration. In particular, clap's exclusive flag also conflicts
+        // with configuration supplied through environment variables.
+        if args.len() == 2 && args[1] == "--bootstrap-protocol" {
+            return Ok(CliLoad::Display("empack-bootstrap/1\n".into()));
+        }
         match Cli::try_parse_from(args) {
             Ok(cli) if cli.bootstrap_protocol => {
                 if cli.command.is_some() {
@@ -188,6 +195,29 @@ impl CliConfig {
             command: cli.command,
         })
     }
+}
+
+/// Read-only catalog assessment and presentation, independent of author updates.
+#[derive(Args, Debug, Default, Clone)]
+pub struct OutdatedArgs {
+    /// Exact explicit dependency keys; omitted means all author roots
+    #[arg(value_name = "DEPENDENCY")]
+    pub dependencies: Vec<String>,
+    /// Fail after reporting incomplete assessment of the selected scope
+    #[arg(long)]
+    pub strict: bool,
+    /// Emit the full versioned evidence report as JSON
+    #[arg(long, conflicts_with = "details")]
+    pub json: bool,
+    /// Include held/manual rows and full candidate identities in text output
+    #[arg(long)]
+    pub details: bool,
+    /// Suppress provisional progress on stderr; retain the report and errors
+    #[arg(long)]
+    pub quiet: bool,
+    /// Catalog release policy; exact pins remain exact
+    #[arg(long, value_enum)]
+    pub release_policy: Option<CliReleasePolicy>,
 }
 
 /// Arguments for the `init` subcommand.
@@ -806,20 +836,13 @@ Updates infer the installed side/layout. update --check checks before applying."
     Migrate(MigrationArgs),
 
     /// Assess provider versions without changing the author workspace
-    Outdated {
-        /// Return a failing exit status after reporting incomplete assessment
-        #[arg(long)]
-        strict: bool,
-        /// Emit versioned evidence and joint dependency assessment as JSON
-        #[arg(long)]
-        json: bool,
-        /// Provider version policy; independent of pack subscription channels
-        #[arg(long, value_enum)]
-        release_policy: Option<CliReleasePolicy>,
-    },
+    Outdated(OutdatedArgs),
 
     /// Deliberately refresh selected author dependency resolutions
     Update {
+        /// Explicitly change a selected author root's provider pin; repeat for a reviewed group
+        #[arg(long = "pin", value_name = "KEY=ID")]
+        pins: Vec<String>,
         /// Provider version policy; exact author pins remain exact
         #[arg(long, value_enum)]
         release_policy: Option<CliReleasePolicy>,
@@ -1000,7 +1023,7 @@ impl Commands {
         matches!(
             self,
             Self::Status { json: true, .. }
-                | Self::Outdated { json: true, .. }
+                | Self::Outdated(OutdatedArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })
                 | Self::Manifest {
@@ -1033,7 +1056,7 @@ impl Commands {
             Commands::Add { .. }
             | Commands::Update { .. }
             | Commands::Adopt { .. }
-            | Commands::Outdated { .. }
+            | Commands::Outdated(_)
             | Commands::Migrate(_) => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
@@ -1056,7 +1079,7 @@ impl Commands {
             Commands::Add { .. }
             | Commands::Update { .. }
             | Commands::Adopt { .. }
-            | Commands::Outdated { .. }
+            | Commands::Outdated(_)
             | Commands::Migrate(_) => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,

@@ -248,6 +248,158 @@ async fn direct_cli_files_publish_together_and_failed_member_keeps_previous_tree
 }
 
 #[tokio::test]
+async fn reviewed_update_pin_changes_only_the_named_author_selection() {
+    use empack_core::{digest::ExpectedDigest, identity::*, model::*};
+    let mut server = mockito::Server::new_async().await;
+    for selector in ["renderer", "Root0001"] {
+        server.mock("GET", format!("/project/{selector}").as_str())
+            .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+            .create_async().await;
+    }
+    for (version, payload) in [("RootVer1", b"payload"), ("RootVer2", b"updated")] {
+        server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(payload).into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).create_async().await;
+    }
+    for (policy, selected_version) in [BatchPolicy::AllRequested, BatchPolicy::ContinueIndependent]
+        .into_iter()
+        .flat_map(|policy| ["RootVer1", "RootVer2"].map(|version| (policy, version)))
+    {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        add_with_catalog(
+            &session(root.path(), false),
+            options("renderer"),
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+        )
+        .await
+        .unwrap();
+        let current = project(root.path());
+        let previous_key = current.intent().roots.keys().next().unwrap().clone();
+        let key = if policy == BatchPolicy::AllRequested && selected_version == "RootVer1" {
+            DependencyKey::parse("renderer=client").unwrap()
+        } else {
+            previous_key.clone()
+        };
+        // Exact selection replaces this root's automatic preference, including when
+        // the chosen version is already installed. Other author fields must survive.
+        let mut intent = current.intent().clone();
+        let author = intent.roots.remove(&previous_key).unwrap();
+        intent.roots.insert(key.clone(), author);
+        let author = intent.roots.get_mut(&key).unwrap();
+        author.selection = DependencySelection::Automatic;
+        author.releases = Some(ReleasePolicy::Any);
+        let source = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "author")
+            .unwrap();
+        let mut lock = current.lock().clone();
+        let dependency = lock.dependencies.remove(&previous_key).unwrap();
+        lock.dependencies.insert(key.clone(), dependency);
+        let coverage = lock.coverage.remove(&previous_key).unwrap();
+        lock.coverage.insert(key.clone(), coverage);
+        assert!(lock.required_edges.is_empty(), "isolated root fixture");
+        lock.intent_revision = source.semantic_revision();
+        let current = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+        fs::write(root.path().join("project/empack.yml"), source.original()).unwrap();
+        fs::write(
+            root.path().join("project/empack.lock"),
+            DocumentCodec.encode_lock(&current).unwrap(),
+        )
+        .unwrap();
+        let selected_keys = vec![key.as_str().to_owned()];
+        let services = || {
+            let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+            dependencies::AdditionServices {
+                transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
+                catalog,
+                files: DirectFileLimits::default(),
+            }
+        };
+        let before = crate::test_support::file_bytes(root.path());
+        for pins in [
+            vec![
+                format!("{}=RootVer2", key.as_str()),
+                format!("{}=RootVer1", key.as_str()),
+            ],
+            vec!["missing=RootVer2".into()],
+            vec![format!("{}=not a version", key.as_str())],
+        ] {
+            let error = update::update_pinned_with_services(
+                &session(root.path(), false),
+                selected_keys.clone(),
+                None,
+                policy,
+                services(),
+                pins,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                crate::application::exit::classify_error(&error),
+                crate::application::exit::EmpackExitCode::Usage
+            );
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        }
+        let pins = vec![format!("{}={selected_version}", key.as_str())];
+        update::update_pinned_with_services(
+            &session(root.path(), true),
+            selected_keys.clone(),
+            None,
+            policy,
+            services(),
+            pins.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        let (applying, messages) = session(root.path(), false).record_status_messages();
+        update::update_pinned_with_services(
+            &applying,
+            selected_keys,
+            None,
+            policy,
+            services(),
+            pins,
+        )
+        .await
+        .unwrap();
+        let after = project(root.path());
+        let selected =
+            PinSelector::ModrinthVersion(ModrinthVersionId::parse(selected_version).unwrap());
+        let mut expected = current.intent().clone();
+        expected.roots.get_mut(&key).unwrap().selection =
+            DependencySelection::ProviderPin(selected.clone());
+        expected.roots.get_mut(&key).unwrap().releases = None;
+        assert_eq!(after.intent(), &expected);
+        let messages = messages.lock().unwrap();
+        assert!(
+            messages
+                .iter()
+                .any(|text| text.contains("1 authored pins changed")),
+            "{messages:?}"
+        );
+        let changed = usize::from(selected_version == "RootVer2");
+        assert!(
+            messages.iter().any(|text| text.contains(&format!(
+                "{changed} selections changed, {} retained",
+                1 - changed
+            ))),
+            "{messages:?}"
+        );
+        assert_eq!(
+            after.lock().dependencies[&key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            selected
+        );
+    }
+}
+
+#[tokio::test]
 async fn interactive_search_preserves_selected_identity_without_publishing() {
     use crate::application::session_mocks::MockInteractiveProvider;
     let root = tempfile::tempdir().unwrap();

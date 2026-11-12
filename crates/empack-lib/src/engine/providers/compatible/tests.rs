@@ -195,20 +195,31 @@ fn malformed_dates_wrong_ownership_and_entry_overflow_cannot_select_a_file() {
         ("date_published", "yesterday"),
         ("project_id", "BADOWNER"),
         ("version_type", "unknown"),
+        ("status", "unexpected-status"),
+        ("id", "invalid identity"),
     ] {
         let mut bad = original.clone();
         bad[field] = json!(value);
+        let error = parse_page(
+            &project,
+            &request,
+            &serde_json::to_vec(&vec![bad]).unwrap(),
+            0,
+            1,
+            &Cancellation::default(),
+        )
+        .err()
+        .unwrap();
+        let problem = error.downcast_ref::<ProviderRecordProblem>().unwrap();
+        assert_eq!(problem.field, field);
         assert!(
-            parse_page(
-                &project,
-                &request,
-                &serde_json::to_vec(&vec![bad]).unwrap(),
-                0,
-                1,
-                &Cancellation::default()
-            )
-            .is_err()
+            !problem.to_string().contains(value),
+            "must not echo invalid provider values"
         );
+        assert!(matches!(
+            error.downcast_ref::<CatalogError>(),
+            Some(CatalogError::InvalidRecord | CatalogError::Identity)
+        ));
     }
     assert!(
         parse_page(
@@ -254,6 +265,14 @@ fn malformed_version_diagnostics_identify_the_record_or_missing_field() {
             error.downcast_ref::<CatalogError>(),
             Some(CatalogError::InvalidRecord)
         ));
+        assert_eq!(
+            error.downcast_ref::<ProviderRecordProblem>().unwrap().field,
+            if file_error {
+                "files[0].filename"
+            } else {
+                "date_published"
+            }
+        );
         let diagnostic = format!("{error:#}");
         if file_error {
             assert!(
@@ -263,7 +282,7 @@ fn malformed_version_diagnostics_identify_the_record_or_missing_field() {
             assert!(diagnostic.contains("AANobbMI"), "{diagnostic}");
         } else {
             assert!(
-                diagnostic.contains("Invalid provider field date_published"),
+                diagnostic.contains("Provider field date_published"),
                 "{diagnostic}"
             );
         }

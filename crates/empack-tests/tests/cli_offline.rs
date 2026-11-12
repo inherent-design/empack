@@ -42,6 +42,30 @@ fn initialized() -> TestProject {
 }
 
 #[test]
+fn cli_bootstrap_probe_ignores_configuration_and_cannot_execute_work() {
+    let project = TestProject::new();
+    let dotenv = b"EMPACK_CPU_JOBS=invalid\n";
+    fs::write(project.dir().join(".env"), dotenv).unwrap();
+    command(&project)
+        .env("EMPACK_CPU_JOBS", "invalid")
+        .env("EMPACK_COLOR", "invalid")
+        .args(["--bootstrap-protocol"])
+        .assert()
+        .success()
+        .stdout("empack-bootstrap/1\n")
+        .stderr("");
+    for arguments in [
+        vec!["--bootstrap-protocol", "status"],
+        vec!["--bootstrap-protocol", "--yes"],
+        vec!["--bootstrap-protocol", "--bootstrap-protocol"],
+    ] {
+        command(&project).args(arguments).assert().failure();
+    }
+    assert_eq!(fs::read(project.dir().join(".env")).unwrap(), dotenv);
+    assert!(!project.dir().join("empack.yml").exists());
+}
+
+#[test]
 fn cli_sync_missing_lock_and_failure_preserve_sources() {
     use empack_core::{model::*, path::*, requirements::*};
     for missing_lock in [false, true] {
@@ -514,7 +538,10 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 1);
+    assert_eq!(report["schema"], 2);
+    assert_eq!(report["scope"]["kind"], "all-author-roots");
+    assert_eq!(report["scope"]["roots"], serde_json::json!([]));
+    assert_eq!(report["complete"], true);
     assert_eq!(report["release_policy"], "stable-only");
     assert_eq!(report["joint"]["state"], "not-applicable");
     assert_eq!(report["dependencies"], serde_json::json!([]));

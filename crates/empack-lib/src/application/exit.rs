@@ -34,6 +34,7 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         return EmpackExitCode::Interrupted;
     }
     if find_chain_error::<super::cli::CommandInputRequired>(error).is_some()
+        || find_chain_error::<super::engine_host::cli::UpdatePinInput>(error).is_some()
         || find_chain_error::<crate::engine::documents::InvalidDocument>(error).is_some()
         || find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
         || find_chain_error::<empack_core::model::ModelError>(error).is_some()
@@ -42,6 +43,24 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         || find_chain_error::<empack_core::identity::IdentityError>(error).is_some()
     {
         return EmpackExitCode::Usage;
+    }
+    if matches!(
+        find_chain_error::<empack_core::addition::AdditionError>(error),
+        Some(
+            empack_core::addition::AdditionError::RequiredBy(_)
+                | empack_core::addition::AdditionError::RetainedSelectionConflict(_)
+                | empack_core::addition::AdditionError::InvalidUpdatePin(_)
+        )
+    ) {
+        return EmpackExitCode::Usage;
+    }
+    if let Some(selection) =
+        find_chain_error::<crate::engine::providers::AssessmentInputError>(error)
+    {
+        return match selection {
+            crate::engine::providers::AssessmentInputError::Missing(_) => EmpackExitCode::NotFound,
+            crate::engine::providers::AssessmentInputError::Duplicate(_) => EmpackExitCode::Usage,
+        };
     }
     if let Some(catalog) = find_chain_error::<crate::engine::providers::CatalogError>(error) {
         use crate::engine::providers::CatalogError;

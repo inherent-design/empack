@@ -5,6 +5,7 @@ use crate::engine::{
     resources::ResourceGovernor,
     runtime::{OperationOutcome, OperationRuntime},
 };
+use empack_core::model::DependencyKey;
 use mockito::{Matcher, Server};
 use serde_json::{Value, json};
 
@@ -41,6 +42,19 @@ async fn assess_with_limits(
     project: ResolvedProject,
     limits: ClosureLimits,
 ) -> UpdateAssessment {
+    assess_request(server, project, AssessmentRequest::default(), limits)
+        .await
+        .0
+        .unwrap()
+}
+async fn assess_request(
+    server: &Server,
+    project: ResolvedProject,
+    request: AssessmentRequest,
+    limits: ClosureLimits,
+) -> (Result<UpdateAssessment>, Vec<AssessmentProgress>) {
+    let progress = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = progress.clone();
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let runtime = OperationRuntime::new(
         ResourceGovernor::new(ResourceRequest {
@@ -54,7 +68,9 @@ async fn assess_with_limits(
     let mut handle = runtime
         .start(move |mut scope| async move {
             Ok(catalog
-                .assess_updates(&mut scope, &project, None, limits)
+                .assess_updates(&mut scope, &project, request, limits, |event| {
+                    observed.lock().unwrap().push(event)
+                })
                 .await)
         })
         .unwrap();
@@ -67,7 +83,12 @@ async fn assess_with_limits(
     else {
         panic!("assessment failed")
     };
-    report.unwrap()
+    let progress = Arc::try_unwrap(progress)
+        .ok()
+        .unwrap()
+        .into_inner()
+        .unwrap();
+    (report, progress)
 }
 // Independent wire expectations: neither a production report writer nor a
 // candidate constructor supplies these fields.
@@ -83,8 +104,10 @@ fn assert_selection_report(report: &UpdateAssessment, pinned: bool) {
     assert_eq!(
         actual,
         json!({
-            "schema":1, "release_policy":"prefer-stable",
-            "dependencies":[{"release_policy":"prefer-stable", "key":"root", "name":"Title for Project1",
+            "schema":2, "catalog_validation":"runtime-compatible-payloads", "release_policy":"prefer-stable", "complete":true,
+            "scope":{"kind":"all-author-roots","roots":["root"],"total_roots":1,"retained_inventory":0},
+            "summary":{"change_available":usize::from(!pinned),"held":usize::from(pinned),"unknown":0,"manual":0,"unavailable":0,"conflicted":0},
+            "dependencies":[{"release_policy":"prefer-stable", "release_policy_source":"project-default", "compatible_matches_release_policy":true, "key":"root", "name":"Title for Project1",
                 "current":retained, "permitted":if pinned {retained.clone()} else {observed.clone()},
                 "compatible":observed, "upstream":observed, "state":if pinned {"pinned"} else {"change-available"},
                 "catalog_complete":true, "observed_records":1, "diagnostic":null,
@@ -92,7 +115,7 @@ fn assert_selection_report(report: &UpdateAssessment, pinned: bool) {
             "joint":{"scope":"provider-dependency-closure", "candidate_compatibility":"not-assessed",
                 "declared_incompatibilities":[], "declarations_complete":true, "state":"validated",
                 "selections":[{"provider":"modrinth", "project":"Project1", "selection":selection,
-                    "version":null, "published_at":null, "channel":null}], "reasons":[]}
+                    "version":null, "published_at":null, "channel":null}], "reasons":[], "blocking_roots":[]}
         })
     );
 }
@@ -290,6 +313,18 @@ async fn assessment_uses_authored_preferences_and_reports_each_effective_policy(
         assert_eq!(
             row.release_policy,
             preference.unwrap_or(ReleasePolicy::StableOnly).as_str()
+        );
+        assert_eq!(
+            row.release_policy_source,
+            if preference.is_some() {
+                "dependency"
+            } else {
+                "project-default"
+            }
+        );
+        assert_eq!(
+            row.compatible_matches_release_policy,
+            Some(preference.is_some())
         );
         if preference.is_some() {
             assert_eq!(row.permitted.as_ref().unwrap().selection, "Version2");
@@ -774,5 +809,176 @@ async fn provider_access_and_service_failures_still_stop_later_roots() {
         );
         assert!(!report.is_complete());
         skipped.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn selected_assessment_retains_context_and_limits_catalog_work() {
+    let mut server = Server::new_async().await;
+    records(&mut server, "Project1", "Version3", json!([])).await;
+    let untouched = server
+        .mock("GET", "/project/Project2")
+        .expect(0)
+        .create_async()
+        .await;
+    let project = fixture(
+        &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    let (report, progress) = assess_request(
+        &server,
+        project.clone(),
+        AssessmentRequest {
+            keys: vec![DependencyKey::parse("a").unwrap()],
+            releases: None,
+        },
+        ClosureLimits::default(),
+    )
+    .await;
+    let report = report.unwrap();
+    assert_eq!(report.scope.kind, "selected-author-roots");
+    assert_eq!(report.scope.roots, ["a"]);
+    assert_eq!(report.scope.total_roots, 2);
+    assert_eq!(report.scope.retained_inventory, 1);
+    assert_eq!(report.dependencies.len(), 1);
+    assert_eq!(report.summary().change_available, 1);
+    assert!(report.is_complete());
+    assert!(progress.iter().any(|event| matches!(event, AssessmentProgress::Catalog { key, total: 1, records: 1, .. } if key == "a")));
+    assert!(matches!(
+        progress.last(),
+        Some(AssessmentProgress::RequiredClosure { roots: 1 })
+    ));
+    untouched.assert_async().await;
+    for (keys, missing) in [(vec!["missing"], true), (vec!["a", "a"], false)] {
+        let (report, progress) = assess_request(
+            &server,
+            project.clone(),
+            AssessmentRequest {
+                keys: keys
+                    .iter()
+                    .map(|key| DependencyKey::parse(key).unwrap())
+                    .collect(),
+                releases: None,
+            },
+            ClosureLimits::default(),
+        )
+        .await;
+        let error = report.unwrap_err();
+        assert!(
+            progress.is_empty(),
+            "invalid selection started catalog work"
+        );
+        match error.downcast_ref::<AssessmentInputError>().unwrap() {
+            AssessmentInputError::Missing(key) => {
+                assert!(missing);
+                assert_eq!(key.as_str(), "missing");
+            }
+            AssessmentInputError::Duplicate(key) => {
+                assert!(!missing);
+                assert_eq!(key.as_str(), "a");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn noncandidate_payload_limits_do_not_poison_current_catalog_metadata() {
+    for problem in ["empty", "duplicate", "portable"] {
+        let mut server = Server::new_async().await;
+        let current = version("Project1", "Version2", "1.20.1", json!([]));
+        let mut old = version("Project1", "OldVer01", "1.16.5", json!([]));
+        old["date_published"] = json!("2024-01-01T00:00:00Z");
+        match problem {
+            "empty" => old["files"] = json!([]),
+            "duplicate" => {
+                let mut duplicate = old["files"][0].clone();
+                duplicate["primary"] = json!(false);
+                old["files"].as_array_mut().unwrap().push(duplicate);
+            }
+            "portable" => old["files"][0]["filename"] = json!("legacy|assets.zip"),
+            _ => unreachable!(),
+        }
+        server
+            .mock("GET", "/project/Project1")
+            .with_body(
+                json!({"id":"Project1","slug":"one","title":"One","project_type":"resourcepack"})
+                    .to_string(),
+            )
+            .create_async()
+            .await;
+        let page = server
+            .mock("GET", "/project/Project1/version")
+            .match_query(Matcher::Any)
+            .with_body(json!([old.clone(), current.clone()]).to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/version/Version2")
+            .with_body(current.to_string())
+            .create_async()
+            .await;
+        let project = fixture(&[("a", "Project1", "Version1")], &["a"], &[], true);
+        let report = assess(&server, project.clone()).await;
+        assert!(
+            report.is_complete(),
+            "{problem}: {:?}",
+            report.dependencies[0].diagnostic
+        );
+        assert_eq!(
+            report.dependencies[0]
+                .compatible
+                .as_ref()
+                .unwrap()
+                .selection,
+            "Version2"
+        );
+        assert_eq!(report.dependencies[0].observed_records, Some(2));
+        // The very same historical payload remains ineligible for exact acquisition.
+        let pin = ResolvedPin {
+            project: project.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+                .selected
+                .as_ref()
+                .unwrap()
+                .project
+                .clone(),
+            selection: empack_core::identity::PinSelector::ModrinthVersion(
+                empack_core::identity::ModrinthVersionId::parse("OldVer01").unwrap(),
+            ),
+        };
+        let canonical = modrinth::project(
+            &serde_json::to_vec(
+                &json!({"id":"Project1","slug":"one","title":"One","project_type":"resourcepack"}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let error = modrinth::selection(canonical, &pin, &serde_json::to_vec(&old).unwrap())
+            .err()
+            .unwrap();
+        assert!(error.is::<ProviderRecordProblem>());
+        // If its runtime metadata becomes eligible, its invalid payload must stop qualification.
+        old["game_versions"] = json!(["1.20.1"]);
+        page.remove_async().await;
+        server
+            .mock("GET", "/project/Project1/version")
+            .match_query(Matcher::Any)
+            .with_body(json!([old, current]).to_string())
+            .create_async()
+            .await;
+        let report = assess(&server, project).await;
+        assert!(!report.is_complete());
+        assert_eq!(
+            report.dependencies[0].reasons,
+            [UpdateReason::InvalidEvidence]
+        );
+        assert!(
+            report.dependencies[0]
+                .diagnostic
+                .as_ref()
+                .unwrap()
+                .contains("files")
+        );
     }
 }

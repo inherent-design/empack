@@ -40,6 +40,7 @@ percent-encoding = "2.3.2"
 reqwest = { version = "0.13.5", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_path_to_error = "0.1.20"
 serde-saphyr = "2.0.0"
 semver = "1"
 time = { version = "0.3.55", features = ["parsing"] }

@@ -10,20 +10,22 @@ mod initial;
 mod observation;
 
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
-    update_with_policy(session, keys, None, BatchPolicy::AllRequested).await
+    update_with_policy(session, keys, None, BatchPolicy::AllRequested, vec![]).await
 }
 pub async fn update_with_policy(
     session: &dyn Session,
     keys: Vec<String>,
     releases: Option<ReleasePolicy>,
     policy: BatchPolicy,
+    pins: Vec<String>,
 ) -> Result<()> {
-    update_with_services(
+    update_pinned_with_services(
         session,
         keys,
         releases,
         policy,
         dependencies::configured_services(session)?,
+        pins,
     )
     .await
 }
@@ -159,6 +161,7 @@ pub(super) async fn adopt_with_services(
     }
     dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await
 }
+#[cfg(test)]
 pub(super) async fn update_with_services(
     session: &dyn Session,
     keys: Vec<String>,
@@ -166,18 +169,76 @@ pub(super) async fn update_with_services(
     policy: BatchPolicy,
     services: dependencies::AdditionServices,
 ) -> Result<()> {
+    update_pinned_with_services(session, keys, releases, policy, services, vec![]).await
+}
+pub(super) async fn update_pinned_with_services(
+    session: &dyn Session,
+    keys: Vec<String>,
+    releases: Option<ReleasePolicy>,
+    policy: BatchPolicy,
+    services: dependencies::AdditionServices,
+    pins: Vec<String>,
+) -> Result<()> {
     let current = current(session).await?;
     let (_, project) = project_path(session)?;
-    let inputs = selections(&current, &project, keys)?;
+    let mut inputs = selections(&current, &project, keys)?.into_vec();
+    let pins = requested_pins(&current, &mut inputs, pins)?;
     dependencies::update_batch_with_services(
         session,
-        inputs,
+        NonEmpty::new(inputs)?,
         releases,
         SourceEvidencePolicy::Compatibility,
         services,
         policy,
+        pins,
     )
     .await
+}
+/// Exact logical keys select installed identities; version IDs are parsed in that provider's
+/// namespace. Nothing here searches, edits documents or promotes transitive selections.
+fn requested_pins(
+    current: &ResolvedProject,
+    inputs: &mut [AddHostInput],
+    values: Vec<String>,
+) -> Result<std::collections::BTreeMap<DependencyKey, PinSelector>> {
+    let mut pins = std::collections::BTreeMap::new();
+    for value in values {
+        let (key, version) = value.rsplit_once('=').context(UpdatePinInput::Syntax)?;
+        let key = DependencyKey::parse(key)?;
+        ensure!(
+            current.intent().roots.contains_key(&key),
+            UpdatePinInput::NotAuthorRoot(key.clone())
+        );
+        let input = inputs
+            .iter_mut()
+            .find_map(|input| match input {
+                AddHostInput::Provider(input) if input.key.as_ref() == Some(&key) => Some(input),
+                _ => None,
+            })
+            .context(UpdatePinInput::NotRequestedProvider(key.clone()))?;
+        let ResolvedIdentity::Provider(project) = &current.lock().dependencies[&key].identity
+        else {
+            unreachable!("provider host input")
+        };
+        let pin = project.parse_pin(version)?;
+        ensure!(
+            pins.insert(key.clone(), pin.clone()).is_none(),
+            UpdatePinInput::Duplicate(key.clone())
+        );
+        input.pin = Some(pin);
+    }
+    Ok(pins)
+}
+#[derive(Debug, thiserror::Error)]
+pub enum UpdatePinInput {
+    #[error("Expected --pin KEY=ID")]
+    Syntax,
+    #[error("Exact update pin requires an existing author root: {}; transitive records are not promoted", .0.as_str())]
+    NotAuthorRoot(DependencyKey),
+    #[error("Exact update pin must also name a requested provider dependency: {}", .0.as_str())]
+    NotRequestedProvider(DependencyKey),
+    #[error("Repeated --pin key: {}; supply one reviewed version per dependency", .0.as_str())]
+    Duplicate(DependencyKey),
 }
 fn selections(
     current: &ResolvedProject,

@@ -166,7 +166,13 @@ fn reference_updates_retire_only_verified_old_materializations() {
         let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
             .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
             .unwrap();
-        let plan = plan_update(snapshot, &group, references(&requested), &cancel);
+        let plan = plan_update(
+            snapshot,
+            &group,
+            references(&requested),
+            &BTreeMap::new(),
+            &cancel,
+        );
         if edited {
             assert!(plan.is_err());
             assert_eq!(

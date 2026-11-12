@@ -188,11 +188,29 @@ pub(super) struct InstancePlan {
     needed: BTreeMap<ManagedPath, ReleaseFile>,
     merge_sources: BTreeMap<String, std::path::PathBuf>,
     asset_base: Option<reqwest::Url>,
+    prism_read: Option<ReadOnlyPrismProfile>,
 }
 pub(super) struct PreparedInstance {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     pub(super) record: InstanceRecord,
+    prism_read: Option<ReadOnlyPrismProfile>,
+}
+
+struct ReadOnlyPrismProfile {
+    identity: super::prism::ProfileIdentity,
+    limits: SnapshotLimits,
+}
+impl ReadOnlyPrismProfile {
+    fn revalidate(&self, root: &ProjectReadRoot, cancel: &Cancellation) -> Result<()> {
+        let snapshot = root.capture(
+            &[ProjectLayout::path(&ManagedPath::PrismProfile)?],
+            self.limits,
+            cancel,
+        )?;
+        let bytes = read_optional(root, &snapshot, &ManagedPath::PrismProfile, cancel)?;
+        self.identity.verify(bytes.as_deref().unwrap_or_default())
+    }
 }
 impl PreparedInstance {
     pub(super) fn publish(
@@ -204,6 +222,9 @@ impl PreparedInstance {
             publisher.bound_root_key(&self.root)? == self.record.root,
             "Instance root association changed after preparation"
         );
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
         let receipt = publisher.publish(&self.root, self.change, cancel)?;
         Ok((receipt, self.record))
     }
@@ -688,18 +709,31 @@ pub(super) fn plan(
             cancel,
         )?)?;
     }
+    let mut prism_read = None;
     let prism_profile = if layout == InstanceLayout::Prism {
-        snapshot = snapshot.merge(root.capture(
+        let profile_snapshot = root.capture(
             &[ProjectLayout::path(&ManagedPath::PrismProfile)?],
             document_limits(limits),
             cancel,
-        )?)?;
-        let bytes = read_optional(&root, &snapshot, &ManagedPath::PrismProfile, cancel)?;
-        Some(super::prism::transition(
-            bytes.as_deref(),
-            &old_runtime,
-            &release.document().runtime,
-        )?)
+        )?;
+        let bytes = read_optional(&root, &profile_snapshot, &ManagedPath::PrismProfile, cancel)?;
+        let desired =
+            super::prism::transition(bytes.as_deref(), &old_runtime, &release.document().runtime)?;
+        if bytes.as_deref() == Some(desired.as_slice()) {
+            prism_read = Some(ReadOnlyPrismProfile {
+                identity: super::prism::ProfileIdentity::capture(
+                    &desired,
+                    release.document().runtime.resolution()?,
+                )?,
+                limits: document_limits(limits),
+            });
+            None
+        } else {
+            // An actual profile write retains exact bytes, object binding and
+            // expected absence through the existing recoverable publication.
+            snapshot = snapshot.merge(profile_snapshot)?;
+            Some(desired)
+        }
     } else {
         None
     };
@@ -959,8 +993,7 @@ pub(super) fn plan(
         }
     }
     needed.retain(|target, _| files.expected().contains_key(target));
-    root.revalidate(&snapshot, cancel)?;
-    Ok(InstancePlan {
+    let plan = InstancePlan {
         asset_base,
         root,
         snapshot,
@@ -969,7 +1002,10 @@ pub(super) fn plan(
         documents,
         needed,
         merge_sources,
-    })
+        prism_read,
+    };
+    plan.revalidate(cancel)?;
+    Ok(plan)
 }
 fn verify_current_file(
     root: &ProjectReadRoot,
@@ -992,9 +1028,26 @@ fn verify_current_file(
 }
 
 impl InstancePlan {
-    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
+    fn revalidate(&self, cancel: &Cancellation) -> Result<()> {
         self.root.revalidate(&self.snapshot, cancel)?;
-        self.snapshot.fingerprint()
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
+        Ok(())
+    }
+    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
+        self.revalidate(cancel)?;
+        let base = self.snapshot.fingerprint()?;
+        if let Some(profile) = &self.prism_read {
+            use sha2::{Digest, Sha256};
+            let mut hash = Sha256::new();
+            hash.update(b"empack-instance-prism-read-v1");
+            hash.update(base);
+            hash.update(profile.identity.fingerprint()?);
+            Ok(hash.finalize().into())
+        } else {
+            Ok(base)
+        }
     }
     pub(super) fn launch_lease(
         &self,
@@ -1006,7 +1059,7 @@ impl InstancePlan {
             "Instance content requires repair before launch"
         );
         let lease = Publisher::open(state)?.lease_instance(&self.root)?;
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         Ok(lease)
     }
     /// Resolve signed relative asset identity to a transient transport locator.
@@ -1128,7 +1181,7 @@ impl InstancePlan {
         files: &BTreeMap<String, std::path::PathBuf>,
         cancel: &Cancellation,
     ) -> Result<BTreeMap<String, AcquiredContent>> {
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         for key in files.keys() {
             ensure!(
                 self.needed.values().any(|file| &file.key == key) && !supplied.contains_key(key),
@@ -1142,7 +1195,7 @@ impl InstancePlan {
                 content.insert(file.key.clone(), pool.insert(acquired, cancel)?);
             }
         }
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         Ok(content)
     }
     pub(super) fn stage(
@@ -1152,6 +1205,9 @@ impl InstancePlan {
         assets: Option<&Path>,
         cancel: &Cancellation,
     ) -> Result<PreparedInstance> {
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
         let limits = verification::candidate_stage_limits(&self.snapshot, &self.files)?;
         let mut stage = MutableStage::empty()?;
         for (target, bytes) in &self.documents {
@@ -1179,6 +1235,7 @@ impl InstancePlan {
             root: self.root,
             change,
             record: self.record,
+            prism_read: self.prism_read,
         })
     }
 }

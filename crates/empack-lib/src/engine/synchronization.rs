@@ -77,7 +77,7 @@ impl SynchronizationCandidate {
                 key.as_str()
             );
             if pinned {
-                root.selection = DependencySelection::ProviderPin(
+                root.set_provider_pin(
                     selected
                         .selected
                         .as_ref()
@@ -85,8 +85,6 @@ impl SynchronizationCandidate {
                         .selection
                         .clone(),
                 );
-                // An automatic override would be inapplicable beside an exact pin.
-                root.releases = None;
             } else {
                 root.selection = DependencySelection::Automatic;
             }

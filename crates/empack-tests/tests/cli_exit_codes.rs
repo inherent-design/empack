@@ -681,7 +681,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
     let completed = unavailable(launch(true));
     assert!(completed.status.success(), "{completed:?}");
     assert!(
-        String::from_utf8_lossy(&completed.stdout).contains(&format!(
+        String::from_utf8_lossy(&completed.stderr).contains(&format!(
             "checking completed release {id} for offline launch"
         )),
         "{completed:?}"

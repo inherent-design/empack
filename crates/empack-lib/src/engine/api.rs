@@ -949,7 +949,8 @@ impl Engine {
                         .await?
                         .map(|value| PreparedKind::Update(Box::new(value)))),
                         Request::DependencyBatch(request) => {
-                            let update = matches!(request.change, DependencyBatchChange::Update);
+                            let update =
+                                matches!(request.change, DependencyBatchChange::Update { .. });
                             Ok(
                                 addition::prepare_batch(project, *request, &config, &mut scope)
                                     .await?

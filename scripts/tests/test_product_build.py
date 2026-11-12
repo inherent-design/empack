@@ -65,7 +65,7 @@ def build(root, name="attempt", features="default"):
     args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,
                            product_features=features, product_profile="dev", suites=["cli"])
     with patch("verify.ROOT", root):
-        return product(args, attempt, dict(os.environ), "fixture-host")
+        return product(args, attempt, dict(os.environ, CARGO_TARGET_DIR=str(root / "target")), "fixture-host")
 
 
 def commit_source(root):

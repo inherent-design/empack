@@ -225,8 +225,15 @@ fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
 /// Runtime inspection describes native capabilities without installing tooling.
 #[test]
 fn cli_requirements_describes_native_capabilities_without_bootstrap() {
+    let missing_java = |output: &std::process::Output| {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Java was not found"), "{stderr}");
+        assert!(!stdout.contains("Java was not found"), "{stdout}");
+    };
     let fixture = EntryFixture::new(false);
     let output = fixture.invoke(&["requirements"], 0);
+    missing_java(&output);
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.contains("native engine; no external dependency manager required"),
@@ -237,7 +244,6 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
         stdout.contains("CurseForge also requires an API key"),
         "{stdout}"
     );
-    assert!(stdout.contains("Java was not found"), "{stdout}");
     assert!(
         stdout.contains("not version compatibility with the selected runtime"),
         "{stdout}"
@@ -260,7 +266,7 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
         let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains(program.to_str().unwrap()), "{stdout}");
-        assert!(!stdout.contains("Java was not found"), "{stdout}");
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("Java was not found"));
         assert!(
             stdout.contains("not version compatibility with the selected runtime"),
             "{stdout}"
@@ -276,18 +282,10 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&program, fs::Permissions::from_mode(0o600)).unwrap();
         let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
-        assert!(
-            String::from_utf8(output.stdout)
-                .unwrap()
-                .contains("Java was not found")
-        );
+        missing_java(&output);
     }
     fs::remove_file(&program).unwrap();
     fs::create_dir(&program).unwrap();
     let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
-    assert!(
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .contains("Java was not found")
-    );
+    missing_java(&output);
 }

@@ -15,8 +15,9 @@ use std::{sync::Arc, time::Duration};
 mod addition;
 mod assessment;
 pub use assessment::{
-    DeclaredIncompatibility, DependencyAssessment, JointAssessment, ObservedVersion,
-    UpdateAssessment, UpdateReason,
+    AssessmentCategory, AssessmentInputError, AssessmentProgress, AssessmentRequest,
+    AssessmentScope, AssessmentSummary, DeclaredIncompatibility, DependencyAssessment,
+    JointAssessment, ObservedVersion, UpdateAssessment, UpdateReason,
 };
 mod batch;
 pub use addition::{
@@ -43,7 +44,10 @@ mod curseforge;
 mod modrinth;
 mod pages;
 mod pin;
+mod problem;
 pub use pages::DownloadPage;
+pub use problem::{ProviderRecordProblem, RecordInvariant};
+use problem::{identity_error, json, record_error, selection_context};
 mod refresh;
 mod search;
 pub use search::{ProjectCandidate, ProjectSearch, SearchLimits, SearchPage, SearchQuery};
@@ -383,10 +387,6 @@ fn download_locator(value: &str) -> Result<()> {
     );
     // Execution-only locators may be signed. Durable document encoding separately rejects them.
     Ok(())
-}
-fn json<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
-    // Serde's message can contain untrusted values, including signed URLs. Keep it out of errors.
-    serde_json::from_slice(bytes).map_err(|_| CatalogError::InvalidRecord.into())
 }
 #[cfg(test)]
 mod tests;

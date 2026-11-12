@@ -40,6 +40,7 @@ pub(super) use synchronization::{
     resume_selected as resume_synchronization_selected,
     retained_input_keys as retained_sync_input_keys,
 };
+pub(crate) use update::UpdatePinInput;
 pub use update::{adopt, update, update_with_policy};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.

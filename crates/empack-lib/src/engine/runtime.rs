@@ -59,6 +59,17 @@ pub enum OperationOutcome<T> {
     Completed(T),
     Failed(RuntimeError),
 }
+/// Provisional work observations. They carry no locator, credential or completion proof.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkProgress {
+    CheckingContentCache,
+    Downloading {
+        received_bytes: u64,
+        total_bytes: Option<u64>,
+    },
+    VerifyingContent,
+}
+
 pub struct OperationStatus<T> {
     pub phase: OperationPhase,
     pub terminal: Option<Arc<OperationOutcome<T>>>,
@@ -136,6 +147,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
         let operation_cancel = Cancellation::default();
         let scope = Arc::new(ScopeInner {
             operation: id,
+            progress: Arc::new(Mutex::new(None)),
             governor: self.governor.clone(),
             cancel: operation_cancel.child(),
             operation_cancel,
@@ -194,6 +206,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
         Ok(OperationHandle {
             id,
             receiver,
+            progress: scope.progress.clone(),
             cancel: scope.operation_cancel.clone(),
             cancel_on_drop: true,
         })
@@ -205,6 +218,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
             .map(|entry| OperationHandle {
                 id,
                 receiver: entry.status.subscribe(),
+                progress: entry.scope.progress.clone(),
                 cancel: entry.scope.operation_cancel.clone(),
                 cancel_on_drop: false,
             })
@@ -236,6 +250,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
                         OperationHandle {
                             id: *id,
                             receiver: entry.status.subscribe(),
+                            progress: entry.scope.progress.clone(),
                             cancel: entry.scope.operation_cancel.clone(),
                             cancel_on_drop: false,
                         },
@@ -268,10 +283,14 @@ pub struct OperationHandle<T> {
     receiver: watch::Receiver<Arc<OperationStatus<T>>>,
     cancel: Cancellation,
     cancel_on_drop: bool,
+    progress: Arc<Mutex<Option<WorkProgress>>>,
 }
 impl<T> OperationHandle<T> {
     pub fn id(&self) -> OperationId {
         self.id
+    }
+    pub fn progress(&self) -> Option<WorkProgress> {
+        locked(&self.progress).clone()
     }
     pub fn status(&self) -> Arc<OperationStatus<T>> {
         self.receiver.borrow().clone()
@@ -309,6 +328,7 @@ struct ScopeState {
 }
 struct ScopeInner {
     operation: OperationId,
+    progress: Arc<Mutex<Option<WorkProgress>>>,
     governor: ResourceGovernor,
     cancel: Cancellation,
     operation_cancel: Cancellation,
@@ -345,6 +365,10 @@ pub struct WorkScope {
     inner: Arc<ScopeInner>,
 }
 impl WorkScope {
+    pub(super) fn report_progress(&self, progress: WorkProgress) {
+        *locked(&self.inner.progress) = Some(progress);
+    }
+
     /// Reserve retained storage before a worker can write it. The storage owner receives the
     /// permit, including when a failed append leaves charged bytes until the backing retires.
     pub(super) fn reserve_storage(

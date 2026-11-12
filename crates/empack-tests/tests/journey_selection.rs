@@ -43,6 +43,55 @@ bindings:
         environment: {client: required, server: required}
 "#;
 
+#[test]
+fn journey_cli_changed_author_pin_reports_sync_without_mutation() {
+    let project = TestProject::new();
+    let root = project.dir();
+    fixture(root);
+    let unchanged = snapshot(root).files;
+    for pins in [
+        vec!["renderer-alias=Version2", "renderer-alias=Version1"],
+        vec!["local=Version2"],
+        vec!["missing=Version2"],
+    ] {
+        let mut command = offline_command(root);
+        command.args(["update", "renderer-alias", "local"]);
+        for pin in pins {
+            command.args(["--pin", pin]);
+        }
+        let result = command.output().unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(empack_lib::application::exit::EmpackExitCode::Usage.as_i32())
+        );
+        assert_eq!(snapshot(root).files, unchanged);
+    }
+
+    let intent = AUTHOR.replace("    releases: any", "    pin: Version2");
+    fs::write(root.join("empack.yml"), intent).unwrap();
+    let before = snapshot(root).files;
+    for args in [
+        vec!["update", "renderer-alias"],
+        vec!["outdated", "renderer-alias", "--json"],
+    ] {
+        let result = offline_command(root).args(args).output().unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(empack_lib::application::exit::EmpackExitCode::Usage.as_i32())
+        );
+        let message = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            message.contains("Authored project or bindings changed"),
+            "{message}"
+        );
+        assert!(
+            message.contains("empack sync") && message.contains("renderer-alias"),
+            "{message}"
+        );
+        assert_eq!(snapshot(root).files, before);
+    }
+}
+
 fn write(root: &Path, name: &str, bytes: &[u8]) {
     let path = root.join(name);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -539,6 +588,8 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                 }
                 if json_output {
                     cmd.arg("--json");
+                } else {
+                    cmd.arg("--details");
                 }
                 let output = if manual_only {
                     cmd.output().unwrap()
@@ -554,15 +605,19 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                         "{stderr}"
                     );
                 } else {
-                    assert!(stderr.is_empty(), "{stderr}");
+                    assert!(!stderr.contains("Error:"), "{stderr}");
                 }
+                assert!(
+                    stderr.contains("Assessing"),
+                    "assessment progress did not reach stderr: {stderr}"
+                );
                 let stdout = String::from_utf8(output.stdout).unwrap();
                 if json_output {
                     let mut report: Value = serde_json::from_str(&stdout).unwrap();
                     assert!(!report["observed_at"].as_str().unwrap().is_empty());
                     report.as_object_mut().unwrap().remove("observed_at");
                     let mut rows = vec![json!({
-                        "release_policy": "any", "key": "local", "name": "local",
+                        "release_policy": "any", "release_policy_source": "operation-override", "compatible_matches_release_policy": null, "key": "local", "name": "local",
                         "current": null, "permitted": null, "compatible": null,
                         "upstream": null, "state": "manual", "catalog_complete": false,
                         "observed_records": null, "diagnostic": null, "reasons": ["manual-source"]
@@ -577,7 +632,7 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                         // it supplies no invented provider records or successful catalog.
                         report["dependencies"][1]["diagnostic"] = Value::Null;
                         rows.push(json!({
-                            "release_policy": "any", "key": "renderer-alias", "name": "renderer-alias",
+                            "release_policy": "any", "release_policy_source": "operation-override", "compatible_matches_release_policy": null, "key": "renderer-alias", "name": "renderer-alias",
                             "current": {"provider": "modrinth", "project": "Project1", "selection": "Version1",
                                 "version": null, "published_at": null, "channel": null},
                             "permitted": null, "compatible": null, "upstream": null, "state": "unknown",
@@ -588,11 +643,13 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                     assert_eq!(
                         report,
                         json!({
-                            "schema": 1, "release_policy": "any", "dependencies": rows,
+                            "schema": 2, "catalog_validation":"runtime-compatible-payloads", "release_policy": "any", "dependencies": rows, "complete": manual_only,
+                            "scope":{"kind":"all-author-roots", "roots": if manual_only { vec!["local"] } else { vec!["local", "renderer-alias"] }, "total_roots":if manual_only {1} else {2}, "retained_inventory":usize::from(manual_only)},
+                            "summary":{"change_available":0,"held":0,"unknown":if manual_only {0} else {1},"manual":1,"unavailable":0,"conflicted":0},
                             "joint": {"scope": "provider-dependency-closure", "candidate_compatibility": "not-assessed",
                                 "declared_incompatibilities": [], "declarations_complete": false,
                                 "state": if manual_only {"not-applicable"} else {"not-assessed"},
-                                "selections": [], "reasons": []}
+                                "selections": [], "reasons": if manual_only {vec![]} else {vec!["incomplete-root-assessment"]}, "blocking_roots":if manual_only {vec![]} else {vec!["renderer-alias"]}}
                         })
                     );
                 } else {
@@ -611,7 +668,11 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                                 .contains("renderer-alias [renderer-alias]: unknown (policy: any)")
                         );
                         assert!(stdout.contains("current: modrinth:Project1@Version1"));
-                        for column in ["permitted", "compatible", "upstream"] {
+                        for column in [
+                            "permitted",
+                            "Minecraft/loader-compatible candidate",
+                            "upstream",
+                        ] {
                             assert!(stdout.contains(&format!("{column}: unknown")));
                         }
                         assert!(stdout.contains("provider-unavailable"));
@@ -711,5 +772,75 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             );
             assert_eq!(snapshot(root).files, before, "{invalid}/{mode}");
         }
+    }
+}
+
+#[test]
+fn journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams() {
+    let project = TestProject::new();
+    let root = project.dir();
+    fixture(root);
+    let before = snapshot(root).files;
+    for quiet in [false, true] {
+        let mut command = offline_command(root);
+        command.args(["outdated", "local", "--strict", "--json"]);
+        if quiet {
+            command.arg("--quiet");
+        }
+        let output = command.assert().success().get_output().clone();
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["schema"], 2);
+        assert_eq!(report["complete"], true);
+        assert_eq!(
+            report["scope"],
+            serde_json::json!({"kind":"selected-author-roots","roots":["local"],"total_roots":2,"retained_inventory":1})
+        );
+        assert_eq!(report["dependencies"].as_array().unwrap().len(), 1);
+        assert_eq!(report["dependencies"][0]["key"], "local");
+        assert_eq!(report["summary"]["manual"], 1);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        if quiet {
+            assert!(stderr.is_empty(), "{stderr}");
+        } else {
+            assert!(stderr.contains("Assessing 1 of 2 author roots"), "{stderr}");
+        }
+        assert_eq!(snapshot(root).files, before);
+    }
+    let output = offline_command(root)
+        .args(["outdated", "local", "--quiet"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("manual: 1"), "{text}");
+    assert!(text.contains("Scope: 1 of 2 author roots"));
+    assert!(
+        !text.contains("local [local]"),
+        "compact view repeated a manual row"
+    );
+    for (keys, code, diagnostic) in [
+        (
+            vec!["missing"],
+            empack_lib::EmpackExitCode::NotFound.as_i32(),
+            "Assessment key is not an explicit dependency: missing",
+        ),
+        (vec!["local", "local"], 2, "Repeated assessment key: local"),
+    ] {
+        let output = offline_command(root)
+            .arg("outdated")
+            .args(keys)
+            .assert()
+            .code(code)
+            .get_output()
+            .clone();
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains(diagnostic)
+        );
+        assert!(output.stdout.is_empty());
+        assert_eq!(snapshot(root).files, before);
     }
 }

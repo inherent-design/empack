@@ -30,6 +30,8 @@ Bootstrap dependency updates must retain Java 8 compatibility in packaged base c
 
 Do not automatically retry a failed mutating scenario. Preserve the useful failure evidence, diagnose it, and reset a disposable fixture or explicitly exercise recovery before retrying. Follow existing desktop and access restrictions when choosing where checks run.
 
+Provider JSON diagnostics use [`serde_path_to_error`](https://docs.rs/serde_path_to_error/0.1.20/serde_path_to_error/) in the shared provider decoder. Updates must retain field-path tracking, redaction of dynamic map keys and raw values, and rejection of trailing JSON. Run the provider parsing/assessment fixtures, including historical metadata versus eligible payload admission, alongside the normal Serde tests. The typed problem remains context on the original catalog error; changing the helper must not turn external evidence failures into transport outages or hide internal failures.
+
 ## Owned patches and workarounds
 
 Before an update, inspect Cargo overrides, Git dependencies, vendored code, patch files, local wrappers, and upstream-related source comments. Classify each finding: an upstream patch, an adapter policy, a test fixture, and a generated file have different owners. The Prism probe compiles pinned unmodified consumer source; empack's restricted configuration validator is product policy, not a patch to Prism.

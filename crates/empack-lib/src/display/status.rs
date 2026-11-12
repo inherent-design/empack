@@ -22,8 +22,8 @@ impl<'a> StatusDisplay<'a> {
     /// Output: `⠋ Checking tool dependencies...`
     pub fn checking(&self, task: &str) {
         let message = format!("Checking {}...", task);
-        println!("{}", self.styling.format_working(&message));
-        io::stdout().flush().unwrap_or(());
+        eprintln!("{}", self.styling.format_working(&message));
+        io::stderr().flush().unwrap_or(());
     }
 
     /// Display a success status with optional details
@@ -49,7 +49,7 @@ impl<'a> StatusDisplay<'a> {
         } else {
             format!("{}: {}", item, details)
         };
-        println!("{}", self.styling.format_error(&message));
+        eprintln!("{}", self.styling.format_error(&message));
     }
 
     /// Display a warning status with details
@@ -57,7 +57,7 @@ impl<'a> StatusDisplay<'a> {
     /// Example: `display.status().warning("experimental feature enabled")`
     /// Output: `! experimental feature enabled`
     pub fn warning(&self, message: &str) {
-        println!("{}", self.styling.format_warning(message));
+        eprintln!("{}", self.styling.format_warning(message));
     }
 
     /// Display an info status

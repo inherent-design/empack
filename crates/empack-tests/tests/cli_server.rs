@@ -98,6 +98,9 @@ impl Server {
         fs::write(self.program.parent().unwrap().join("java-fixture.json"), serde_json::to_vec(&json!({
             "stdout":stdout,"stderr":stderr,"probe_status":probe_status,"runtime_status":runtime_status,
             "observations":self.fixtures.path().join("observations"),
+            "bootstrap_java":self.instance.dir().join(".empack-tools/empack-bootstrap.jar").is_file().then(empack_tests::harness::process::java_bin),
+            "engine":empack_bin(),
+            "development_engine":empack_tests::harness::process::expected_cli_version() == "0.0.0-dev",
         })).unwrap()).unwrap();
         for name in ["probe.json", "runtime.json"] {
             let path = self.fixtures.path().join("observations").join(name);
@@ -184,6 +187,16 @@ impl Server {
         let root = self.instance.dir();
         let export = self.fixtures.path().join("export");
         let bootstrap = root.join(".empack-consumer");
+        if managed {
+            let tools = root.join(".empack-tools");
+            fs::create_dir_all(&tools).unwrap();
+            fs::copy(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../bootstrap/target/empack-bootstrap.jar"),
+                tools.join("empack-bootstrap.jar"),
+            )
+            .unwrap();
+        }
         fs::create_dir_all(bootstrap.join("assets")).unwrap();
         for name in ["release.json", "assets/server.jar"] {
             fs::copy(export.join(name), bootstrap.join(name)).unwrap();

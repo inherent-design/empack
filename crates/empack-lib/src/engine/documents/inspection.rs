@@ -60,7 +60,7 @@ impl DocumentCodec {
             pack: intent.metadata.name.clone(),
             lock_status: match &bound { None => "missing", Some(Ok(_)) => "current", Some(Err(_)) => "stale" },
             lock_reason: bound.and_then(|value| value.err()).map(|error| format!("{error:#}")),
-            runtime_satisfied: prior.map(|prior| empack_core::synchronization::runtime_satisfies(&intent.runtime, &prior.lock().runtime) && intent.runtime.acceptable_versions == prior.lock().acceptable_versions),
+            runtime_satisfied: prior.map(|prior| prior.runtime_satisfied(source)),
             dependencies: keys.into_iter().map(|key| {
                 let root = intent.roots.get(&key);
                 let locked = prior.and_then(|prior| prior.lock().dependencies.get(&key));
@@ -156,6 +156,19 @@ mod tests {
                 "{case}"
             );
             assert_eq!(satisfied.is_ok(), case == "display", "{case}");
+            let error = prior.bind(&source).unwrap_err();
+            let changed = error.downcast_ref::<AuthoringChanged>().unwrap();
+            assert!(changed.runtime_satisfied);
+            assert_eq!(changed.unresolved_roots.contains(&key), case != "display");
+            assert!(format!("{error:#}").contains("empack sync"));
+            assert_eq!(
+                crate::engine::diagnostics::Diagnostic::from_error(
+                    &error,
+                    crate::engine::diagnostics::DiagnosticPhase::Preparation
+                )
+                .code,
+                crate::engine::diagnostics::DiagnosticCode::AuthoringChanged
+            );
         }
     }
     #[test]

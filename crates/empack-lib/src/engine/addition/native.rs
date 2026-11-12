@@ -131,9 +131,10 @@ pub(in crate::engine) fn plan_update(
     workspace: MutationSnapshot,
     group: &AdditionGroup,
     acquired: DependencyContents,
+    pins: &BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
-    plan_change(workspace, group, acquired, ChangeMode::Update, cancel)
+    plan_change(workspace, group, acquired, ChangeMode::Update(pins), cancel)
 }
 pub(in crate::engine) fn plan_replacement(
     workspace: MutationSnapshot,
@@ -152,7 +153,7 @@ pub(in crate::engine) fn plan_replacement(
 }
 enum ChangeMode<'a> {
     Add,
-    Update,
+    Update(&'a BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>),
     Replace(&'a ReplacementSelection),
 }
 fn plan_change(
@@ -168,7 +169,9 @@ fn plan_change(
     let prior = workspace.prior_lock().context("Addition requires a lock")?;
     let candidate = match mode {
         ChangeMode::Add => AdditionCandidate::prepare(workspace.intent(), prior, group)?,
-        ChangeMode::Update => AdditionCandidate::prepare_update(workspace.intent(), prior, group)?,
+        ChangeMode::Update(pins) => {
+            AdditionCandidate::prepare_update_with_pins(workspace.intent(), prior, group, pins)?
+        }
         ChangeMode::Replace(selection) => {
             AdditionCandidate::prepare_replacement(workspace.intent(), prior, group, selection)?
         }

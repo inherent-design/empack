@@ -30,6 +30,36 @@ pub struct InvalidDocument {
     origin: String,
 }
 
+/// Authored intent changed; this is not a stale native file or recovery journal.
+#[derive(Debug)]
+pub struct AuthoringChanged {
+    pub runtime_satisfied: bool,
+    pub unresolved_roots: Vec<DependencyKey>,
+}
+impl std::fmt::Display for AuthoringChanged {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Authored project or bindings changed since the lock was resolved; run empack sync with the same project selection to reconcile the author changes")?;
+        if !self.runtime_satisfied {
+            f.write_str("; the runtime request changed, so review its resolution or use empack migrate for a deliberate runtime change")?;
+        }
+        if !self.unresolved_roots.is_empty() {
+            f.write_str("; selections requiring resolution: ")?;
+            for (index, key) in self.unresolved_roots.iter().take(16).enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                f.write_str(key.as_str())?;
+            }
+            if self.unresolved_roots.len() > 16 {
+                f.write_str(", …")?;
+            }
+            f.write_str(". Resolve any reported retained dependents in the same reviewed group")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for AuthoringChanged {}
+
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
@@ -89,11 +119,35 @@ impl DecodedLock {
     }
     /// Only binding to current intent establishes a coherent resolved project.
     pub fn bind(&self, source: &DecodedIntent) -> Result<ResolvedProject> {
-        Ok(ResolvedProject::validate(
+        ResolvedProject::validate(
             source.intent.clone(),
             self.lock.clone(),
             source.semantic_revision,
-        )?)
+        )
+        .map_err(|error| {
+            let error = anyhow::Error::new(error);
+            if self.lock.intent_revision == source.semantic_revision {
+                return error;
+            }
+            error.context(AuthoringChanged {
+                runtime_satisfied: self.runtime_satisfied(source),
+                unresolved_roots: source
+                    .intent
+                    .roots
+                    .keys()
+                    .filter(|key| {
+                        self.lock.dependencies.get(*key).is_none_or(|locked| {
+                            source.intent.validate_root_selection(key, locked).is_err()
+                        })
+                    })
+                    .cloned()
+                    .collect(),
+            })
+        })
+    }
+    fn runtime_satisfied(&self, source: &DecodedIntent) -> bool {
+        empack_core::synchronization::runtime_satisfies(&source.intent.runtime, &self.lock.runtime)
+            && source.intent.runtime.acceptable_versions == self.lock.acceptable_versions
     }
 }
 /// Whether a prepared edit preserves the original syntax or explicitly reformats it.

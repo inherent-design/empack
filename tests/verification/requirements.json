@@ -857,7 +857,8 @@
           "id": "UX-004.cli-path-discovery-is-observational",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap",
+            "empack-tests::cli_offline::cli_bootstrap_probe_ignores_configuration_and_cannot_execute_work"
           ],
           "required_platforms": [
             "linux",
@@ -869,6 +870,7 @@
             "telemetry"
           ],
           "assertions": [
+            "The standalone native interoperability probe ignores malformed environment/dotenv configuration and emits exactly its protocol; added command/approval arguments cannot execute work",
             "Empty controlled PATH reports missing Java and required native capabilities without creating state or attempting a configured HTTP request",
             "Controlled Java fixtures advertising old, current and malformed versions are discovered without execution or compatibility certification; directories and Unix nonexecutable files cannot masquerade as executable Java",
             "Inspection retains malformed author text, supplied tool bytes, empty directories and captured permissions and explicitly separates path discovery from selected-runtime compatibility"
@@ -2391,7 +2393,8 @@
             "empack-lib::engine::acquisition::tests::dropping_acquisition_future_closes_and_retires_its_verifier",
             "empack-lib::engine::acquisition::tests::mirror_retry_counts_partial_bytes_from_the_failed_attempt",
             "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires",
-            "empack-lib::engine::api::tests::failure_order_preserves_actual_errors_when_cancellation_races"
+            "empack-lib::engine::api::tests::failure_order_preserves_actual_errors_when_cancellation_races",
+            "empack-lib::engine::acquisition::tests::acquisition_progress_observes_bytes_without_claiming_completion_or_hiding_cancellation"
           ],
           "required_platforms": [
             "linux",
@@ -2406,7 +2409,8 @@
             "Streamed bytes and partial failed mirrors consume the original allowance; headers, digests, HTTP status and source policy cannot substitute for verified bytes",
             "Stalled headers and bodies meet the transfer deadline without waiting for EOF; cancellation and caller abandonment retire the socket and release resource reservations",
             "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately",
-            "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure"
+            "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure",
+            "Actual received byte counts remain provisional; an incomplete download has no terminal success and cancellation retires its socket and reservations"
           ]
         },
         {
@@ -4205,7 +4209,8 @@
           "id": "UX-025.public-stale-constraints",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs"
+            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs",
+            "empack-tests::journey_selection::journey_cli_changed_author_pin_reports_sync_without_mutation"
           ],
           "required_platforms": [
             "linux",
@@ -4218,7 +4223,8 @@
           ],
           "assertions": [
             "Manifest explanation and synchronization agree for unchanged, display-only, source, missing-source, layout and binding changes",
-            "Refused resolution preserves inputs; permitted moves retain exact bytes and authoring, retire only the previous owned path and converge"
+            "Refused resolution preserves inputs; permitted moves retain exact bytes and authoring, retire only the previous owned path and converge",
+            "Changed author pins produce typed reconciliation guidance through update and JSON assessment without network work or mutation"
           ]
         },
         {
@@ -4289,7 +4295,9 @@
           "test_ids": [
             "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory",
             "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection",
-            "empack-lib::application::engine_host::cli::tests::primary_placement_update_survives_filename_change_and_converges_with_sync"
+            "empack-lib::application::engine_host::cli::tests::primary_placement_update_survives_filename_change_and_converges_with_sync",
+            "empack-lib::application::engine_host::cli::tests::reviewed_update_pin_changes_only_the_named_author_selection",
+            "empack-lib::engine::api::addition_tests::independent_batch::partial_pinned_update_publishes_only_successful_groups_author_pins"
           ],
           "required_platforms": [
             "linux",
@@ -4306,7 +4314,9 @@
             "Displayed per-root preview and completed receipt report one changed and one retained selection; runtime, required edges, all unselected records and raw authoring/bindings remain unchanged",
             "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption",
             "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations",
-            "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version"
+            "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version",
+            "Repeated per-key exact pins replace only the named roots' automatic release preferences through the public host update path, preserve unrelated authored fields, and reject invalid/duplicate/unrequested values without edits; dry-run and atomic/independent batches retain approval semantics",
+            "Partial independent updates publish only successful groups author-pin edits and receipts; blocked groups retain their original exact selection and author pin"
           ],
           "remaining_group_evidence": "The shared host path establishes operation-policy precedence with distinguishing candidates; ordinary binary translation has a separate live case below, and every declared execution variant remains required"
         },
@@ -4361,7 +4371,8 @@
           "test_ids": [
             "empack-lib::engine::addition::update_tests::update_binds_aliases_preserves_raw_intent_and_retains_unselected_installations",
             "empack-lib::engine::addition::update_tests::transitive_update_requires_dependents_and_does_not_promote_temporary_roots",
-            "empack-lib::engine::addition::update_tests::update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities"
+            "empack-lib::engine::addition::update_tests::update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities",
+            "empack-lib::engine::addition::update_tests::reviewed_update_pins_preserve_other_intent_and_require_the_dependent_group"
           ],
           "required_platforms": [
             "linux",
@@ -4374,7 +4385,8 @@
           ],
           "assertions": [
             "Updates bind aliases without changing raw intent or unselected installations",
-            "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced"
+            "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced",
+            "Explicit reviewed author-pin updates preserve all other authored intent and require retained dependents; mismatched or unrequested pin changes fail"
           ]
         },
         {
@@ -5126,6 +5138,9 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::providers::assessment::tests::changed_rows_require_joint_validation_and_pins_remain_exact",
+            "empack-lib::engine::providers::assessment::tests::selected_assessment_retains_context_and_limits_catalog_work",
+            "empack-lib::engine::providers::assessment::tests::noncandidate_payload_limits_do_not_poison_current_catalog_metadata",
+            "empack-lib::engine::providers::problem::tests::typed_json_errors_identify_fields_without_echoing_values_or_map_keys",
             "empack-lib::engine::providers::assessment::tests::assessment_uses_authored_preferences_and_reports_each_effective_policy",
             "empack-lib::engine::providers::assessment::tests::manual_sources_are_not_reported_as_current_provider_versions",
             "empack-lib::engine::providers::compatible::tests::assessment_distinguishes_policy_compatibility_and_complete_upstream_observation",
@@ -5141,6 +5156,9 @@
             "telemetry"
           ],
           "assertions": [
+            "Catalog identity/runtime metadata is validated for every observed record; historical noncandidate payload placement errors do not poison eligible candidates, while exact selections and runtime-eligible payloads still reject empty/duplicate/nonportable files",
+            "Typed provider field/invariant diagnostics retain canonical project/selection context without raw values, dynamic map keys or trailing-JSON acceptance",
+            "Selected-root reports query only selected catalogs plus required closure, retain unselected locked inventory as context, reject unknown/repeated keys before network access, and expose actual root/page progress without resetting budgets",
             "Independent complete report expectations distinguish current, permitted, compatible and upstream observations; exact pins remain exact and manual roots are not provider versions",
             "Root and project release preferences affect permitted choices without conflating compatibility or newest observed metadata; incomplete pagination cannot claim a complete upstream observation"
           ]
@@ -5217,6 +5235,7 @@
           "boundary": "X",
           "test_ids": [
             "empack-tests::journey_selection::journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits",
+            "empack-tests::journey_selection::journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams",
             "empack-tests::cli_offline::cli_strict_outdated_accepts_complete_empty_assessment"
           ],
           "required_platforms": [
@@ -5229,6 +5248,7 @@
             "telemetry"
           ],
           "assertions": [
+            "Schema2 scope, disjoint derived summary and complete predicate agree with strict-mode text/JSON; exact-key filtering can complete a selected manual root while an unselected provider is not assessed; progress uses stderr and quiet suppresses it without dropping results",
             "The actual executable emits complete independent JSON expectations and explanatory text for manual and unavailable-provider rows; strict mode fails only the incomplete assessment after rendering its report",
             "A manual-only root set remains complete despite retained non-root provider records; every invocation preserves all source, lock, binding, template and prior-artifact bytes",
             "An empty assessment succeeds in strict mode without manufacturing provider observations"
@@ -12286,7 +12306,8 @@
           "id": "UX-071.coupled-prism-publication",
           "boundary": "N",
           "test_ids": [
-            "empack-lib::engine::api::instance::tests::prism_runtime_and_content_publish_together_and_keep_extra_components"
+            "empack-lib::engine::api::instance::tests::prism_runtime_and_content_publish_together_and_keep_extra_components",
+            "empack-lib::engine::api::instance::tests::prism_read_only_profile_tolerates_launcher_saves_but_rejects_component_changes"
           ],
           "required_platforms": [
             "linux",
@@ -12299,6 +12320,7 @@
           ],
           "assertions": [
             "A late profile edit produces StaleSnapshot before new mod bytes are published, preserving the exact edited inventory",
+            "Same-runtime atomic profile replacements and recognized launcher cache saves are read-only; game/extra-component versions, disabled or missing required components, and unknown setting changes invalidate preparation without rewriting the profile or seed-owned options",
             "Runtime and content update together with the complete expected Minecraft/Fabric profile, user components and metadata",
             "Old bootstrap preparation cannot roll back the installed update; explicit rollback restores the complete prior profile and mod inventory while preserving a played world"
           ]

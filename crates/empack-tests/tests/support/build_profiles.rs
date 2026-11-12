@@ -2,7 +2,9 @@
 //! No launcher UI or game execution is implied by checking generated integration.
 use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
-    archive::{distribution_inventory, tar_gz_members, zip_members},
+    archive::{
+        BOOTSTRAP_PATH, Member, assert_bootstrap_member, distribution_inventory, zip_members,
+    },
     process::{TestProject, offline_command},
 };
 use serde_json::{Value, json};
@@ -103,11 +105,14 @@ impl Fixture {
             .success();
         for &(output, managed, subscribed) in outputs {
             let path = self.project.dir().join(output);
-            let members = if output.ends_with(".tar.gz") {
-                tar_gz_members(&path)
-            } else {
-                zip_members(&path)
-            };
+            let members = distribution_inventory(
+                &path,
+                if output.ends_with(".tar.gz") {
+                    "tar.gz"
+                } else {
+                    "zip"
+                },
+            );
             assert_inventory(&members, managed, subscribed, &CONTENT);
             expected.insert(output.into(), fs::read(path).unwrap());
         }
@@ -124,22 +129,30 @@ fn hash(bytes: &[u8]) -> String {
 }
 
 fn assert_inventory(
-    members: &BTreeMap<String, Vec<u8>>,
+    members: &BTreeMap<String, Member>,
     managed: bool,
     subscribed: bool,
     content: &[(&str, &[u8])],
 ) {
+    let bytes = |name: &str| {
+        members[name]
+            .small
+            .as_ref()
+            .expect("small fixture metadata")
+    };
     let mut names = BTreeSet::from(["instance.cfg".to_owned(), "mmc-pack.json".to_owned()]);
     assert_eq!(
-        serde_json::from_slice::<Value>(&members["mmc-pack.json"]).unwrap(),
+        serde_json::from_slice::<Value>(bytes("mmc-pack.json")).unwrap(),
         json!({
             "formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.21.1","important":true}]
         })
     );
     let (prepare, wrapper) = if managed {
+        names.insert(BOOTSTRAP_PATH.into());
+        assert_bootstrap_member(&members[BOOTSTRAP_PATH]);
         let path = ".minecraft/.empack-consumer/release.json";
         names.insert(path.into());
-        let descriptor: Value = serde_json::from_slice(&members[path]).unwrap();
+        let descriptor: Value = serde_json::from_slice(bytes(path)).unwrap();
         assert_eq!(descriptor["pack"], "profiles.fixture");
         assert_eq!(descriptor["version"], "1");
         assert_eq!(descriptor["require_subscription"], subscribed);
@@ -178,13 +191,14 @@ fn assert_inventory(
                 json!({"kind":"asset","path":format!("assets/{digest}")})
             );
             let member = format!(".minecraft/.empack-consumer/assets/{digest}");
-            assert_eq!(members[&member], bytes);
+            assert_eq!(members[&member].small.as_deref().unwrap(), bytes);
             names.insert(member);
         }
         (
             format!(
-                "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
-                hash(&members[path]),
+                "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
+                empack_tests::harness::process::expected_automation_version(),
+                hash(bytes(path)),
                 if subscribed {
                     " --require-subscription"
                 } else {
@@ -192,14 +206,15 @@ fn assert_inventory(
                 }
             ),
             format!(
-                "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime{} --",
+                "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- --workdir \"$INST_DIR\" --yes instance launch --java-runtime{} --",
+                empack_tests::harness::process::expected_automation_version(),
                 if subscribed { " --check-updates" } else { "" }
             ),
         )
     } else {
         for &(path, bytes) in content {
             let member = format!(".minecraft/{path}");
-            assert_eq!(members[&member], bytes);
+            assert_eq!(members[&member].small.as_deref().unwrap(), bytes);
             names.insert(member);
         }
         (String::new(), String::new())
@@ -219,7 +234,7 @@ fn assert_inventory(
     };
     // The bundled template follows checkout line endings. Both LF and CRLF are
     // supported Prism syntax; normalize only CRLF, never fields or asset bytes.
-    let configuration = String::from_utf8(members["instance.cfg"].clone()).unwrap();
+    let configuration = String::from_utf8(bytes("instance.cfg").clone()).unwrap();
     let configuration = configuration.replace("\r\n", "\n");
     assert!(!configuration.contains('\r'), "bare CR in generated INI");
     assert_eq!(
@@ -319,18 +334,10 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
             let output = format!("dist/Profile fixture-1-prism-{delivery}.{format}");
             let archive = root.join(&output);
             let members = distribution_inventory(&archive, format);
-            let mut bytes: BTreeMap<_, _> = members
-                .iter()
-                .map(|(name, member)| {
-                    (
-                        name.clone(),
-                        member.small.clone().expect("small fixture member"),
-                    )
-                })
-                .collect();
+            let mut base = members.clone();
             for &(name, expected) in rendered {
                 assert_eq!(
-                    bytes.remove(name).unwrap(),
+                    base.remove(name).unwrap().small.as_deref().unwrap(),
                     expected,
                     "{delivery}/{format}/{name}"
                 );
@@ -353,7 +360,7 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
                     members["show.sh"].mode,
                 ));
             }
-            assert_inventory(&bytes, delivery == "references", false, &CONTENT);
+            assert_inventory(&base, delivery == "references", false, &CONTENT);
             assert!(
                 members
                     .iter()
@@ -549,7 +556,12 @@ fn cli_managed_prism_rejects_consumer_grammar_mismatches_before_replacing_artifa
         // Validate the complete generated baseline using literal source content
         // before retaining it as an unchanged-content comparison for custom INI.
         let baseline = zip_members(&root.join(&output));
-        assert_inventory(&baseline, true, subscribed, &CONTENT);
+        assert_inventory(
+            &distribution_inventory(&root.join(&output), "zip"),
+            true,
+            subscribed,
+            &CONTENT,
+        );
         let generated = std::str::from_utf8(&baseline["instance.cfg"]).unwrap();
         let setting = |name: &str| {
             generated
@@ -857,8 +869,16 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
             before.retain(|path, _| !path.starts_with("dist"));
         }
         command.assert().success();
-        let mut client = tar_gz_members(&root.join(SUBSCRIBED));
-        assert_eq!(client.remove("notice.txt").unwrap(), notice);
+        let mut client = distribution_inventory(&root.join(SUBSCRIBED), "tar.gz");
+        assert_eq!(
+            client
+                .remove("notice.txt")
+                .unwrap()
+                .small
+                .as_deref()
+                .unwrap(),
+            notice
+        );
         assert_inventory(
             &client,
             true,
@@ -1022,7 +1042,12 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
             .success();
         let artifact = fixture.project.dir().join(REFERENCE);
         let members = zip_members(&artifact);
-        assert_inventory(&members, true, false, &content);
+        assert_inventory(
+            &distribution_inventory(&artifact, "zip"),
+            true,
+            false,
+            &content,
+        );
         author.insert(REFERENCE.into(), fs::read(&artifact).unwrap());
         assert_eq!(snapshot(fixture.project.dir()).files, author);
         let descriptor_name = ".minecraft/.empack-consumer/release.json";
@@ -1043,7 +1068,12 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
                 .unwrap(),
         )
         .unwrap();
-        let embedded_digest = prepare.strip_prefix("empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 ").unwrap()
+        let command_prefix = format!(
+            "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- ",
+            empack_tests::harness::process::expected_automation_version()
+        );
+        let engine_prepare = prepare.strip_prefix(&command_prefix).unwrap();
+        let embedded_digest = engine_prepare.strip_prefix("--workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 ").unwrap()
             .strip_suffix(" --layout prism --side client").unwrap();
         assert_eq!(embedded_digest, digest);
         let instance = tempfile::Builder::new()

@@ -11,6 +11,7 @@ import shutil
 import ssl
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +21,9 @@ import warnings
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT.parent / "scripts"))
+from verification.compiler import compiler_environment
+
 JAR = ROOT / "target/empack-bootstrap.jar"
 JAVA = str(Path(os.environ["JAVA_HOME"]) / "bin/java") if "JAVA_HOME" in os.environ else "java"
 _fixture_home = None
@@ -32,7 +36,7 @@ def native_engine():
         _fixture_home = tempfile.TemporaryDirectory(prefix="empack bootstrap native fixture ")
         _engine = Path(_fixture_home.name) / ("engine.exe" if os.name == "nt" else "engine")
         subprocess.run(["rustc", "--edition=2024", str(ROOT / "tests/fixtures/engine.rs"),
-                        "-o", str(_engine)], check=True)
+                        "-o", str(_engine)], check=True, env=compiler_environment(os.environ))
     return _engine
 
 

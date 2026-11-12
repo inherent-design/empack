@@ -368,16 +368,22 @@ async fn execute_approved(
         run_runtime: runs_runtime,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
+    let mut progress = progress::ProgressDisplay::new(session, false);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let outcome = loop {
         tokio::select! {
+            biased;
             outcome = handle.wait() => break outcome,
-            _ = ticks.tick() => if session.process().check_cancelled().is_err() {
-                handle.cancel();
-                break handle.wait().await;
+            _ = ticks.tick() => {
+                progress.acquisition(handle.progress());
+                if session.process().check_cancelled().is_err() {
+                    handle.cancel();
+                    break handle.wait().await;
+                }
             }
         }
     };
+    drop(progress);
     let result = match &*outcome {
         OperationOutcome::Completed(ExecutionOutcome::Completed(receipt)) => {
             completed(receipt).map(|message| session.display().status().complete(&message))
@@ -511,6 +517,7 @@ pub(super) mod tests;
 
 mod initialize;
 mod java;
+mod progress;
 pub use initialize::initialize;
 
 mod build;
@@ -541,12 +548,15 @@ where
         let _ = sender.send(work(scope).await);
         Ok(())
     })?;
+    let mut progress = progress::ProgressDisplay::new(session, false);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let mut cancellation_requested = false;
     let outcome = loop {
         tokio::select! {
+            biased;
             result = handle.wait() => break result,
             _ = ticks.tick(), if !cancellation_requested => {
+                progress.acquisition(handle.progress());
                 if session.process().check_cancelled().is_err() {
                     handle.cancel();
                     cancellation_requested = true;
@@ -554,6 +564,7 @@ where
             }
         }
     };
+    drop(progress);
     // A service may already have published a record or deleted owned content.
     // Retire it and preserve its terminal result instead of replacing that evidence
     // with the request that caused cancellation.

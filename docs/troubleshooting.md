@@ -4,7 +4,7 @@ Use `empack status --json` for document and lock state, `manifest diff` for auth
 
 ## Reference distributions
 
-New projects use referenced Modrinth, Prism and server snapshots. Modrinth archives work through a compatible launcher. Reference Prism/server exports require empack on the recipient machine; their scripts acquire the exact released files and stop when required inputs are missing. Restricted files remain explicit verified inputs.
+New projects use referenced Modrinth, Prism and server snapshots. Modrinth archives work through a compatible launcher. Managed Prism/server exports carry the [bootstrap JAR](design/bootstrap.md), which selects their exact native empack version locally, from its cache or by verified download. Java must already be available. Preparation acquires the exact released files and stops when required inputs are missing; restricted files remain explicit verified inputs.
 
 Reference delivery can still include authored files and prepared runtime assets. Review those assets before distribution. Choose `--delivery bundled` deliberately when you want included dependency bytes. Existing profiles are preserved; schema-6 `client: prism` and `server: server` presets still mean bundled snapshots. To change an existing project, write `target: prism` or `target: server` with explicit `delivery: references`, run `sync`, and inspect `build --explain`.
 
@@ -16,13 +16,13 @@ Empack preparation and updates preserve an existing regular file when the incomi
 
 ## Partial assessments and retained selections
 
-`outdated` separates the current, policy-permitted, compatible and upstream selections. A newer beta can be compatible while `prefer-stable` retains a release. An exact pin remains exact. A successful partial report does not mean every root was assessed; `outdated --strict --json` gives automation a failing exit status for incomplete evidence while preserving the report.
+`outdated` separates the current, policy-permitted, Minecraft/loader-compatible and upstream selections. A newer beta can match the runtime while `prefer-stable` retains a release. An exact pin remains exact. A successful partial report does not mean every root was assessed; `outdated --strict --json` gives automation a failing exit status for incomplete evidence while preserving the report.
 
-Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment requires complete inputs. Update preparation still validates retained inventory and placements separately.
+Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment identifies the roots blocking it. Update preparation still validates retained inventory and placements separately. Use exact-key `outdated KEY…` to limit an investigation and `--details` for held/manual rows; the full JSON report identifies its scope. Field/invariant diagnostics describe malformed eligible evidence without dumping provider responses. See [assessment semantics](design/assessment.md).
 
 `update --continue-independent` isolates preparation/publication conflicts after input resolution succeeds. It does not isolate catalog failures or malformed local sources that fail before a complete candidate is available. Those failures publish nothing. Use the named dependency to inspect the requested source, pin, game and loader. Do not remove dependencies merely to make a report succeed.
 
-A retained-dependent error names records that must be resolved in the same request. Include those keys in the selected update only when you intend to assess them too. Companion files need explicit roles and per-file participation in `empack.bindings.yml`; selecting a primary file alone does not decide where a companion resource pack belongs.
+A retained-dependent error names records that must be resolved in the same request. Include those keys in the selected update only when you intend to assess them too. Repeated `--pin KEY=ID` explicitly selects reviewed provider versions for that group; ordinary updates retain exact author pins. If you already edited author files or bindings, use `manifest diff` and `sync` to reconcile that intent first. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity). Companion files need explicit roles and per-file participation in `empack.bindings.yml`; selecting a primary file alone does not decide where a companion resource pack belongs.
 
 ## Runtime and environment evidence
 
