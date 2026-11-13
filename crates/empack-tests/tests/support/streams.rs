@@ -171,8 +171,13 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
             "combined",
             "forced",
             "automatic",
+            "logged",
         ] {
-            if matches!(mode, "interrupt" | "combined" | "forced" | "automatic") && width != 80 {
+            if matches!(
+                mode,
+                "interrupt" | "combined" | "forced" | "automatic" | "logged"
+            ) && width != 80
+            {
                 continue;
             }
             let capture = tempfile::NamedTempFile::new().unwrap();
@@ -180,7 +185,11 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
             command
                 .env_remove("NO_COLOR")
                 .env("TERM", "xterm-256color")
-                .env("LC_ALL", "en_US.UTF-8")
+                .env("LC_ALL", "en_US.UTF-8");
+            if mode == "logged" {
+                command.args(["--log-level", "2"]);
+            }
+            command
                 .args([
                     "--color",
                     match mode {
@@ -246,6 +255,13 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
                 assert!(screen.contains("interrupted"), "{screen}");
             } else if mode == "combined" {
                 assert!(screen.contains("Java: reported major 21"), "{screen}");
+            } else if mode == "logged" {
+                let raw = String::from_utf8_lossy(&rendered);
+                assert!(raw.contains("Logger initialized successfully"), "{raw}");
+                assert!(
+                    !raw.contains("empack.command"),
+                    "command tracing created another progress region: {raw}"
+                );
             } else {
                 assert!(screen.trim().is_empty(), "{width} {mode}: {screen}");
             }

@@ -11,18 +11,15 @@ use empack_core::{
 
 /// Execute CLI commands through session-owned native engine hosts
 pub async fn execute_command(config: CliConfig) -> Result<()> {
-    execute_command_with_cancellation(config, Default::default()).await
+    let session = CommandSession::new(config.app_config);
+    execute_invocation(config.command, &session).await
 }
 
-pub async fn execute_command_with_cancellation(
-    config: CliConfig,
-    cancellation: super::process_runtime::Cancellation,
-) -> Result<()> {
-    // Create command session (owns all ephemeral state)
-    let session = CommandSession::new(config.app_config).with_cancellation(cancellation.clone());
-    cancellation.check()?;
+/// Dispatch parsed CLI input using the caller's terminal and cancellation owner.
+pub async fn execute_invocation(command: Option<Commands>, session: &dyn Session) -> Result<()> {
+    session.process().check_cancelled()?;
 
-    let command = match config.command {
+    let command = match command {
         Some(cmd) => cmd,
         None => {
             session
@@ -38,7 +35,7 @@ pub async fn execute_command_with_cancellation(
     };
 
     // Dispatch to session-aware command handlers
-    execute_command_with_session(command, &session).await
+    execute_command_with_session(command, session).await
 }
 
 /// Execute one command using the same native engine host as library clients.

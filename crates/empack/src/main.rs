@@ -54,7 +54,8 @@ async fn main() -> std::process::ExitCode {
     .unwrap_or_else(|_| empack_lib::TerminalCapabilities::minimal());
     let mut logger_config = config.app_config.to_logger_config(&caps);
     logger_config.output = log_output;
-    if let Err(error) = empack_lib::Logger::init(logger_config) {
+    let session = empack_lib::application::session::CommandSession::new(config.app_config);
+    if let Err(error) = empack_lib::Logger::init(logger_config, session.multi_progress()) {
         eprintln!(
             "empack: logger init failed: {}",
             empack_lib::terminal::display_text(&error.to_string())
@@ -63,6 +64,7 @@ async fn main() -> std::process::ExitCode {
     empack_lib::terminal::cursor::force_show_cursor();
     empack_lib::terminal::cursor::install_panic_hook();
     let cancellation = Cancellation::default();
+    let session = session.with_cancellation(cancellation.clone());
     let signal_token = cancellation.clone();
     // Register before a command can enter a synchronous prompt. Registering
     // inside a spawned future would leave its first poll racing that prompt.
@@ -89,11 +91,8 @@ async fn main() -> std::process::ExitCode {
                     .as_process_exit_code();
             }
         };
-    let result = empack_lib::application::commands::execute_command_with_cancellation(
-        config,
-        cancellation.clone(),
-    )
-    .await;
+    let result =
+        empack_lib::application::commands::execute_invocation(config.command, &session).await;
     drop(bootstrap);
     if let Some(listener) = listener {
         listener.abort();

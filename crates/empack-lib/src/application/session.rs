@@ -583,6 +583,11 @@ impl CommandSession {
         self.process_provider.cancellation = cancellation;
         self
     }
+
+    /// Share terminal coordination with this command's diagnostic writer.
+    pub fn multi_progress(&self) -> Arc<MultiProgress> {
+        self.multi_progress.clone()
+    }
 }
 impl Session for CommandSession {
     fn display(&self) -> &dyn DisplayProvider {

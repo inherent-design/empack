@@ -1816,7 +1816,8 @@
           "assertions": [
             "Actual CLI progress is observed before completion and leaves no temporary text on final 12-, 40- and 80-column terminal screens; JSON stdout stays parseable and ordinary result text remains present",
             "Quiet produces no provisional checking text; automatic and explicit always/never color follow the selected stream palette, including combined terminals and stderr terminal with redirected stdout",
-            "Host interruption during the controlled version response returns 130 with its final diagnostic, restores the visible cursor, preserves workspace bytes and permits a subsequent ordinary operation"
+            "Host interruption during the controlled version response returns 130 with its final diagnostic, restores the visible cursor, preserves workspace bytes and permits a subsequent ordinary operation",
+            "Verbose logging retains its diagnostic messages and JSON separation without creating a second command-span animation"
           ],
           "remaining_group_evidence": "Controlled slow local version response and real Unix PTYs; does not establish real JVM, game or graphical launcher acceptance."
         }
