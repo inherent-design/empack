@@ -79,7 +79,7 @@ pub(in crate::application) async fn dispatch(
                 files,
                 downloads_dir,
                 open_downloads,
-                import_options,
+                *import_options,
             )
             .await
         }
@@ -132,10 +132,8 @@ async fn resume(
         "Selected pending operation is stale; retain it for inspection or explicitly discard it"
     );
     ensure!(
-        selected.kind == PendingKind::Import
-            || (import_options.import_optional_default.is_none()
-                && !import_options.import_local_files),
-        "Import options require a pending import"
+        selected.kind == PendingKind::Import || import_options == Default::default(),
+        crate::application::cli::CommandInputRequired("Import options require a pending import")
     );
     let mut files = associations(&selected, files)?;
     if selected.kind == PendingKind::Build {
@@ -258,6 +256,18 @@ async fn resume(
                     import_files: files,
                     import_optional_default: import_options.import_optional_default,
                     import_local_files: import_options.import_local_files,
+                    exclude_auxiliary: import_options.exclude_auxiliary,
+                    force: import_options.replace_project,
+                    modloader: import_options.modloader,
+                    loader_version: import_options.loader_version,
+                    mc_version: import_options.mc_version,
+                    java: import_options.java,
+                    author: import_options.author,
+                    pack_name: import_options.pack_name,
+                    pack_version: import_options.pack_version,
+                    datapack_folder: import_options.datapack_folder,
+                    world_folder: import_options.world_folder,
+                    game_versions: import_options.game_versions,
                     ..Default::default()
                 },
                 Some(selected.id),

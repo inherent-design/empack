@@ -6028,7 +6028,8 @@
           "assertions": [
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
             "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory",
-            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow",
+            "Public pending resume accepts explicit import Java/runtime, content-folder and metadata options, preserving Unicode author values through sync and byte-exact export checks"
           ]
         },
         {
@@ -6358,6 +6359,29 @@
             "Malformed and schema-only unknown-header controls remain; restoring test-owned supported bytes restores the original public ID and obligations without authorization, while discard remains explicit"
           ],
           "remaining_group_evidence": "Schema fault injection belongs to the fixture; every observation and refusal uses ordinary public commands. This does not establish migration support, physical reboot or any unexecuted host/product/package variant."
+        },
+        {
+          "id": "UX-035.import-interpretation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::shared_pending_import_preserves_interpretation_and_replacement_choices",
+            "empack-lib::application::engine_host::build::tests::native_build_missing_content_is_read_only_and_exact_supplied_bytes_complete_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A retained import accepts explicit auxiliary exclusion, Java/runtime selection, content folders, metadata and additional accepted versions through the same import interpreter",
+            "Replacing an existing project requires an explicit replacement choice and fresh native preparation; refusal and dry-run preserve all project/state/input bytes",
+            "Resumption verifies the supplied file against the retained archive, preserves ordinary Unicode author metadata and removes the selected pending record after successful publication",
+            "Import-only arguments on saved builds return a usage error before Downloads scanning or browser launch, preserving the complete workspace"
+          ]
         }
       ],
       "owner_now": [

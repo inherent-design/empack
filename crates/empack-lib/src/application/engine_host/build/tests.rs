@@ -739,6 +739,26 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             .unwrap();
     let operation = &shared.operations[0];
     let saved_tree = snapshot(root.path());
+    let wrong_kind = crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        crate::application::cli::PendingCommand::Resume {
+            id: operation.id.clone(),
+            files: vec![],
+            downloads_dir: Some("nonexistent-downloads".into()),
+            open_downloads: true,
+            import_options: Box::new(crate::application::cli::PendingImportOptions {
+                java: Some(21),
+                ..Default::default()
+            }),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::application::classify_error(&wrong_kind),
+        crate::application::EmpackExitCode::Usage
+    );
+    assert_eq!(snapshot(root.path()), saved_tree);
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), true, true),
         crate::application::cli::PendingCommand::Resume {

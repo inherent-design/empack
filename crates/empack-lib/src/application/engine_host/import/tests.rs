@@ -1224,9 +1224,22 @@ async fn restricted_provider_archive_accepts_only_matching_explicit_manual_bytes
 }
 
 #[tokio::test]
-async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
+async fn shared_pending_import_preserves_interpretation_and_replacement_choices() {
     use crate::application::cli::PendingCommand;
     let root = tempfile::tempdir().unwrap();
+    crate::application::engine_host::initialize(
+        &session(root.path(), true, false),
+        &crate::application::InitArgs {
+            mc_version: Some("1.21.1".into()),
+            modloader: Some("none".into()),
+            pack_name: Some("Existing".into()),
+            pack_version: Some("1".into()),
+            author: Some("Tester".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let manifest = json!({"formatVersion":1,"game":"minecraft","name":"Imported","versionId":"1","dependencies":{"minecraft":"1.21.1"},"files":[{
         "path":"config/example.txt", "fileSize":7, "downloads":["http://example.invalid/manual"],
         "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(sha2::Sha512::digest(b"payload").into()).hex()},
@@ -1237,13 +1250,13 @@ async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
         archive_with_manifest(
             "modrinth.index.json",
             &serde_json::to_vec(&manifest).unwrap(),
-            &[],
+            &[("author-notes.txt", b"retain source; explicit exclusion")],
         ),
     )
     .unwrap();
     let error = import(
         &session(root.path(), true, false),
-        request(local("source.mrpack"), false),
+        request(local("source.mrpack"), true),
         decisions,
     )
     .await
@@ -1262,21 +1275,86 @@ async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
     );
     assert!(!view.operations[0].requirements_complete);
     fs::write(root.path().join("selected.bin"), b"payload").unwrap();
-    crate::application::engine_host::pending::dispatch(
+    let options = crate::application::cli::PendingImportOptions {
+        import_local_files: true,
+        exclude_auxiliary: true,
+        replace_project: true,
+        mc_version: Some("1.21.1".into()),
+        modloader: Some("none".into()),
+        java: Some(21),
+        pack_name: Some("Resumed Ω 日本".into()),
+        pack_version: Some("2".into()),
+        author: Some("Tester".into()),
+        world_folder: Some("saves".into()),
+        datapack_folder: Some("datapacks".into()),
+        game_versions: Some(vec!["1.21.2".into()]),
+        ..Default::default()
+    };
+    let command = |options| PendingCommand::Resume {
+        import_options: Box::new(options),
+        id: view.operations[0].id.clone(),
+        files: vec!["declared:0=selected.bin".into()],
+        downloads_dir: None,
+        open_downloads: false,
+    };
+    let before = crate::test_support::file_bytes(root.path());
+    let mut without_replacement = options.clone();
+    without_replacement.replace_project = false;
+    let error = crate::application::engine_host::pending::dispatch(
         &session(root.path(), true, false),
-        PendingCommand::Resume {
-            import_options: crate::application::cli::PendingImportOptions {
-                import_local_files: true,
-                ..Default::default()
-            },
-            id: view.operations[0].id.clone(),
-            files: vec!["declared:0=selected.bin".into()],
-            downloads_dir: None,
-            open_downloads: false,
-        },
+        command(without_replacement),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("replacement requires an explicit decision"),
+        "{error:#}"
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, true),
+        command(options.clone()),
     )
     .await
     .unwrap();
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), false, false),
+        command(options.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        command(options),
+    )
+    .await
+    .unwrap();
+    let project = read(&root.path().join("project"));
+    assert_eq!(project.intent().metadata.name, "Resumed Ω 日本");
+    assert_eq!(project.intent().metadata.version, "2");
+    assert_eq!(project.intent().metadata.authors, ["Tester"]);
+    assert_eq!(project.intent().runtime.java_major, 21);
+    assert_eq!(project.intent().runtime.minecraft.as_str(), "1.21.1");
+    assert_eq!(
+        project
+            .intent()
+            .runtime
+            .acceptable_versions
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+        ["1.21.2"]
+    );
+    assert_eq!(
+        project.intent().layout[&ContentKind::World].as_str(),
+        "saves"
+    );
+    assert_eq!(
+        project.intent().layout[&ContentKind::DataPack].as_str(),
+        "datapacks"
+    );
     assert_eq!(
         fs::read(root.path().join("project/pack/config/example.txt")).unwrap(),
         b"payload"

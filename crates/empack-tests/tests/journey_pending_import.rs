@@ -197,9 +197,53 @@ fn import_roundtrip(
     fixture
         .command()
         .args(next)
-        .args(["--file", &association, "--import-local-files"])
+        .args([
+            "--file",
+            &association,
+            "--import-local-files",
+            "--exclude-auxiliary",
+            "--java",
+            "21",
+            "--mc-version",
+            "1.21.1",
+            "--modloader",
+            "none",
+            "--datapack-folder",
+            "datapacks",
+            "--world-folder",
+            "saves",
+            "--game-versions",
+            "1.21.2",
+            "--pack-name",
+            "pending-import",
+            "--pack-version",
+            "1.0.0",
+            "--author",
+            "Tester Ω 日本",
+        ])
         .assert()
         .success();
+    let document = empack_lib::testing::read_authoring(&fixture.target.join("empack.yml")).unwrap();
+    let authoring = document.intent();
+    assert_eq!(authoring.metadata.authors, ["Tester Ω 日本"]);
+    assert_eq!(authoring.runtime.java_major, 21);
+    assert_eq!(
+        authoring.layout[&empack_core::model::ContentKind::DataPack].as_str(),
+        "datapacks"
+    );
+    assert_eq!(
+        authoring.layout[&empack_core::model::ContentKind::World].as_str(),
+        "saves"
+    );
+    assert_eq!(
+        authoring
+            .runtime
+            .acceptable_versions
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+        ["1.21.2"]
+    );
     after_import(&fixture);
     assert_eq!(fixture.list()["operations"], json!([]));
     assert!(!fixture.archive.exists());

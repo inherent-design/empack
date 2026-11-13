@@ -708,7 +708,9 @@ pub enum InstanceCommand {
     },
 }
 
-#[derive(Debug, Clone, Args, Default)]
+/// Explicit choices for interpreting a retained import. Initialization environment
+/// defaults do not become arguments to unrelated pending build/sync/instance work.
+#[derive(Debug, Clone, Args, Default, PartialEq, Eq)]
 pub struct PendingImportOptions {
     /// Import only: choose defaults without making optional files mandatory
     #[arg(long, value_name = "BOOL")]
@@ -716,6 +718,42 @@ pub struct PendingImportOptions {
     /// Import only: retain downloaded bytes locally instead of persisting their source URL
     #[arg(long)]
     pub import_local_files: bool,
+    /// Import only: exclude archive members outside recognized content folders
+    #[arg(long)]
+    pub exclude_auxiliary: bool,
+    /// Import only: replace managed project content after preparing and approving the import
+    #[arg(long)]
+    pub replace_project: bool,
+    /// Import only: choose a loader declared by the archive
+    #[arg(long)]
+    pub modloader: Option<String>,
+    /// Import only: select one of the archive's declared loader versions
+    #[arg(long)]
+    pub loader_version: Option<String>,
+    /// Import only: confirm the archive's Minecraft version; cannot change it
+    #[arg(long)]
+    pub mc_version: Option<String>,
+    /// Import only: preferred Java major within the runtime's supported policy
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..))]
+    pub java: Option<u16>,
+    /// Import only: author name
+    #[arg(long)]
+    pub author: Option<String>,
+    /// Import only: modpack display name
+    #[arg(long)]
+    pub pack_name: Option<String>,
+    /// Import only: modpack version
+    #[arg(long)]
+    pub pack_version: Option<String>,
+    /// Import only: data pack folder relative to the pack root
+    #[arg(long)]
+    pub datapack_folder: Option<String>,
+    /// Import only: parent folder for world directories, relative to the pack root
+    #[arg(long)]
+    pub world_folder: Option<String>,
+    /// Import only: additional accepted Minecraft versions
+    #[arg(long, value_delimiter = ',')]
+    pub game_versions: Option<Vec<String>>,
 }
 
 /// Inspect and continue the existing workflow-specific saved inputs in one selected root.
@@ -738,7 +776,7 @@ pub enum PendingCommand {
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
         #[command(flatten)]
-        import_options: PendingImportOptions,
+        import_options: Box<PendingImportOptions>,
         /// Scan direct regular children using original digests; candidates are reverified on resume
         #[arg(long)]
         downloads_dir: Option<PathBuf>,
@@ -1162,6 +1200,51 @@ mod tests {
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }
+        let parsed = Cli::try_parse_from([
+            "empack",
+            "pending",
+            "resume",
+            "abcdef",
+            "--replace-project",
+            "--exclude-auxiliary",
+            "--java",
+            "21",
+            "--modloader",
+            "fabric",
+            "--loader-version",
+            "0.16.14",
+            "--mc-version",
+            "1.21.1",
+            "--world-folder",
+            "saves",
+            "--datapack-folder",
+            "datapacks",
+            "--pack-name",
+            "Pack Ω 日本",
+            "--pack-version",
+            "2",
+            "--author",
+            "Tester",
+            "--game-versions",
+            "1.21.1,1.21.2",
+        ])
+        .unwrap();
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { import_options, .. },
+        }) = parsed.command
+        else {
+            panic!("expected pending resume")
+        };
+        assert_eq!(import_options.java, Some(21));
+        assert_eq!(import_options.pack_name.as_deref(), Some("Pack Ω 日本"));
+        assert_eq!(
+            import_options.game_versions,
+            Some(vec!["1.21.1".into(), "1.21.2".into()])
+        );
+        assert!(import_options.replace_project && import_options.exclude_auxiliary);
+        assert!(
+            Cli::try_parse_from(["empack", "pending", "resume", "abcdef", "--java", "7"]).is_err()
+        );
         assert!(Cli::try_parse_from(["empack", "pending", "discard"]).is_err());
         assert!(Cli::try_parse_from(["empack", "pending", "list", "--open-downloads"]).is_err());
     }
