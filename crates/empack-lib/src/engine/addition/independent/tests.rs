@@ -53,7 +53,9 @@ fn independent_groups_follow_current_required_chains_cycles_and_old_paths() {
     let c = selected("c", "c.zip");
     let requests = vec![group(&a), group(&b), group(&c)];
     assert_eq!(
-        independent_components(&empty(), &requests).unwrap(),
+        independent_components(&empty(), &requests)
+            .unwrap()
+            .components,
         vec![vec![0], vec![1], vec![2]]
     );
     let current = combined(&[a.clone(), b.clone(), c.clone()]);
@@ -66,7 +68,9 @@ fn independent_groups_follow_current_required_chains_cycles_and_old_paths() {
     }
     let linked = explicitly_placed(current.intent().clone(), lock);
     assert_eq!(
-        independent_components(&linked, &requests).unwrap(),
+        independent_components(&linked, &requests)
+            .unwrap()
+            .components,
         vec![vec![0, 1, 2]]
     );
     // Moving A does not make B's newly occupied old A path independent of A's deletion.
@@ -75,7 +79,9 @@ fn independent_groups_follow_current_required_chains_cycles_and_old_paths() {
         group(&selected("b", "a.zip")),
     ];
     assert_eq!(
-        independent_components(&current, &requests).unwrap(),
+        independent_components(&current, &requests)
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
 }
@@ -96,7 +102,9 @@ fn independent_groups_merge_required_closure_and_reject_conflicting_shared_recor
     };
     let requests = vec![closure(&a), closure(&c)];
     assert_eq!(
-        independent_components(&empty(), &requests).unwrap(),
+        independent_components(&empty(), &requests)
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
     let merged = AdditionGroup::combine(&empty(), &[&requests[0], &requests[1]]).unwrap();
@@ -104,7 +112,7 @@ fn independent_groups_merge_required_closure_and_reject_conflicting_shared_recor
     let roots = merged.root_groups();
     assert_eq!(roots.len(), 2);
     assert_eq!(
-        independent_components(&empty(), &roots).unwrap(),
+        independent_components(&empty(), &roots).unwrap().components,
         vec![vec![0, 1]]
     );
     assert_eq!(
@@ -128,7 +136,9 @@ fn independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions() {
     ] {
         let groups = vec![group(&selected("a", a)), group(&selected("b", b))];
         assert_eq!(
-            independent_components(&empty(), &groups).unwrap(),
+            independent_components(&empty(), &groups)
+                .unwrap()
+                .components,
             vec![vec![0, 1]]
         );
     }
@@ -143,7 +153,9 @@ fn independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions() {
     dependency.files = NonEmpty::new(vec![file]).unwrap();
     let b = explicitly_placed(b.intent().clone(), lock);
     assert_eq!(
-        independent_components(&empty(), &[group(&a), group(&b)]).unwrap(),
+        independent_components(&empty(), &[group(&a), group(&b)])
+            .unwrap()
+            .components,
         vec![vec![0], vec![1]]
     );
     let mut intent = b.intent().clone();
@@ -158,7 +170,9 @@ fn independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions() {
     dependency.files = NonEmpty::new(vec![file]).unwrap();
     let b = explicitly_placed(intent, lock);
     assert_eq!(
-        independent_components(&empty(), &[group(&a), group(&b)]).unwrap(),
+        independent_components(&empty(), &[group(&a), group(&b)])
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
 }
@@ -190,7 +204,9 @@ fn negative_relationships_keep_interdependent_updates_in_one_component() {
     let b = fixture(&[("b", "ProjectB", "Version3")], &["b"], &[], true);
     let groups = [group(&a), group(&b)];
     assert_eq!(
-        independent_components(&current, &groups).unwrap(),
+        independent_components(&current, &groups)
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
     let combined = AdditionGroup::combine(&current, &[&groups[0], &groups[1]]).unwrap();
@@ -276,12 +292,16 @@ fn disjoint_sides_are_independent_until_old_or_new_placements_overlap() {
     let a = explicitly_placed(a.intent().clone(), lock);
     let current = combined(&[a.clone(), b.clone()]);
     assert_eq!(
-        independent_components(&current, &[group(&a), group(&b)]).unwrap(),
+        independent_components(&current, &[group(&a), group(&b)])
+            .unwrap()
+            .components,
         vec![vec![0], vec![1]]
     );
     let moved = side(b.clone(), true);
     assert_eq!(
-        independent_components(&current, &[group(&a), group(&moved)]).unwrap(),
+        independent_components(&current, &[group(&a), group(&moved)])
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
     // Old placements still connect a request that removes the old conflict.
@@ -293,7 +313,39 @@ fn disjoint_sides_are_independent_until_old_or_new_placements_overlap() {
         moved,
     ]);
     assert_eq!(
-        independent_components(&old, &[group(&a), group(&b)]).unwrap(),
+        independent_components(&old, &[group(&a), group(&b)])
+            .unwrap()
+            .components,
         vec![vec![0, 1]]
     );
+}
+
+#[test]
+fn missing_proposed_or_retained_dependency_information_keeps_requests_together() {
+    let a = selected("a", "a.zip");
+    let b = selected("b", "b.zip");
+    let retained = selected("retained", "retained.zip");
+    for coverage in [Coverage::Unknown, Coverage::Partial] {
+        let mut lock = a.lock().clone();
+        *lock.coverage.values_mut().next().unwrap() = coverage;
+        let incomplete = explicitly_placed(a.intent().clone(), lock);
+        let partition = independent_components(&empty(), &[group(&incomplete), group(&b)]).unwrap();
+        assert_eq!(partition.components, vec![vec![0, 1]]);
+        assert_eq!(
+            partition.incomplete_dependencies,
+            [DependencyKey::parse("a").unwrap()].into()
+        );
+        let mut lock = retained.lock().clone();
+        *lock.coverage.values_mut().next().unwrap() = coverage;
+        let current = explicitly_placed(retained.intent().clone(), lock);
+        let partition = independent_components(&current, &[group(&a), group(&b)]).unwrap();
+        assert_eq!(partition.components, vec![vec![0, 1]]);
+        assert_eq!(
+            partition.incomplete_dependencies,
+            [DependencyKey::parse("retained").unwrap()].into()
+        );
+    }
+    let partition = independent_components(&retained, &[group(&a), group(&b)]).unwrap();
+    assert_eq!(partition.components, vec![vec![0], vec![1]]);
+    assert!(partition.incomplete_dependencies.is_empty());
 }

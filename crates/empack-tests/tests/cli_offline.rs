@@ -599,7 +599,10 @@ fn cli_independent_add_preserves_conflicting_unowned_directory() {
             "--yes",
         ])
         .assert()
-        .success();
+        .failure()
+        .stderr(predicates::str::contains(
+            "dependency information is incomplete",
+        ));
     assert_eq!(project_snapshot(&project), before);
     command(&project)
         .args([
@@ -611,6 +614,13 @@ fn cli_independent_add_preserves_conflicting_unowned_directory() {
         ])
         .assert()
         .failure();
+    assert_eq!(project_snapshot(&project), before);
+    assert!(!project.dir().join("pack/mods/ready.jar").exists());
+    // The author can explicitly select the other file as one complete operation.
+    command(&project)
+        .args(["add", "ready.jar", "--yes"])
+        .assert()
+        .success();
     assert_eq!(fs::read(destination.join("sentinel")).unwrap(), b"unowned");
     assert_eq!(
         fs::read(project.dir().join("pack/mods/ready.jar")).unwrap(),

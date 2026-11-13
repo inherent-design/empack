@@ -1,6 +1,9 @@
 //! Verify connected groups separately and publish one coherent successful candidate.
 use super::*;
-use crate::engine::{addition::independent::independent_components, project::ProjectRevision};
+use crate::engine::{
+    addition::independent::{BatchPartition, independent_components},
+    project::ProjectRevision,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum BatchPolicy {
@@ -38,13 +41,29 @@ pub struct DependencyBatchReport {
     /// Logical roots at each original request position.
     pub requested: Vec<Vec<DependencyKey>>,
     pub policy: BatchPolicy,
+    /// Incomplete declared dependency evidence that prevents splitting the request.
+    pub independence_unverified: Vec<DependencyKey>,
     /// Groups actually admitted to the one verified publication candidate.
     pub successful: Vec<Vec<usize>>,
     pub blocked: Vec<BlockedBatchGroup>,
 }
-#[derive(Debug, thiserror::Error)]
-#[error("Dependency batch incomplete: {} successful groups, {} blocked groups", .0.successful.len(), .0.blocked.len())]
+#[derive(Debug)]
 pub struct DependencyBatchIncomplete(pub DependencyBatchReport);
+impl std::fmt::Display for DependencyBatchIncomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Dependency batch incomplete: {} successful groups, {} blocked groups",
+            self.0.successful.len(),
+            self.0.blocked.len()
+        )?;
+        if !self.0.independence_unverified.is_empty() {
+            f.write_str("; dependency information is incomplete, so these changes cannot be applied separately")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for DependencyBatchIncomplete {}
 
 pub(in crate::engine::api) async fn prepare_batch(
     project: ProjectTarget,
@@ -122,7 +141,10 @@ pub(in crate::engine::api) async fn prepare_batch(
                 );
             }
             let components = match request.policy {
-                BatchPolicy::AllRequested => vec![(0..groups.len()).collect()],
+                BatchPolicy::AllRequested => BatchPartition {
+                    components: vec![(0..groups.len()).collect()],
+                    incomplete_dependencies: BTreeSet::new(),
+                },
                 BatchPolicy::ContinueIndependent => independent_components(&current, &groups)?,
             };
             cancel.check()?;
@@ -139,6 +161,7 @@ pub(in crate::engine::api) async fn prepare_batch(
             .map(|item| item.group.roots().keys().cloned().collect())
             .collect(),
         policy: request.policy,
+        independence_unverified: components.incomplete_dependencies.into_iter().collect(),
         successful: vec![],
         blocked: vec![],
     };
@@ -149,6 +172,7 @@ pub(in crate::engine::api) async fn prepare_batch(
             ExistingDependencyPolicy::UpdateSameIdentity,
         ),
     };
+    let components = components.components;
     let single_component = components.len() == 1;
     // Combining and native staging are read-only. No component owns a publisher.
     for component in components {

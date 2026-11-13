@@ -162,7 +162,7 @@ fn journey_local_adoption_restores_resolution_without_reinstall() {
 }
 
 #[test]
-fn journey_independent_add_reports_partial_effects_and_converges() {
+fn journey_incomplete_dependency_information_keeps_requests_together() {
     let project = initialized();
     let cache = tempfile::tempdir().unwrap();
     let run = || {
@@ -201,44 +201,26 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         if dry {
             cmd.arg("--dry-run");
         }
-        let result = cmd.assert();
-        let output = result.get_output();
-        let text = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+        let result = cmd.assert().failure();
+        assert!(
+            String::from_utf8_lossy(&result.get_output().stderr)
+                .contains("dependency information is incomplete")
         );
-        for expected in [
-            "Ready dependency group: fresh",
-            "Keeping blocked dependency group existing:",
-        ] {
-            assert!(text.contains(expected), "{text}");
-        }
-        if dry {
-            result.success();
-            assert_eq!(project_snapshot(&project), before);
-            assert!(!text.contains("Recorded 1 dependency"), "{text}");
-        } else {
-            result.failure();
-            for expected in [
-                "Recorded 1 dependency",
-                "Addition completed only part of its displayed effects",
-                "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
-            ] {
-                assert!(text.contains(expected), "{text}");
-            }
-        }
+        assert_eq!(project_snapshot(&project), before);
+        assert!(!String::from_utf8_lossy(&result.get_output().stdout).contains("Recorded "));
     }
-    assert_eq!(read_project(&project).intent().roots.len(), 2);
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/existing.jar")).unwrap(),
-        before[Path::new("pack/mods/existing.jar")]
-    );
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/fresh.jar")).unwrap(),
-        fs::read(project.dir().join("fresh.jar")).unwrap()
-    );
+    // The author can explicitly request the new file alone; lack of provider
+    // dependency metadata must not prohibit an ordinary complete operation.
+    run().args(["add", "fresh.jar", "--yes"]).assert().success();
     let resolved = empack_tests::harness::process::read_project(project.dir());
+    assert_eq!(resolved.intent().roots.len(), 2);
+    assert!(
+        resolved
+            .lock()
+            .coverage
+            .values()
+            .all(|coverage| *coverage == empack_core::model::Coverage::Unknown)
+    );
     let existing = empack_core::model::DependencyKey::parse("existing").unwrap();
     assert_eq!(
         resolved.lock().dependencies[&existing],
@@ -257,14 +239,14 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
     }
     assert_eq!(
         actual, expected,
-        "partial success must preserve all other files"
+        "the explicit addition preserves every other file"
     );
     let after = project_snapshot(&project);
     for _ in 0..2 {
         run().args(["sync", "--yes"]).assert().success();
+        assert_eq!(project_snapshot(&project), after);
     }
-    assert_eq!(project_snapshot(&project), after);
-    let retry = run()
+    run()
         .args([
             "add",
             "existing.jar",
@@ -274,23 +256,8 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         ])
         .assert()
         .failure();
-    let output = retry.get_output();
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        text.contains("Dependency batch incomplete: 0 successful groups, 2 blocked groups"),
-        "{text}"
-    );
-    assert!(
-        !text.contains("Recorded "),
-        "retry must not publish another receipt: {text}"
-    );
     assert_eq!(project_snapshot(&project), after);
-    // Input interpretation must finish before an independent footprint exists.
-    // A malformed source is therefore an all-requested preflight failure.
+    // Input interpretation still finishes before native partitioning.
     fs::write(
         project.dir().join("existing.jar"),
         b"invalid replacement archive",
@@ -316,8 +283,6 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         &before[Path::new("existing.jar")],
     )
     .unwrap();
-    // With resolved inputs, a modified installed file blocks only its group.
-    // The other root must perform an actual update, not merely a successful no-op.
     fs::write(
         project.dir().join("pack/mods/existing.jar"),
         b"player local customization",
@@ -329,7 +294,13 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         .assert()
         .failure();
     assert_eq!(project_snapshot(&project), changed_sources);
-    for dry in [true, false] {
+    for flags in [
+        vec![],
+        vec!["--details"],
+        vec!["--dry-run"],
+        vec!["--apply"],
+        vec!["--json"],
+    ] {
         let mut cmd = run();
         cmd.args([
             "update",
@@ -337,55 +308,67 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             "fresh",
             "--continue-independent",
             "--yes",
-        ]);
-        if dry {
-            cmd.arg("--dry-run");
-        } else {
-            cmd.arg("--apply");
-        }
-        let result = cmd.assert();
+        ])
+        .args(&flags);
+        let result = cmd.assert().failure();
         let output = result.get_output();
-        let text = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        for expected in [
-            "Ready dependency group: fresh",
-            "Keeping blocked dependency group existing:",
-        ] {
-            assert!(text.contains(expected), "{text}");
-        }
-        if dry {
-            assert!(text.contains("Proposal: some independent groups are blocked"));
-            result.failure();
-            assert_eq!(project_snapshot(&project), changed_sources);
-        } else {
-            // A partial receipt warns on stderr; its completed counts remain a
-            // stdout report. Concatenating pipes does not preserve their order.
-            assert!(
-                String::from_utf8_lossy(&output.stdout)
-                    .contains("    Changed  1\n    Kept     0\nAuthor settings were kept.")
+        if flags.contains(&"--json") {
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["proposal"], "blocked");
+            assert_eq!(
+                report["independence_unverified"],
+                serde_json::json!(["existing", "fresh"])
             );
-            assert!(String::from_utf8_lossy(&output.stderr).contains("Checked 1 dependency"));
-            result.failure();
-            for expected in [
-                "Checked 1 dependency",
-                "    Changed  1\n    Kept     0\nAuthor settings were kept.",
-                "Update completed only part of its displayed effects",
-                "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
-            ] {
-                assert!(text.contains(expected), "{text}");
+            assert_eq!(
+                report["blocked_groups"][0]["dependencies"],
+                serde_json::json!(["existing", "fresh"])
+            );
+        } else {
+            let text = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                text.contains("dependency information is incomplete"),
+                "{text}"
+            );
+            assert!(
+                !text.contains("Checked 1 dependency"),
+                "no partial receipt: {text}"
+            );
+            if flags.is_empty() {
+                assert!(text.contains("Call with --details"), "{text}");
             }
         }
+        assert_eq!(project_snapshot(&project), changed_sources);
     }
+    // Repair the rejected file, then apply both requests as one ordinary job.
+    fs::write(
+        project.dir().join("pack/mods/existing.jar"),
+        &before[Path::new("existing.jar")],
+    )
+    .unwrap();
+    let fixed = project_snapshot(&project);
+    run()
+        .args([
+            "update",
+            "existing",
+            "fresh",
+            "--continue-independent",
+            "--yes",
+            "--apply",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Changed  1\n    Kept     1"));
     let next = empack_tests::harness::process::read_project(project.dir());
     assert_eq!(next.intent(), resolved.intent());
     assert_eq!(
         next.lock().dependencies[&existing],
         resolved.lock().dependencies[&existing]
     );
-    let mut expected = changed_sources;
+    let mut expected = fixed;
     expected.insert(
         PathBuf::from("pack/mods/fresh.jar"),
         fs::read(project.dir().join("fresh.jar")).unwrap(),
@@ -396,13 +379,6 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         expected.remove(Path::new("empack.lock"))
     );
     assert_eq!(actual, expected);
-    // Repair the rejected installed file, then retry: the successful root must not
-    // publish its update again or manufacture a changed-selection count.
-    fs::write(
-        project.dir().join("pack/mods/existing.jar"),
-        &before[Path::new("existing.jar")],
-    )
-    .unwrap();
     let after = project_snapshot(&project);
     run()
         .args([

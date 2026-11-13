@@ -627,10 +627,14 @@ async fn change_with_services(
         let preparation = cancellable(session, engine.prepare(project, request))
             .await
             .and_then(ready);
-        if update && let Err(error) = &preparation {
-            report.failed(error);
-            report.present(session, update_output)?;
-            report.finish(session, update_output);
+        if let Err(error) = &preparation {
+            if update {
+                report.failed(error);
+                report.present(session, update_output)?;
+                report.finish(session, update_output);
+            } else if let Some(batch) = error.downcast_ref::<DependencyBatchIncomplete>() {
+                show_batch(session, Some(&batch.0));
+            }
         }
         let prepared = preparation?;
         drop(addition);
@@ -1058,6 +1062,17 @@ fn show_batch(session: &dyn Session, report: Option<&crate::engine::api::Depende
     let Some(report) = report else {
         return;
     };
+    if !report.independence_unverified.is_empty() {
+        let keys = report
+            .independence_unverified
+            .iter()
+            .map(|key| key.as_str().to_owned())
+            .collect::<Vec<_>>();
+        session
+            .display()
+            .status()
+            .warning(&text::independence_unverified(&keys, false));
+    }
     let labels = |indices: &[usize]| {
         indices
             .iter()

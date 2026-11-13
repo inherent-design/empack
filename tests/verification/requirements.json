@@ -4458,7 +4458,8 @@
           "id": "UX-026.live-pinned-update",
           "boundary": "L",
           "test_ids": [
-            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring"
+            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring",
+            "empack-tests::live_provider_cli::live_cli_complete_groups_report_partial_add_and_update"
           ],
           "required_platforms": [
             "linux",
@@ -4474,9 +4475,11 @@
             "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files",
             "Unpinning retains the current exact inventory; automatic update preserves author intent and runtime, and actual changed/retained output agrees with the selected pin",
             "An unselected automatic root remains at an explicitly older version even though its separate dry-run update proposes a change; selected pinned/automatic updates preserve its complete dependency record and required edges",
-            "Materialized files across the complete locked candidate match declared SHA-512 and size independently; two subsequent CLI syncs converge"
+            "Materialized files across the complete locked candidate match declared SHA-512 and size independently; two subsequent CLI syncs converge",
+            "Complete real provider relationships permit a partial selected update: an explicitly older automatic Lithium selection changes while a blocked pinned Sodium selection, authored pin and modified bytes stay unchanged",
+            "Actual partial preview preserves project and host state; explicit application reports one changed and zero retained selections and a nonzero partial outcome; repair permits a complete no-op update and repeated sync convergence"
           ],
-          "remaining_group_evidence": "Live success does not imply a newer version was available; deterministic host coverage establishes the changed-selection path"
+          "remaining_group_evidence": "The pinned fixture alone need not find a newer version; the complete-group fixture explicitly selects an older compatible version and requires a changed selection. Every declared host and feature variant remains required."
         },
         {
           "id": "UX-026.selected-update-scope",
@@ -4529,7 +4532,7 @@
           "id": "UX-026.executable-selected-update-outcomes",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
+            "empack-tests::cli_offline::journeys::journey_incomplete_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4541,9 +4544,9 @@
             "telemetry"
           ],
           "assertions": [
-            "Malformed local source input refuses the whole request even in independent-group mode; a blocked all-requested update and every independent-group preview preserve the complete project inventory",
-            "Explicit independent-group application updates the ready local root while preserving the blocked root record, authored intent and every unrelated project byte; literal output reports one changed selection and partial completion",
-            "A successful retry reports zero changed and two retained selections, and two subsequent synchronizations preserve the complete project; this local/manual fixture establishes shared CLI publication/reporting, while separate host/live cases establish automatic provider selection"
+            "Malformed local source input refuses the whole request even in independent-group mode; blocked add/update requests with unknown dependency relationships preserve the complete project during preview and application",
+            "Human and JSON reports retain the blocked group and identify incomplete dependency information rather than offering speculative partial publication",
+            "After explicit repair, a complete ordinary update reports one changed and one retained selection; retry reports zero changed and two retained, and two synchronizations converge without changing unrelated files or authored intent"
           ]
         },
         {
@@ -4727,14 +4730,15 @@
         "PUB"
       ],
       "required_assertions": "Default all-or-none versus explicit independent groups; dependent/conflicting roots coupled; partial result exits nonzero and identifies successes.",
-      "required_work": "Snapshot every file and retry already-successful groups; no duplicate publication.",
+      "required_work": "Prove independence from complete proposed and retained relationship evidence; preserve the whole request when that evidence is incomplete. Snapshot every file and retry successful or repaired groups. Actual ordinary-provider CLI add and update must also establish positive partial effects without duplicate publication.",
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "L"
       ],
       "risk": "critical",
-      "run_gate": "pr",
+      "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
       "cases": [
@@ -4746,7 +4750,8 @@
             "empack-lib::engine::addition::independent::tests::independent_groups_merge_required_closure_and_reject_conflicting_shared_records",
             "empack-lib::engine::addition::independent::tests::independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions",
             "empack-lib::engine::addition::independent::tests::negative_relationships_keep_interdependent_updates_in_one_component",
-            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap"
+            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap",
+            "empack-lib::engine::addition::independent::tests::missing_proposed_or_retained_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4759,7 +4764,8 @@
           ],
           "assertions": [
             "Required chains/cycles, old and new occupied paths, shared records, Unicode/ancestor collisions and negative relationships couple dependent requests",
-            "Disjoint environments remain independent until an old or new placement overlaps; contradictory shared records are rejected"
+            "Disjoint environments remain independent until an old or new placement overlaps; contradictory shared records are rejected",
+            "Unknown or partial dependency evidence in proposed or retained selections keeps all requested changes together; complete evidence preserves the existing graph, identity and placement partition rules"
           ]
         },
         {
@@ -4768,7 +4774,8 @@
           "test_ids": [
             "empack-lib::engine::api::addition_tests::independent_batch::batch_default_preserves_all_and_partial_publishes_one_coherent_candidate",
             "empack-lib::engine::api::addition_tests::independent_batch::failed_shared_component_blocks_all_its_requests_but_not_an_unrelated_group",
-            "empack-lib::engine::api::addition_tests::independent_batch::partial_update_keeps_failed_intent_and_stale_approval_never_publishes"
+            "empack-lib::engine::api::addition_tests::independent_batch::partial_update_keeps_failed_intent_and_stale_approval_never_publishes",
+            "empack-lib::engine::api::addition_tests::independent_batch::incomplete_dependency_evidence_cannot_authorize_partial_publication"
           ],
           "required_platforms": [
             "linux",
@@ -4782,14 +4789,15 @@
           "assertions": [
             "Default preparation is all-or-none; explicit independent policy admits one coherent candidate and returns a typed partial receipt for successful groups",
             "A failed shared component blocks every member while unrelated groups remain available; stale approval cannot publish",
-            "Decline, all-failed and stale cases preserve files; partial update retains failed intent and retires reserved resources"
+            "Decline, all-failed and stale cases preserve files; partial update retains failed intent and retires reserved resources",
+            "Unknown and partial evidence cannot authorize speculative partial publication: failed native preparation preserves the whole project and reports affected keys, while a subsequent complete ordinary operation still succeeds and retires resources"
           ]
         },
         {
           "id": "UX-028.public-partial-add-update",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
+            "empack-tests::cli_offline::journeys::journey_incomplete_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4801,10 +4809,9 @@
             "telemetry"
           ],
           "assertions": [
-            "Actual CLI preview identifies ready and blocked roots without publication; default add/update failures preserve all project files",
-            "Partial add and changed-content update exit nonzero, name the ready/blocked groups and report the completed effects and accurate selection counts",
-            "Every unrelated file and retained lock record survives; retrying completed additions or repairing a rejected update cannot duplicate publication; repeated sync converges",
-            "A partially ready update preview exits unsuccessfully, reports its independent ready/blocked groups and preserves all files; only explicit application can publish the ready groups."
+            "Actual CLI preview and application preserve every project file when unknown local-file dependency information prevents proving independence and any requested member is blocked",
+            "Default, detailed and JSON output report the whole blocked group and missing dependency information without claiming an independent ready subset",
+            "An explicitly selected healthy addition succeeds; after repair a whole ordinary update reports one changed and one retained selection, retry reports zero changed and two retained, and repeated sync converges while preserving unrelated files and authored intent"
           ]
         },
         {
@@ -4823,8 +4830,30 @@
             "telemetry"
           ],
           "assertions": [
-            "An unowned directory occupying one requested destination remains intact, including its sentinel, while a separate valid root can publish under explicit independent policy"
+            "An unowned directory and its sentinel remain intact; incomplete local-file dependency information prevents partial publication of a multi-request batch, and a later explicit healthy-file addition succeeds without claiming the occupied path"
           ]
+        },
+        {
+          "id": "UX-028.live-complete-independent-groups",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_complete_groups_report_partial_add_and_update"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public add against real complete Modrinth metadata publishes Lithium while retaining an already-present blocked Sodium record and exact author pin",
+            "An explicitly older automatic Lithium selection advances under independent update while modified Sodium remains blocked; preview preserves the whole project and host state, and explicit application retains the original blocked record, pin, bytes and every unrelated file",
+            "Partial add/update return nonzero and identify actual completed effects; update counts agree with the changed selection; explicit repair, a complete no-op update and repeated sync converge"
+          ],
+          "remaining_group_evidence": "Requires actual provider access and an observed changed version. Offline manual-file cases establish conservative refusal; they do not substitute for this positive partial-publication evidence."
         }
       ],
       "owner_now": [

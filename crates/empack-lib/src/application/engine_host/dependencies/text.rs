@@ -1,6 +1,25 @@
 //! Human dependency changes use receipt counts, not the number of provider requests.
 use empack_core::removal::RemovalMode;
 
+pub(super) fn independence_unverified(dependencies: &[String], details: bool) -> String {
+    let shown = if details {
+        dependencies.len()
+    } else {
+        dependencies.len().min(5)
+    };
+    let mut names = dependencies[..shown]
+        .iter()
+        .map(|key| crate::terminal::display_line(key))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if shown < dependencies.len() {
+        names.push_str(&format!(" and {} others", dependencies.len() - shown));
+    }
+    format!(
+        "Cannot apply these changes separately: dependency information is incomplete for {names}."
+    )
+}
+
 pub(super) fn update_plan(selected: usize, changed: usize) -> String {
     format!(
         "Update plan: {selected} {}\n    Change  {changed}\n    Keep    {}",

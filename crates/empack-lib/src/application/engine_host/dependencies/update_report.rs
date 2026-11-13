@@ -49,6 +49,7 @@ pub(in crate::application::engine_host) struct UpdatePreviewReport {
     files: Vec<Change>,
     references: usize,
     blocked: Vec<BlockedGroup>,
+    independence_unverified: Vec<String>,
     diagnostic: Option<Diagnostic>,
 }
 impl UpdatePreviewReport {
@@ -71,6 +72,7 @@ impl UpdatePreviewReport {
             files: vec![],
             references: 0,
             blocked: vec![],
+            independence_unverified: vec![],
             diagnostic: None,
         }
     }
@@ -80,6 +82,9 @@ impl UpdatePreviewReport {
         report
     }
     pub fn failed(&mut self, error: &anyhow::Error) {
+        if let Some(batch) = error.downcast_ref::<crate::engine::api::DependencyBatchIncomplete>() {
+            self.set_batch(&batch.0);
+        }
         let dependency_problem =
             error.downcast_ref::<crate::engine::providers::UnresolvedDependencies>();
         // A proven unsatisfied requirement blocks this selection even when the
@@ -122,22 +127,7 @@ impl UpdatePreviewReport {
             .collect();
         self.files = crate::application::engine_host::file_report::changes(&view.files)?;
         if let Some(batch) = &view.batch {
-            self.blocked = batch
-                .blocked
-                .iter()
-                .map(|group| BlockedGroup {
-                    dependencies: group
-                        .requests
-                        .iter()
-                        .flat_map(|index| {
-                            batch.requested[*index]
-                                .iter()
-                                .map(|key| key.as_str().to_owned())
-                        })
-                        .collect(),
-                    diagnostic: group.diagnostic.clone(),
-                })
-                .collect();
+            self.set_batch(batch);
         }
         self.state = if !self.blocked.is_empty() {
             ProposalState::PartiallyReady
@@ -148,6 +138,29 @@ impl UpdatePreviewReport {
         };
         Ok(())
     }
+    fn set_batch(&mut self, batch: &crate::engine::api::DependencyBatchReport) {
+        self.independence_unverified = batch
+            .independence_unverified
+            .iter()
+            .map(|key| key.as_str().to_owned())
+            .collect();
+        self.blocked = batch
+            .blocked
+            .iter()
+            .map(|group| BlockedGroup {
+                dependencies: group
+                    .requests
+                    .iter()
+                    .flat_map(|index| {
+                        batch.requested[*index]
+                            .iter()
+                            .map(|key| key.as_str().to_owned())
+                    })
+                    .collect(),
+                diagnostic: group.diagnostic.clone(),
+            })
+            .collect();
+    }
     pub fn finish(&self, session: &dyn Session, output: UpdateOutput) {
         if !output.json
             && let Some(command) = &self.repeat_command
@@ -157,7 +170,12 @@ impl UpdatePreviewReport {
                 crate::application::shell::NAME
             ));
         }
-        if !output.json && !output.details && self.observations.is_some() {
+        if !output.json
+            && !output.details
+            && (self.observations.is_some()
+                || !self.independence_unverified.is_empty()
+                || !self.blocked.is_empty())
+        {
             session
                 .display()
                 .status()
@@ -186,6 +204,15 @@ impl UpdatePreviewReport {
             ProposalState::Incomplete => "Proposal: incomplete; no changes applied",
             ProposalState::PartiallyReady => "Proposal: some independent groups are blocked",
         });
+        if !self.independence_unverified.is_empty() {
+            session
+                .display()
+                .status()
+                .message(&text::independence_unverified(
+                    &self.independence_unverified,
+                    output.details,
+                ));
+        }
         if let Some(observations) = &self.observations {
             session
                 .display()
@@ -194,6 +221,29 @@ impl UpdatePreviewReport {
                     observations,
                     output.details || self.diagnostic.is_some(),
                 ));
+        }
+        let shown = if output.details {
+            self.blocked.len()
+        } else {
+            self.blocked.len().min(5)
+        };
+        for group in self.blocked.iter().take(shown) {
+            let names = group
+                .dependencies
+                .iter()
+                .map(|key| crate::terminal::display_line(key))
+                .collect::<Vec<_>>()
+                .join(", ");
+            session.display().status().message(&format!(
+                "Blocked: {names}\n    {}",
+                crate::terminal::display_line(&group.diagnostic.to_string())
+            ));
+        }
+        if shown < self.blocked.len() {
+            session.display().status().message(&format!(
+                "{} more blocked groups; use --details to show them.",
+                self.blocked.len() - shown
+            ));
         }
         Ok(())
     }
@@ -229,6 +279,7 @@ impl Serialize for UpdatePreviewReport {
             file_changes: &'a [Change],
             references: usize,
             blocked_groups: &'a [BlockedGroup],
+            independence_unverified: &'a [String],
             diagnostic: &'a Option<Diagnostic>,
         }
         Report {
@@ -257,6 +308,7 @@ impl Serialize for UpdatePreviewReport {
             file_changes: &self.files,
             references: self.references,
             blocked_groups: &self.blocked,
+            independence_unverified: &self.independence_unverified,
             diagnostic: &self.diagnostic,
         }
         .serialize(serializer)

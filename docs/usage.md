@@ -52,7 +52,7 @@ Modrinth public resolution needs no API key. CurseForge requests use the bundled
 
 Edit `empack.yml` directly or use authoring commands. Common provider mods can use `label: modrinth:SELECTOR`; use a mapping for side, content kind or exact policy. Non-default role and placement decisions belong to optional `empack.bindings.yml`. Commit `empack.yml`, `empack.lock` and bindings when present to share reproducible author sources. Build requires satisfied intent and does not implicitly update dependencies. Removal of a manifest root does not grant permission to delete user files or required shared dependencies.
 
-Provider selectors, explicit pins, typed local/URL content, named file plans and side placements normalize through the same engine. Ambiguous or unsupported inputs fail with actionable decisions. Default add/update batches publish nothing when any item fails. Explicit independent batches preserve failed groups and report partial effects.
+Provider selectors, explicit pins, typed local/URL content, named file plans and side placements normalize through the same engine. Ambiguous or unsupported inputs fail with actionable decisions. Default add/update batches publish nothing when any item fails. `--continue-independent` permits partial application only when complete dependency information and file relationships establish separate groups. Missing dependency information keeps the requests together; it does not block a whole operation when every request succeeds. Failed groups retain their previous state, and any partial application is reported.
 
 ## Checking and changing versions
 

@@ -412,6 +412,238 @@ fn selector_journey(
 
 #[test]
 #[ignore = "requires live Modrinth catalog and downloads"]
+fn live_cli_complete_groups_report_partial_add_and_update() {
+    use empack_core::{identity::ModrinthProjectId, model::Coverage};
+    let project = TestProject::workflow_fixture("verified-independent-update", "fabric", "1.21.1");
+    run(
+        &project,
+        &["--yes", "add", "--platform", "modrinth", "sodium"],
+    );
+    let first = read_project(project.dir());
+    let sodium = first.intent().roots.keys().next().unwrap().clone();
+    run(&project, &["--yes", "pin", sodium.as_str()]);
+    let before_add = author_snapshot(project.dir());
+    let pinned = read_project(project.dir());
+    let partial_add = execute(
+        &project,
+        &[
+            "--yes",
+            "add",
+            "--platform",
+            "modrinth",
+            "sodium",
+            "lithium",
+            "--continue-independent",
+        ],
+        None,
+    );
+    assert!(
+        !partial_add.status.success(),
+        "a refused existing root must remain visible"
+    );
+    let add_text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&partial_add.stdout),
+        String::from_utf8_lossy(&partial_add.stderr)
+    );
+    assert!(add_text.contains("Recorded 1 dependency"), "{add_text}");
+    assert!(
+        add_text.contains("Addition completed only part of its displayed effects"),
+        "{add_text}"
+    );
+    let added = read_project(project.dir());
+    assert_eq!(added.intent().roots.len(), 2);
+    assert_eq!(
+        added.intent().roots[&sodium],
+        pinned.intent().roots[&sodium]
+    );
+    assert_eq!(
+        added.lock().dependencies[&sodium],
+        pinned.lock().dependencies[&sodium]
+    );
+    let after_add = author_snapshot(project.dir());
+    for (path, bytes) in before_add {
+        if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
+            assert_eq!(after_add.get(&path), Some(&bytes), "{path:?}");
+        }
+    }
+    let loaded = read_project(project.dir());
+    let lithium_project =
+        ProviderProjectId::Modrinth(ModrinthProjectId::parse("gvQqBUqZ").unwrap());
+    let lithium = loaded
+        .intent()
+        .roots
+        .keys()
+        .find(|key| {
+            loaded.lock().dependencies[*key].identity
+                == ResolvedIdentity::Provider(lithium_project.clone())
+        })
+        .unwrap()
+        .clone();
+    // Reuse the selected-update fixture's older exact version, then explicitly
+    // return that root to automatic selection without changing Sodium's hold.
+    let seed = format!("{}=5szYtenV", lithium.as_str());
+    run(
+        &project,
+        &[
+            "--yes",
+            "update",
+            lithium.as_str(),
+            "--pin",
+            &seed,
+            "--apply",
+        ],
+    );
+    run(&project, &["--yes", "unpin", lithium.as_str()]);
+    run(&project, &["--yes", "sync", "--materialize"]);
+    let baseline = read_project(project.dir());
+    assert!(
+        baseline
+            .lock()
+            .coverage
+            .values()
+            .all(|coverage| *coverage == Coverage::CompleteForSelection),
+        "fixture cannot prove independent groups with missing metadata"
+    );
+    let sodium_file = project.dir().join(placement_path(
+        &baseline.lock().dependencies[&sodium].files.as_slice()[0]
+            .placements
+            .as_slice()[0],
+    ));
+    let original_sodium = std::fs::read(&sodium_file).unwrap();
+    std::fs::write(&sodium_file, b"local author customization").unwrap();
+    std::fs::write(project.dir().join("prior-build.zip"), b"keep prior build").unwrap();
+    std::fs::write(project.dir().join("author-note.md"), b"keep author notes").unwrap();
+    let before = author_snapshot(project.dir());
+    let state_before = snapshot(&project.dir().join(".host-state")).files;
+    let preview = execute(
+        &project,
+        &[
+            "update",
+            sodium.as_str(),
+            lithium.as_str(),
+            "--continue-independent",
+            "--json",
+        ],
+        None,
+    );
+    assert!(
+        !preview.status.success(),
+        "a partial proposal is not a complete preview"
+    );
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(
+        report["proposal"],
+        "partially-ready",
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert_eq!(report["independence_unverified"], serde_json::json!([]));
+    assert_eq!(report["selected"], serde_json::json!([lithium.as_str()]));
+    assert_eq!(
+        report["changed_selections"],
+        serde_json::json!([lithium.as_str()]),
+        "fixture needs a genuinely different permitted Lithium version"
+    );
+    assert_eq!(
+        report["blocked_groups"][0]["dependencies"],
+        serde_json::json!([sodium.as_str()])
+    );
+    assert_eq!(author_snapshot(project.dir()), before);
+    assert_eq!(
+        snapshot(&project.dir().join(".host-state")).files,
+        state_before
+    );
+    let output = execute(
+        &project,
+        &[
+            "--yes",
+            "update",
+            sodium.as_str(),
+            lithium.as_str(),
+            "--continue-independent",
+            "--apply",
+        ],
+        None,
+    );
+    assert!(
+        !output.status.success(),
+        "partial application must retain an unsuccessful status"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Changed  1\n    Kept     0"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Update completed only part of its displayed effects"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let updated = read_project(project.dir());
+    assert_eq!(updated.intent(), baseline.intent());
+    assert_eq!(
+        updated.lock().dependencies[&sodium],
+        baseline.lock().dependencies[&sodium]
+    );
+    assert_ne!(
+        updated.lock().dependencies[&lithium].selected,
+        baseline.lock().dependencies[&lithium].selected
+    );
+    eprintln!(
+        "Independent provider fixture: Sodium {:?}; Lithium {:?} -> {:?}",
+        baseline.lock().dependencies[&sodium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        baseline.lock().dependencies[&lithium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        updated.lock().dependencies[&lithium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection
+    );
+
+    let mut expected = before;
+    for file in baseline.lock().dependencies[&lithium].files.as_slice() {
+        for placement in file.placements.as_slice() {
+            expected.remove(&placement_path(placement));
+        }
+    }
+    let mut actual = author_snapshot(project.dir());
+    assert_ne!(
+        actual.remove(Path::new("empack.lock")),
+        expected.remove(Path::new("empack.lock"))
+    );
+    assert_eq!(
+        actual, expected,
+        "only the successful root's lock and retired materialization can change"
+    );
+    assert_eq!(
+        std::fs::read(&sodium_file).unwrap(),
+        b"local author customization"
+    );
+    // Repair only the fixture-owned drift, then a complete ordinary update and
+    // repeated synchronizations must converge without duplicate change claims.
+    std::fs::write(&sodium_file, original_sodium).unwrap();
+    let fixed = author_snapshot(project.dir());
+    let complete = run(&project, &["--yes", "update", "--all", "--apply"]);
+    assert!(String::from_utf8_lossy(&complete.stdout).contains("Changed  0\n    Kept     2"));
+    assert_eq!(author_snapshot(project.dir()), fixed);
+    for _ in 0..2 {
+        run(&project, &["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), fixed);
+    }
+}
+
+#[test]
+#[ignore = "requires live Modrinth catalog and downloads"]
 fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     use empack_core::model::DependencySelection;
     let project = TestProject::workflow_fixture("provider-update", "fabric", "1.21.1");

@@ -23,6 +23,11 @@ impl AdditionGroup {
         &self.lock.dependencies
     }
 
+    /// Completeness of declared required relationships for each exact selection.
+    pub fn coverage(&self) -> &BTreeMap<DependencyKey, Coverage> {
+        &self.lock.coverage
+    }
+
     /// Extract dependency intent and exact evidence from a coherent resolved request.
     /// Every proposed installation needs an explicit root or a known required path from one.
     pub fn from_resolved(project: &ResolvedProject) -> Result<Self, AdditionError> {
