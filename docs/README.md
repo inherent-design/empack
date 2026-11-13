@@ -4,14 +4,14 @@ Use the documentation at your installed release tag. The main branch can describ
 
 ## User guides
 
-| Guide                                 | Purpose                                                                       |
-| ------------------------------------- | ----------------------------------------------------------------------------- |
-| [Getting started](../README.md)       | Installation and a first modpack                                              |
-| [Manifest](manifest.md)               | Sources, selection policy, pins and output profiles                           |
-| [Usage](usage.md)                     | Authoring, build profiles, pending downloads and instances                    |
-| [Troubleshooting](troubleshooting.md) | Partial assessments, retained selections, runtime evidence and older projects |
-| [Running a server](servers.md)        | Console and GUI launchers, Java and troubleshooting                           |
-| [Publishing](publishing.md)           | Signing keys, hosting and pack update channels                                |
+| Guide                                 | Purpose                                                           |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| [Getting started](../README.md)       | Installation and a first modpack                                  |
+| [Manifest](manifest.md)               | Sources, selection policy, pins and output profiles               |
+| [Usage](usage.md)                     | Authoring, build profiles, saved work and instances               |
+| [Troubleshooting](troubleshooting.md) | Blocked updates, retained selections, recovery and older projects |
+| [Running a server](servers.md)        | Console and GUI launchers, Java and troubleshooting               |
+| [Publishing](publishing.md)           | Signing keys, hosting and pack update channels                    |
 
 ## Development and reference
 

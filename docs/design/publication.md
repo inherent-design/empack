@@ -1,6 +1,6 @@
 # Publication and recovery
 
-Native publication contract for the v0.8.4-beta development target. Callable types and signatures are defined in the [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
+Native publication uses host-private recovery records to apply verified file changes. Callable types and signatures are defined in the [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs).
 
 ## Journaled publication and recovery
 
@@ -10,7 +10,7 @@ Keep the **authoritative operation journal in host-private application state**, 
 
 Candidate/preimage storage needed for recovery has explicit retention and is not ordinary evictable cache. Protect host-state permissions, bound parsing, and bind records to the actual root identity. A same-user malicious native program is outside the security boundary, but a malicious imported project should not be able to manufacture a previously approved operation.
 
-This development target uses publication journal schema 5, creation journal schema 2 and preparation-retention schema 2. Each requires persistent identity evidence. Older internal formats are unsupported; readers do not reinterpret, migrate or delete them. Preserve incompatible interrupted-operation data and use an executable that supports it to resolve that operation before selecting new state. A format error does not establish that a project is unchanged or that retained recovery copies are disposable. Current-format restart, finish and restore retain their normal guarantees across device reassignment.
+The current formats are publication journal schema 5, creation journal schema 2 and preparation-retention schema 2. Each requires persistent identity evidence. Older internal formats are unsupported; readers do not reinterpret, migrate or delete them. Preserve incompatible interrupted-operation data and use an executable that supports it to resolve that operation before selecting new state. A format error does not establish that a project is unchanged or that retained recovery copies are disposable. Current-format restart, finish and restore retain their normal guarantees across device reassignment.
 
 ### Publication plan
 

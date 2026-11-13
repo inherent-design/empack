@@ -117,4 +117,4 @@ Compile external API fixtures that cannot construct authentication, approval or 
 
 ## Release applicability
 
-The [verification registry](../../tests/verification/README.md#package-context-and-candidate-qualification) owns required cases and release scope. The v0.8.4-beta maintainer decision defers named operator-only environment checks while preserving their observed status; it does not relax automated checks or later portable release requirements. A release result and an observation are distinct facts. Do not replace a missing consumer observation with fixture or parser evidence.
+The [verification registry](../../tests/verification/README.md#package-context-and-candidate-qualification) owns required cases and release scope; the [acceptance guide](../verification-acceptance.md) explains consumer evidence. Approved deferrals apply only to their named release and preserve the observed status of each check. A release result and an observation are distinct facts. Do not replace a missing consumer observation with fixture or parser evidence.
