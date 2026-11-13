@@ -916,22 +916,21 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Build verified distribution archives
     Build(BuildArgs),
 
-    /// Add projects to the modpack
+    /// Add a new dependency; use update to change an existing selection
+    #[command(
+        after_help = "To change an existing dependency, run empack update DEPENDENCY to preview it, then add --apply to apply the change."
+    )]
     Add {
         /// Publish verified independent groups after resolution; report blocked groups as failure
         #[arg(long)]
         continue_independent: bool,
         /// Mod names, URLs, or project IDs to add
-        #[arg(help = "Names, provider URLs/IDs, HTTPS files, or local paths")]
-        mods: Vec<String>,
-
-        /// Update an existing selection of the same identity
         #[arg(
-            short,
-            long,
-            help = "Update an existing selection of the same identity"
+            required = true,
+            value_name = "SOURCE",
+            help = "Names, provider URLs/IDs, HTTPS files, or local paths"
         )]
-        force: bool,
+        mods: Vec<String>,
 
         /// Search platform preference
         #[arg(
@@ -965,17 +964,13 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Remove projects from the modpack
     #[command(alias = "rm")]
     Remove {
-        /// Mod names to remove
-        #[arg(help = "Dependency keys, titles, or provider-qualified IDs")]
-        mods: Vec<String>,
-
-        /// Remove dependencies as well
+        /// Exact logical dependency keys to remove
         #[arg(
-            short,
-            long,
-            help = "Reserved: automatic orphan cleanup requires complete dependency metadata"
+            required = true,
+            value_name = "DEPENDENCY",
+            help = "Exact logical dependency keys"
         )]
-        deps: bool,
+        mods: Vec<String>,
 
         /// Remove direct dependencies from empack.yml; keep installed files.
         #[arg(long)]
@@ -1466,7 +1461,6 @@ mod tests {
         assert_eq!(
             Commands::Add {
                 mods: vec![],
-                force: false,
                 platform: None,
                 project_type: None,
                 version_id: None,
@@ -1481,7 +1475,6 @@ mod tests {
         assert_eq!(
             Commands::Remove {
                 mods: vec![],
-                deps: false,
                 forget: false,
                 acknowledge_unknown: false,
             }
@@ -1725,12 +1718,11 @@ mod tests {
     fn cli_config_load_from_supports_remove_alias() {
         let config = CliConfig::load_from(["empack", "rm", "sodium"]).expect("parse remove alias");
 
-        let Some(Commands::Remove { mods, deps, .. }) = config.command else {
+        let Some(Commands::Remove { mods, .. }) = config.command else {
             panic!("expected remove command");
         };
 
         assert_eq!(mods, vec!["sodium"]);
-        assert!(!deps);
     }
 
     #[test]

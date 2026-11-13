@@ -81,7 +81,6 @@ impl Project {
 fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
     Commands::Add {
         mods: names.iter().map(|value| (*value).into()).collect(),
-        force: false,
         platform: None,
         project_type: kind,
         version_id: None,
@@ -94,7 +93,6 @@ fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
 fn remove(names: &[&str], forget: bool, acknowledge_unknown: bool) -> Commands {
     Commands::Remove {
         mods: names.iter().map(|value| (*value).into()).collect(),
-        deps: false,
         forget,
         acknowledge_unknown,
     }
@@ -341,7 +339,6 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     let changed = project.snapshot();
     let update = || {
         Commands::Update(UpdateArgs {
-            pins: vec![],
             release_policy: Default::default(),
             continue_independent: false,
             dependencies: vec!["fixture".into()],
@@ -365,7 +362,6 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert!(
         project
             .run(Commands::Update(UpdateArgs {
-                pins: vec![],
                 release_policy: Default::default(),
                 continue_independent: false,
                 dependencies: vec!["fixture".into(), "missing".into()],

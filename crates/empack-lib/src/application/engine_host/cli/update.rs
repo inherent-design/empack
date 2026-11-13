@@ -13,6 +13,24 @@ pub async fn update_command(
     session: &dyn Session,
     options: crate::application::cli::UpdateArgs,
 ) -> Result<()> {
+    run_update(session, options, || {
+        dependencies::configured_services(session)
+    })
+    .await
+}
+#[cfg(test)]
+pub(super) async fn update_with_services(
+    session: &dyn Session,
+    options: crate::application::cli::UpdateArgs,
+    services: dependencies::AdditionServices,
+) -> Result<()> {
+    run_update(session, options, || Ok(services)).await
+}
+async fn run_update(
+    session: &dyn Session,
+    options: crate::application::cli::UpdateArgs,
+    services: impl FnOnce() -> Result<dependencies::AdditionServices>,
+) -> Result<()> {
     ensure!(
         options.all == options.dependencies.is_empty(),
         crate::application::cli::CommandInputRequired(
@@ -79,7 +97,7 @@ pub async fn update_command(
         NonEmpty::new(inputs)?,
         options.release_policy.map(Into::into),
         SourceEvidencePolicy::Compatibility,
-        dependencies::configured_services(session)?,
+        services()?,
         dependencies::UpdateExecution {
             selection: if options.select {
                 dependencies::UpdateSelection::Interactive
@@ -107,26 +125,6 @@ pub async fn update_command(
     .await
 }
 
-pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
-    update_with_policy(session, keys, None, BatchPolicy::AllRequested, vec![]).await
-}
-pub async fn update_with_policy(
-    session: &dyn Session,
-    keys: Vec<String>,
-    releases: Option<ReleasePolicy>,
-    policy: BatchPolicy,
-    pins: Vec<String>,
-) -> Result<()> {
-    update_pinned_with_services(
-        session,
-        keys,
-        releases,
-        policy,
-        dependencies::configured_services(session)?,
-        pins,
-    )
-    .await
-}
 /// Adopt selected installed content. Provider pins come from verified byte identification,
 /// not from a latest-version query; final native preparation verifies the observed bytes.
 pub async fn adopt(session: &dyn Session, keys: Vec<String>) -> Result<()> {
@@ -258,44 +256,6 @@ pub(super) async fn adopt_with_services(
         );
     }
     dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await
-}
-#[cfg(test)]
-pub(super) async fn update_with_services(
-    session: &dyn Session,
-    keys: Vec<String>,
-    releases: Option<ReleasePolicy>,
-    policy: BatchPolicy,
-    services: dependencies::AdditionServices,
-) -> Result<()> {
-    update_pinned_with_services(session, keys, releases, policy, services, vec![]).await
-}
-pub(super) async fn update_pinned_with_services(
-    session: &dyn Session,
-    keys: Vec<String>,
-    releases: Option<ReleasePolicy>,
-    policy: BatchPolicy,
-    services: dependencies::AdditionServices,
-    pins: Vec<String>,
-) -> Result<()> {
-    let current = current(session).await?;
-    let (_, project) = project_path(session)?;
-    let mut inputs = selections(&current, &project, keys)?.into_vec();
-    let pins = requested_pins(&current, &mut inputs, pins)?;
-    dependencies::update_batch_with_services(
-        session,
-        NonEmpty::new(inputs)?,
-        releases,
-        SourceEvidencePolicy::Compatibility,
-        services,
-        dependencies::UpdateExecution {
-            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
-            batch: policy,
-            pins,
-            mode: ApplicationMode::Apply,
-            output: Default::default(),
-        },
-    )
-    .await
 }
 /// Exact logical keys select installed identities; version IDs are parsed in that provider's
 /// namespace. Nothing here searches, edits documents or promotes transitive selections.

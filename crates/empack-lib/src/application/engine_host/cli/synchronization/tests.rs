@@ -912,9 +912,11 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
         .unwrap();
         super::super::update::update_with_services(
             &session(root.path(), false),
-            vec![key.as_str().into()],
-            None,
-            BatchPolicy::AllRequested,
+            crate::application::cli::UpdateArgs {
+                dependencies: vec![key.as_str().into()],
+                apply: true,
+                ..Default::default()
+            },
             services("http://127.0.0.1:9"),
         )
         .await
@@ -951,10 +953,12 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
             assert!(
                 super::super::update::update_with_services(
                     &session(root.path(), false),
-                    vec![key.as_str().into()],
-                    None,
-                    BatchPolicy::AllRequested,
-                    services("http://127.0.0.1:9"),
+                    crate::application::cli::UpdateArgs {
+                        dependencies: vec![key.as_str().into()],
+                        apply: true,
+                        ..Default::default()
+                    },
+                    services("http://127.0.0.1:9")
                 )
                 .await
                 .is_err()
@@ -1501,9 +1505,11 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     // Update and a placement edit must use the locked identity, never re-resolve the slug.
     super::super::update::update_with_services(
         &session(root.path(), false),
-        vec!["menu".into()],
-        None,
-        BatchPolicy::AllRequested,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["menu".into()],
+            apply: true,
+            ..Default::default()
+        },
         services(&server.url()),
     )
     .await

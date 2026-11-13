@@ -263,8 +263,8 @@ fn selector_journey(
             lock
         );
     }
-    // Re-add through every spelling requires deliberate replacement and retains
-    // one logical root for this canonical project. Refusal preserves all inputs.
+    // Re-addition through any spelling refuses; deliberate updates select the
+    // existing logical key and retain one root for this canonical project.
     for selector in [id, url, slug] {
         let author_before = author_snapshot(project.dir());
         let denied = execute(
@@ -274,10 +274,10 @@ fn selector_journey(
         );
         assert!(
             !denied.status.success(),
-            "same-identity replacement needs --force"
+            "Existing dependencies must be changed through update"
         );
         assert_eq!(author_snapshot(project.dir()), author_before);
-        run(&["--yes", "add", "--force", "--platform", platform, selector]);
+        run(&["--yes", "update", key.as_str(), "--apply"]);
         let updated = read_project(project.dir());
         assert_eq!(updated.intent().roots.len(), resolved.intent().roots.len());
         assert!(updated.intent().roots.contains_key(key));
@@ -335,7 +335,7 @@ fn selector_journey(
         }
     }
     run(&["--yes", "sync", "--materialize"]);
-    run(&["--yes", "add", "--force", "--platform", platform, id]);
+    run(&["--yes", "update", "custom-alias", "--apply"]);
     let aliased = read_project(project.dir());
     let alias = empack_core::model::DependencyKey::parse("custom-alias").unwrap();
     assert!(aliased.intent().roots.contains_key(&alias));
@@ -358,7 +358,7 @@ fn selector_journey(
         run(&["--yes", "sync"]);
         assert_eq!(author_snapshot(project.dir()), before);
     }
-    let query = format!("{platform}:{id}");
+    let query = String::from("custom-alias");
     let preview = run(&["--dry-run", "remove", &query]);
     let rendered = format!(
         "{}\n{}",

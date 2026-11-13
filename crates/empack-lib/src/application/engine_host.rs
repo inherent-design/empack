@@ -610,9 +610,7 @@ mod build;
 pub use build::{BuildDecisions, build, build_with_local_files, continue_build};
 
 mod dependencies;
-pub use dependencies::{
-    AddHostInput, add, add_providers, adopt_observed, remove, synchronize, update,
-};
+pub use dependencies::{AddHostInput, add, add_providers, adopt_observed, remove, synchronize};
 
 mod cleanup;
 pub use cleanup::clean;

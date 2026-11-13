@@ -178,6 +178,21 @@ fn cli_unknown_commands_report_usage_without_mutation() {
                 "{stderr}"
             );
         }
+        for args in [
+            vec!["add"],
+            vec!["remove"],
+            vec!["add", "--force", "fixture"],
+            vec!["add", "-f", "fixture"],
+            vec!["remove", "--deps", "fixture"],
+            vec!["remove", "-d", "fixture"],
+        ] {
+            let output = fixture.invoke(&args, 2);
+            assert!(output.stdout.is_empty(), "{args:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("Usage:"),
+                "{args:?}: {output:?}"
+            );
+        }
     }
 }
 

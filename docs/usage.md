@@ -23,7 +23,7 @@ Status does not verify installed content, authenticate a channel or establish th
 | Command                 | Meaning                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------- |
 | `init`                  | Create an authoring project or import a supported archive                       |
-| `add`                   | Describe and resolve dependencies, preserving exact source intent               |
+| `add`                   | Add a new dependency, preserving exact source intent                            |
 | `check`                 | Validate current authoring, recorded relationships and applicable local content |
 | `manifest explain/diff` | Explain local authoring and compare recorded constraints without network access |
 | `pin` / `unpin`         | Change exact provider selection intent without refreshing content               |
@@ -35,6 +35,8 @@ Status does not verify installed content, authenticate a channel or establish th
 | `build`                 | Produce explicitly selected consumer distributions                              |
 | `recover`               | Inspect or finish/restore an interrupted publication                            |
 | `clean`                 | Retire explicitly owned artifacts, disposable cache or continuation             |
+
+Use exact dependency keys from `empack.yml` or `empack.lock` when selecting existing dependencies. `add` and `adopt --from` accept source names, provider URLs/IDs and paths to identify new content. Removal does not infer a key from a display title or provider string. Known dependents and file ownership still constrain what can be removed.
 
 Initialization establishes `pack.id` once. Initialization recommends Java from the selected runtime; `init --java MAJOR` overrides that preference within the admitted policy. A display name or version change preserves the pack ID. See the [manifest guide](manifest.md) for source-specific declarations and author-only projects.
 

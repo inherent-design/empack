@@ -43,7 +43,6 @@ fn init() -> Commands {
 fn add(name: &str) -> Commands {
     Commands::Add {
         mods: vec![name.into()],
-        force: false,
         platform: None,
         project_type: None,
         version_id: None,
@@ -56,7 +55,6 @@ fn add(name: &str) -> Commands {
 fn remove(name: &str) -> Commands {
     Commands::Remove {
         mods: vec![name.into()],
-        deps: false,
         forget: false,
         acknowledge_unknown: false,
     }
@@ -248,24 +246,22 @@ async fn dispatcher_preview_decline_and_invalid_input_preserve_whole_project() {
     let mut invalid = match add("fixture.jar") {
         Commands::Add {
             mods,
-            force,
             platform,
             project_type,
             version_id,
             file_id,
             ..
-        } => (mods, force, platform, project_type, version_id, file_id),
+        } => (mods, platform, project_type, version_id, file_id),
         _ => unreachable!(),
     };
     invalid.0.push("missing.jar".into());
     execute_command_with_session(
         Commands::Add {
             mods: invalid.0,
-            force: invalid.1,
-            platform: invalid.2,
-            project_type: invalid.3,
-            version_id: invalid.4,
-            file_id: invalid.5,
+            platform: invalid.1,
+            project_type: invalid.2,
+            version_id: invalid.3,
+            file_id: invalid.4,
             file_plan: None,
             download_as_local: false,
             continue_independent: false,

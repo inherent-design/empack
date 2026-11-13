@@ -40,12 +40,11 @@ pub(super) use synchronization::{
     retained_input_keys as retained_sync_input_keys,
 };
 pub(crate) use update::UpdatePinInput;
-pub use update::{adopt, update, update_command, update_with_policy};
+pub use update::{adopt, update_command};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
 pub struct AddOptions {
     pub inputs: Vec<String>,
-    pub force: bool,
     pub continue_independent: bool,
     pub platform: Option<SearchPlatform>,
     pub kind: Option<CliProjectType>,
@@ -206,9 +205,13 @@ async fn selected_with_catalog(
     operation: InputOperation,
 ) -> Result<()> {
     ensure!(
+        !options.inputs.is_empty(),
+        crate::application::cli::CommandInputRequired("Select at least one dependency source")
+    );
+    ensure!(
         operation != InputOperation::Adopt
-            || (!options.force && !options.download_as_local && !options.continue_independent),
-        "Adoption cannot force updates or convert downloads to local ownership"
+            || (!options.download_as_local && !options.continue_independent),
+        "Adoption cannot convert downloads to local ownership or publish independent add groups"
     );
     let pin = options.pin()?;
     let preferred = provider(options.platform.as_ref(), pin.as_ref());
@@ -357,11 +360,7 @@ async fn selected_with_catalog(
         NonEmpty::new(inputs)?,
         None,
         SourceEvidencePolicy::Compatibility,
-        if options.force {
-            ExistingDependencyPolicy::UpdateSameIdentity
-        } else {
-            ExistingDependencyPolicy::RejectExisting
-        },
+        ExistingDependencyPolicy::RejectExisting,
         services,
         if options.continue_independent {
             BatchPolicy::ContinueIndependent

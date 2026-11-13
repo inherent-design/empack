@@ -141,7 +141,8 @@
           "assertions": [
             "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
-            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work"
           ]
         },
         {
@@ -218,7 +219,8 @@
             "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
-            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback",
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work"
           ],
           "required_targets": [
             "x86_64-unknown-linux-gnu",
@@ -5091,13 +5093,13 @@
       "id": "UX-031",
       "family": "Dependencies and resolution",
       "title": "Physical removal and forgetting",
-      "public_surface": "remove; --forget; --acknowledge-unknown",
+      "public_surface": "remove DEPENDENCY\u2026; --forget; --acknowledge-unknown",
       "api_ids": [
         "DEP",
         "PUB"
       ],
       "required_assertions": "Correct canonical target under alias; retained dependents block; forget retains bytes; sources/worlds/unowned dirs untouched.",
-      "required_work": "Cross-command add\u2192alias/re-add\u2192sync\u2192remove; explicit unknown graph decisions and unsupported --deps.",
+      "required_work": "Cross-command new add, canonical identity/alias retention, sync and exact-key removal; explicit unknown graph decisions and refusal of retired orphan flags.",
       "evidence_tiers": [
         "U",
         "H",
@@ -5122,8 +5124,8 @@
             "empack-lib::engine::removal::tests::incomplete_selected_nodes_do_not_prevent_an_explicit_complete_group_removal",
             "empack-lib::engine::removal::tests::required_cycles_need_explicit_group_selection_and_never_collect_other_nodes",
             "empack-lib::engine::removal::tests::stale_resolution_cannot_authorize_removal",
-            "empack-lib::engine::removal::selection::tests::exact_keys_and_titles_deduplicate_and_unknown_names_fail_the_batch",
-            "empack-lib::engine::removal::selection::tests::provider_identity_is_qualified_and_titles_never_override_exact_keys"
+            "empack-lib::engine::removal::selection::tests::exact_keys_ignore_titles_and_unknown_keys_fail_the_batch",
+            "empack-lib::engine::removal::selection::tests::provider_identity_is_explicit_and_display_titles_never_select_keys"
           ],
           "required_platforms": [
             "linux",
@@ -5135,7 +5137,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Logical keys and qualified provider identity resolve deterministically; ambiguous titles and invalid grouped requests cannot select a successful subset",
+            "Native requests use exact case-sensitive keys or explicitly typed provider identities; display titles and raw provider strings are never inferred as targets, and missing keys refuse the whole group",
             "Known dependents and cycles require explicit selection; incomplete retained evidence needs acknowledgement; forgetting retains exact files, edges and uncertainty",
             "Stale resolution cannot authorize removal and native publication remains separate from a pure proposal"
           ]
@@ -5194,7 +5196,7 @@
             "empack-lib::engine::api::removal_tests::removal_preview_is_read_only_and_requires_exact_grant_and_engine",
             "empack-lib::engine::api::removal_tests::remove_and_demote_have_distinct_receipts_and_subsequent_build_content",
             "empack-lib::engine::api::removal_tests::selected_portable_alias_is_not_mistaken_for_absent_content",
-            "empack-lib::engine::api::removal_tests::title_selection_previews_canonical_identity_and_unknown_batch_changes_nothing",
+            "empack-lib::engine::api::removal_tests::logical_selection_previews_exact_identity_and_unknown_batch_changes_nothing",
             "empack-lib::engine::api::removal_tests::unrelated_content_does_not_block_removal_or_become_a_read_precondition",
             "empack-lib::engine::api::removal_tests::unselected_locked_bytes_are_not_removal_inputs"
           ],
@@ -5230,7 +5232,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual CLI resolves a canonical provider ID to its aliased root and refuses grouped errors, unsupported --deps and contradictory policies without edits",
+            "The actual CLI requires exact dependency keys, refuses provider/title/case guesses and retired --deps, and preserves all files on invalid grouped or contradictory requests",
             "Forgetting retains exact selections and bytes across two syncs; acknowledgement cannot override known dependents; physical removal requires deliberate selection",
             "Source files, custom bindings, worlds, unowned directories and prior artifacts survive preview/refusal and unrelated removal; actual selected deletion agrees with the receipt"
           ]

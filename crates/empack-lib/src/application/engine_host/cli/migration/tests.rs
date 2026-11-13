@@ -111,7 +111,6 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
     provider(&mut server, "Root0002", "RootVer2").await;
     let options = AddOptions {
         inputs: vec!["Root0001".into()],
-        force: false,
         continue_independent: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
@@ -274,7 +273,6 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         &session(root.path(), false),
         AddOptions {
             inputs: vec!["Root0001".into()],
-            force: false,
             continue_independent: false,
             platform: Some(SearchPlatform::Modrinth),
             kind: None,
@@ -614,7 +612,6 @@ async fn migration_native_conflicts_are_reported_before_readiness_and_preserve_a
     provider(&mut server, "Root0001", "RootVer1").await;
     let selected = AddOptions {
         inputs: vec!["Root0001".into()],
-        force: false,
         platform: Some(crate::application::cli::SearchPlatform::Modrinth),
         kind: None,
         version_id: Some("RootVer1".into()),

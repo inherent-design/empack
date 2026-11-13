@@ -185,9 +185,11 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
         let (host, messages) = session(root.path(), dry).record_status_messages();
         let result = super::super::super::update::update_with_services(
             &host,
-            vec!["root".into(), "pinned".into()],
-            None,
-            BatchPolicy::AllRequested,
+            crate::application::cli::UpdateArgs {
+                dependencies: vec!["root".into(), "pinned".into()],
+                apply: !dry,
+                ..Default::default()
+            },
             services(&server),
         )
         .await;

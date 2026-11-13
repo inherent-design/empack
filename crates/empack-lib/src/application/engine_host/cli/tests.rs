@@ -43,7 +43,6 @@ pub(super) async fn fixture(root: &Path) {
 fn options(value: &str) -> AddOptions {
     AddOptions {
         inputs: vec![value.into()],
-        force: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
         version_id: Some("RootVer1".into()),
@@ -126,14 +125,26 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
             .create_async().await;
     }
-    server.mock("GET", "/version/RootVer1").with_body(json!({
+    let version = json!({
         "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
         "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{
             "sha1":"f07e5a815613c5abeddc4b682247a4c42d8a95df",
             "sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
             "url":"https://example.invalid/renderer.jar"}],"dependencies":[],
         "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-    }).to_string()).create_async().await;
+    });
+    server
+        .mock("GET", "/version/RootVer1")
+        .with_body(version.to_string())
+        .create_async()
+        .await;
+    let catalog_page = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([version]).to_string())
+        .expect(3)
+        .create_async()
+        .await;
     let mut prior: Option<empack_core::model::ResolutionLock> = None;
     for input in ["renderer", "Root0001", "https://modrinth.com/mod/renderer"] {
         let root = tempfile::tempdir().unwrap();
@@ -185,9 +196,11 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
         update::update_with_services(
             &session(root.path(), false),
-            keys,
-            None,
-            BatchPolicy::AllRequested,
+            crate::application::cli::UpdateArgs {
+                dependencies: keys,
+                apply: true,
+                ..Default::default()
+            },
             dependencies::AdditionServices {
                 transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
                 catalog,
@@ -212,6 +225,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             before
         );
     }
+    catalog_page.assert_async().await;
 }
 
 #[tokio::test]
@@ -339,13 +353,16 @@ async fn reviewed_update_pin_changes_only_the_named_author_selection() {
             vec!["missing=RootVer2".into()],
             vec![format!("{}=not a version", key.as_str())],
         ] {
-            let error = update::update_pinned_with_services(
+            let error = update::update_with_services(
                 &session(root.path(), false),
-                selected_keys.clone(),
-                None,
-                policy,
+                crate::application::cli::UpdateArgs {
+                    dependencies: selected_keys.clone(),
+                    apply: true,
+                    continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                    pins,
+                    ..Default::default()
+                },
                 services(),
-                pins,
             )
             .await
             .unwrap_err();
@@ -356,25 +373,31 @@ async fn reviewed_update_pin_changes_only_the_named_author_selection() {
             assert_eq!(crate::test_support::file_bytes(root.path()), before);
         }
         let pins = vec![format!("{}={selected_version}", key.as_str())];
-        update::update_pinned_with_services(
+        update::update_with_services(
             &session(root.path(), true),
-            selected_keys.clone(),
-            None,
-            policy,
+            crate::application::cli::UpdateArgs {
+                dependencies: selected_keys.clone(),
+                apply: false,
+                continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                pins: pins.clone(),
+                ..Default::default()
+            },
             services(),
-            pins.clone(),
         )
         .await
         .unwrap();
         assert_eq!(crate::test_support::file_bytes(root.path()), before);
         let (applying, messages) = session(root.path(), false).record_status_messages();
-        update::update_pinned_with_services(
+        update::update_with_services(
             &applying,
-            selected_keys,
-            None,
-            policy,
+            crate::application::cli::UpdateArgs {
+                dependencies: selected_keys,
+                apply: true,
+                continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                pins,
+                ..Default::default()
+            },
             services(),
-            pins,
         )
         .await
         .unwrap();
@@ -523,7 +546,6 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             .create_async().await;
         let selected = || AddOptions {
             inputs: vec!["renamed.jar".into()],
-            force: false,
             platform: Some(SearchPlatform::Modrinth),
             kind: None,
             version_id: None,
@@ -794,7 +816,6 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
     server.mock("GET", "/project/Assets01").with_body(json!({"id":"Assets01","slug":"assets","title":"Assets","project_type":"resourcepack","loaders":["minecraft"]}).to_string()).create_async().await;
     let selected = || AddOptions {
         inputs: vec!["renamed.zip".into()],
-        force: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
         version_id: None,
@@ -923,7 +944,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     };
     let selected = || AddOptions {
         inputs: vec!["adventure.zip".into()],
-        force: false,
         platform: None,
         kind: Some(CliProjectType::World),
         version_id: None,
@@ -1064,7 +1084,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
             mods: vec!["adventure".into()],
-            deps: false,
             forget: true,
             acknowledge_unknown: false,
         },
@@ -1073,9 +1092,16 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     .await
     .unwrap();
     assert!(project(root.path()).intent().roots.is_empty());
-    update(&session(root.path(), false), vec!["adventure".into()])
-        .await
-        .unwrap();
+    update_command(
+        &session(root.path(), false),
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["adventure".into()],
+            apply: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     fs::write(world.join("region/r.0.0.mca"), b"demoted edit").unwrap();
     adopt(&session(root.path(), false), vec!["adventure".into()])
         .await
@@ -1092,7 +1118,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
             mods: vec!["adventure".into()],
-            deps: false,
             forget: false,
             acknowledge_unknown: true,
         },
@@ -1172,7 +1197,6 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
         &session(root.path(), false),
         AddOptions {
             inputs: vec!["first.zip".into(), "second.zip".into()],
-            force: false,
             platform: None,
             kind: Some(CliProjectType::World),
             version_id: None,
@@ -1186,9 +1210,16 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
     .unwrap();
     assert_eq!(project(root.path()).lock().dependencies.len(), 2);
     let before = crate::test_support::file_bytes(&root.path().join("project"));
-    update(&session(root.path(), false), vec!["first".into()])
-        .await
-        .unwrap();
+    update_command(
+        &session(root.path(), false),
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["first".into()],
+            apply: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
@@ -1963,9 +1994,21 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
     for (by_role, releases, selected) in [false, true].into_iter().flat_map(|by_role| {
         [
             (by_role, None, "RootVer2"),
-            (by_role, Some(ReleasePolicy::Any), "RootVer2"),
-            (by_role, Some(ReleasePolicy::StableOnly), "RootVer1"),
-            (by_role, Some(ReleasePolicy::PreferStable), "RootVer1"),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::Any),
+                "RootVer2",
+            ),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::StableOnly),
+                "RootVer1",
+            ),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::PreferStable),
+                "RootVer1",
+            ),
         ]
     }) {
         let root = tempfile::tempdir().unwrap();
@@ -2018,9 +2061,12 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
             let (host, messages) = session(root.path(), dry).record_status_messages();
             update::update_with_services(
                 &host,
-                vec![key.as_str().into()],
-                releases,
-                BatchPolicy::AllRequested,
+                crate::application::cli::UpdateArgs {
+                    dependencies: vec![key.as_str().into()],
+                    apply: !dry,
+                    release_policy: releases,
+                    ..Default::default()
+                },
                 dependencies::AdditionServices {
                     transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
                     catalog,

@@ -370,7 +370,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             ),
             (
                 vec!["remove", "renderer-alias", "--deps"],
-                "Automatic orphan cleanup requires complete dependency evidence",
+                "unexpected argument '--deps'",
             ),
             (
                 vec![
@@ -390,8 +390,20 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
                 .stderr(predicates::str::contains(diagnostic));
             assert_eq!(snapshot(root).files, before);
         }
-        // A canonical provider selector resolves the aliased author root.
-        let query = "modrinth:Project1";
+        // Existing selections require their exact keys, without provider/title fallback.
+        for non_key in [
+            "modrinth:Project1",
+            "Project1",
+            "Renderer",
+            "RENDERER-ALIAS",
+        ] {
+            command()
+                .args(["--yes", "remove", non_key, "--forget"])
+                .assert()
+                .failure();
+            assert_eq!(snapshot(root).files, before);
+        }
+        let query = "renderer-alias";
         for dry in [true, false] {
             let mut cmd = command();
             cmd.args(["--yes", "remove", query]);

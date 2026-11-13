@@ -249,8 +249,8 @@ fn foreign_metadata_neither_authorizes_nor_blocks_native_removal() {
     }
     let cancel = Cancellation::default();
     let selectors = NonEmpty::new(vec![
-        RemovalSelector::Query("Assets".into()),
-        RemovalSelector::Query("assets".into()),
+        RemovalSelector::Key(empack_core::model::DependencyKey::parse("assets").unwrap()),
+        RemovalSelector::Key(empack_core::model::DependencyKey::parse("assets").unwrap()),
     ])
     .unwrap();
     let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))

@@ -180,7 +180,10 @@ fn sync_request(project: &ResolvedProject) -> SyncRequest {
 }
 fn removal(query: &str) -> RemoveRequest {
     RemoveRequest {
-        selections: NonEmpty::new(vec![RemovalSelector::Query(query.into())]).unwrap(),
+        selections: NonEmpty::new(vec![RemovalSelector::Key(
+            empack_core::model::DependencyKey::parse(query).unwrap(),
+        )])
+        .unwrap(),
         mode: RemovalMode::RemoveContent,
         evidence: RemovalEvidencePolicy::RequireComplete,
     }
@@ -351,12 +354,12 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     }
     let before = snapshot(root.path());
     for (yes, dry) in [(true, true), (false, false)] {
-        remove(&session(root.path(), yes, dry), removal("renderer"))
+        remove(&session(root.path(), yes, dry), removal("my-alias"))
             .await
             .unwrap();
         assert_eq!(snapshot(root.path()), before);
     }
-    remove(&session(root.path(), true, false), removal("renderer"))
+    remove(&session(root.path(), true, false), removal("my-alias"))
         .await
         .unwrap();
     let retained = read(&project);
@@ -771,17 +774,14 @@ async fn native_update_preserves_authored_intent_and_converges_across_mixed_cont
     .await
     .unwrap();
     assert_eq!(snapshot(&project), before);
-    // The public direct-only entry shares the same exact update lifecycle.
-    super::update(
+    // The public command selects the existing local dependency by its exact key.
+    super::super::cli::update_command(
         &session(root.path(), true, false),
-        NonEmpty::new(vec![local_batch_input(
-            "settings.cfg",
-            "settings",
-            "config/settings.cfg",
-        )])
-        .unwrap(),
-        ReleasePolicy::PreferStable,
-        SourceEvidencePolicy::Compatibility,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["settings".into()],
+            apply: true,
+            ..Default::default()
+        },
     )
     .await
     .unwrap();

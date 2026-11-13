@@ -118,7 +118,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         Commands::Init(args) => Box::pin(engine_host::cli::initialize(session, &args)).await,
         Commands::Add {
             mods,
-            force,
             platform,
             project_type,
             version_id,
@@ -131,7 +130,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                 session,
                 engine_host::cli::AddOptions {
                     inputs: mods,
-                    force,
                     platform,
                     kind: project_type,
                     version_id,
@@ -171,7 +169,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                     session,
                     engine_host::cli::AddOptions {
                         inputs: from,
-                        force: false,
                         platform: selection.platform,
                         kind: selection.project_type,
                         version_id: selection.version_id,
@@ -186,19 +183,19 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Remove {
             mods,
-            deps,
             forget,
             acknowledge_unknown,
         } => {
-            anyhow::ensure!(
-                !deps,
-                "Automatic orphan cleanup requires complete dependency evidence; select exact dependencies to remove"
-            );
             Box::pin(engine_host::remove(
                 session,
                 RemoveRequest {
                     selections: NonEmpty::new(
-                        mods.into_iter().map(RemovalSelector::Query).collect(),
+                        mods.into_iter()
+                            .map(|value| {
+                                empack_core::model::DependencyKey::parse(&value)
+                                    .map(RemovalSelector::Key)
+                            })
+                            .collect::<std::result::Result<Vec<_>, _>>()?,
                     )?,
                     mode: if forget {
                         RemovalMode::ForgetRoots

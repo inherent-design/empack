@@ -109,41 +109,6 @@ pub async fn add(
     let services = configured_services(session)?;
     add_with_services(session, inputs, releases, evidence, existing, services).await
 }
-/// Deliberately refresh selected installed identities while preserving authored intent and pins.
-/// Inputs describe the requested selections; an unknown identity cannot become an implicit add.
-pub async fn update(
-    session: &dyn Session,
-    inputs: NonEmpty<AddHostInput>,
-    releases: impl Into<Option<ReleasePolicy>> + Send,
-    evidence: SourceEvidencePolicy,
-) -> Result<()> {
-    let services = configured_services(session)?;
-    update_with_services(session, inputs, releases, evidence, services).await
-}
-pub(super) async fn update_with_services(
-    session: &dyn Session,
-    inputs: NonEmpty<AddHostInput>,
-    releases: impl Into<Option<ReleasePolicy>> + Send,
-    evidence: SourceEvidencePolicy,
-    services: AdditionServices,
-) -> Result<()> {
-    change_with_services(
-        session,
-        inputs,
-        releases,
-        evidence,
-        Change::Update {
-            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
-            pins: Default::default(),
-            mode: ApplicationMode::Apply,
-            output: UpdateOutput::default(),
-        },
-        services,
-        BatchPolicy::AllRequested,
-    )
-    .await
-}
-
 pub(super) async fn adopt_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
