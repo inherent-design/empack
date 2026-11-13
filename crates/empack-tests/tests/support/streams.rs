@@ -207,16 +207,16 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
             if mode == "quiet" {
                 command.arg("--quiet");
             }
-            let mut session = terminal::spawn(if mode == "combined" {
-                command
-            } else {
-                redirect(command, capture.path(), true)
-            });
+            let mut session = terminal::spawn_sized(
+                if mode == "combined" {
+                    command
+                } else {
+                    redirect(command, capture.path(), true)
+                },
+                width,
+                30,
+            );
             session.set_expect_timeout(Some(Duration::from_secs(20)));
-            session
-                .get_process_mut()
-                .set_window_size(width, 30)
-                .unwrap();
             let mut rendered = Vec::new();
             if mode != "quiet" {
                 rendered.extend_from_slice(
@@ -250,7 +250,10 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
                 !parser.screen().hide_cursor(),
                 "cursor remained hidden: {mode}"
             );
-            assert!(!screen.contains("Checking"), "{width} {mode}: {screen}");
+            assert!(
+                !screen.contains("Checking"),
+                "{width} {mode}: {screen}; raw terminal bytes: {rendered:?}"
+            );
             if mode == "interrupt" {
                 assert!(screen.contains("interrupted"), "{screen}");
             } else if mode == "combined" {

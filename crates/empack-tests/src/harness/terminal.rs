@@ -4,6 +4,43 @@ pub fn spawn(command: std::process::Command) -> expectrl::session::OsSession {
     expectrl::Session::spawn(command).unwrap()
 }
 
+/// Establish fixed geometry before the command can write its first frame.
+#[cfg(not(windows))]
+pub fn spawn_sized(
+    command: std::process::Command,
+    columns: u16,
+    rows: u16,
+) -> expectrl::session::OsSession {
+    use expectrl::Expect;
+    // The PTY library sets 80x24 in both child and parent during spawn. Hold
+    // this literal-argv wrapper until spawn and our final resize have completed.
+    let mut wrapper = std::process::Command::new("/bin/sh");
+    wrapper.env_clear();
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            wrapper.env(key, value);
+        }
+    }
+    if let Some(directory) = command.get_current_dir() {
+        wrapper.current_dir(directory);
+    }
+    wrapper
+        .args([
+            "-c",
+            "IFS= read -r ready && [ \"$ready\" = empack-terminal-ready ] || exit 125\nexec \"$@\"",
+            "empack-terminal-fixture",
+        ])
+        .arg(command.get_program())
+        .args(command.get_args());
+    let mut session = spawn(wrapper);
+    session
+        .get_process_mut()
+        .set_window_size(columns, rows)
+        .unwrap();
+    session.send_line("empack-terminal-ready").unwrap();
+    session
+}
+
 #[cfg(windows)]
 pub fn spawn(command: std::process::Command) -> expectrl::Session<conpty::Process, Stream> {
     // The verification runner's CREATE_NEW_PROCESS_GROUP suppresses Ctrl-C for
@@ -123,12 +160,8 @@ pub fn capture_output(
     expected: i32,
 ) -> Vec<u8> {
     use expectrl::Expect;
-    let mut session = spawn(command);
+    let mut session = spawn_sized(command, columns, rows);
     session.set_expect_timeout(Some(std::time::Duration::from_secs(15)));
-    session
-        .get_process_mut()
-        .set_window_size(columns, rows)
-        .unwrap();
     let output = session.expect(expectrl::Eof).unwrap().as_bytes().to_vec();
     wait_for_exit(session.get_process(), expected);
     output
