@@ -731,6 +731,13 @@ mod tests {
         for (index, (_, kind, folder)) in cases.iter().enumerate() {
             let key = DependencyKey::parse(&format!("curseforge:{}", 100 + index)).unwrap();
             let locked = &project.lock().dependencies[&key];
+            assert!(matches!(
+                project.intent().roots[&key].selection,
+                empack_core::model::DependencySelection::Automatic
+            ));
+            assert!(
+                matches!(&locked.selected.as_ref().unwrap().selection, empack_core::identity::PinSelector::CurseForgeFile(id) if id.get() == (200 + index) as u64)
+            );
             assert_eq!(locked.kind, *kind);
             assert_eq!(
                 locked.selected.as_ref().unwrap().project.to_string(),
@@ -801,6 +808,61 @@ mod tests {
         }
         for (index, name) in ["empack.yml", "empack.lock"].into_iter().enumerate() {
             assert_eq!(fs::read(target.join(name)).unwrap(), original[index]);
+        }
+
+        // A newer resource-pack record must not alter ordinary synchronization.
+        // Deliberate update uses the same public command path and explicit mode.
+        let next = json!({"id":301,"gameId":432,"modId":101,"fileName":"fixture.zip","fileLength":7,
+            "hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],
+            "downloadUrl":"https://example.invalid/101/different.bin","gameVersions":["1.21.1"],
+            "dependencies":[],"isAvailable":true,"releaseType":1,"fileDate":"2026-02-01T00:00:00Z"});
+        server
+            .mock("GET", "/mods/101/files/301")
+            .with_body(json!({"data":next.clone()}).to_string())
+            .create_async()
+            .await;
+        let page = server.mock("GET", "/mods/101/files")
+            .match_query(mockito::Matcher::Any)
+            .with_body(json!({"data":[next],"pagination":{"index":0,"pageSize":50,"resultCount":1,"totalCount":1}}).to_string())
+            .expect(3).create_async().await;
+        let before = crate::test_support::file_bytes(&target);
+        super::super::synchronize(&session, false).await.unwrap();
+        assert_eq!(crate::test_support::file_bytes(&target), before);
+        let key = DependencyKey::parse("curseforge:101").unwrap();
+        for apply in [false, true, false] {
+            let before = crate::test_support::file_bytes(root.path());
+            let catalog =
+                ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into()));
+            super::super::update::update_with_services(
+                &session,
+                crate::application::cli::UpdateArgs {
+                    dependencies: vec![key.as_str().into()],
+                    apply,
+                    ..Default::default()
+                },
+                crate::application::engine_host::dependencies::AdditionServices {
+                    transport: catalog.configure_acquisition(HttpAcquisition::for_loopback_tests()),
+                    catalog,
+                    files: crate::engine::addition::DirectFileLimits::default(),
+                },
+            )
+            .await
+            .unwrap();
+            if !apply {
+                assert_eq!(crate::test_support::file_bytes(root.path()), before);
+            }
+            assert_eq!(fs::read(target.join("empack.yml")).unwrap(), original[0]);
+        }
+        page.assert_async().await;
+        let updated = super::super::tests::project(root.path());
+        assert_eq!(updated.intent(), project.intent());
+        assert!(
+            matches!(&updated.lock().dependencies[&key].selected.as_ref().unwrap().selection, empack_core::identity::PinSelector::CurseForgeFile(id) if id.get() == 301)
+        );
+        for (other, dependency) in &project.lock().dependencies {
+            if other != &key {
+                assert_eq!(&updated.lock().dependencies[other], dependency);
+            }
         }
     }
     #[tokio::test]

@@ -829,7 +829,7 @@ async fn import_candidate_requires_a_safe_durable_url_or_explicit_conversion() {
     );
 }
 #[tokio::test]
-async fn import_candidate_preserves_provider_pins_weak_digests_and_optional_choices() {
+async fn import_candidate_preserves_exact_selections_without_authoring_pins() {
     use empack_core::{model::*, requirements::Requirement};
     let mut server = Server::new_async().await;
     let url = format!("{}/payload", server.url());
@@ -849,7 +849,14 @@ async fn import_candidate_preserves_provider_pins_weak_digests_and_optional_choi
         candidate.project().intent().runtime.loader,
         LoaderKind::Fabric
     );
-    for dependency in candidate.project().lock().dependencies.values() {
+    for (key, dependency) in &candidate.project().lock().dependencies {
+        assert!(
+            matches!(
+                candidate.project().intent().roots[key].selection,
+                DependencySelection::Automatic
+            ),
+            "Imported provider selections belong in the lock, not authored holds"
+        );
         assert!(matches!(dependency.identity, ResolvedIdentity::Provider(_)));
         let file = &dependency.files.as_slice()[0];
         assert!(matches!(file.acquisition, AcquisitionSpec::Provider { .. }));

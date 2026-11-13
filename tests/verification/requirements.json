@@ -2868,7 +2868,8 @@
             "empack-lib::engine::import::acquisition::tests::import_candidate_retains_every_layer_and_explicit_local_conversion",
             "empack-lib::engine::import::acquisition::tests::import_candidate_rejects_inventory_and_semantic_changes",
             "empack-lib::engine::import::acquisition::tests::import_candidate_requires_a_safe_durable_url_or_explicit_conversion",
-            "empack-lib::engine::import::acquisition::tests::import_candidate_preserves_provider_pins_weak_digests_and_optional_choices"
+            "empack-lib::engine::import::acquisition::tests::import_candidate_preserves_exact_selections_without_authoring_pins",
+            "empack-lib::application::engine_host::cli::import::tests::provider_import_preserves_kinds_optional_choices_and_exported_files"
           ],
           "required_platforms": [
             "linux",
@@ -2881,7 +2882,8 @@
           ],
           "assertions": [
             "Import retains side participation, provider identity and source assertions; dropping entries or changing declared requirements requires explicit supported interpretation",
-            "Auxiliary exclusion cannot silently alter the imported runtime; unsafe durable URLs require a supported explicit conversion"
+            "Auxiliary exclusion cannot silently alter the imported runtime; unsafe durable URLs require a supported explicit conversion",
+            "Imported provider versions remain exact lock evidence with Automatic author policy; unchanged synchronization retains them, while explicit update preview/apply advances only the selected dependency without changing author intent"
           ],
           "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
         },
