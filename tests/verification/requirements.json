@@ -120,6 +120,7 @@
           "assertions": [
             "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
             "Short help and version flags remain available without loading unrelated author state",
+            "Displayed inherited path values preserve ordinary Unicode while directional controls are visible escapes; all help routes leave selected state/cache paths untouched",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
           ]
         },
@@ -191,6 +192,7 @@
           "assertions": [
             "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
             "Short help and version flags remain available without loading unrelated author state",
+            "Displayed inherited path values preserve ordinary Unicode while directional controls are visible escapes; all help routes leave selected state/cache paths untouched",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
             "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
           ],

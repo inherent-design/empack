@@ -168,7 +168,11 @@ impl CliConfig {
             }))),
             Err(error) => match error.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    Ok(CliLoad::Display(error.to_string()))
+                    // Clap's plain display removes ANSI styling, but inherited
+                    // values can still contain active directional controls.
+                    Ok(CliLoad::Display(
+                        crate::terminal::display_text(&error.to_string()).into_owned(),
+                    ))
                 }
                 _ => Err(ConfigError::ParseError {
                     value: "command line".to_string(),

@@ -9,6 +9,7 @@ struct EntryFixture {
     project: TestProject,
     root: PathBuf,
     proxy: TcpListener,
+    environment: Vec<(&'static str, &'static str)>,
 }
 
 impl EntryFixture {
@@ -41,6 +42,7 @@ impl EntryFixture {
             project,
             root,
             proxy,
+            environment: Vec::new(),
         }
     }
 
@@ -72,6 +74,7 @@ impl EntryFixture {
             .env("no_proxy", "")
             .env("PATH", path)
             .env("PATHEXT", ".CMD")
+            .envs(self.environment.iter().copied())
             .args(args)
             .output()
             .unwrap();
@@ -120,7 +123,11 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
     let binary = empack_bin();
     let binary_name = binary.file_name().unwrap().to_str().unwrap();
     for filename in [None, Some(".env"), Some(".env.local")] {
-        let fixture = EntryFixture::new(filename.is_some());
+        let mut fixture = EntryFixture::new(filename.is_some());
+        fixture.environment = vec![
+            ("EMPACK_STATE_DIR", "日本-\u{202e}-state"),
+            ("EMPACK_CACHE_DIR", "café-\u{2066}-cache"),
+        ];
         if let Some(filename) = filename {
             fs::write(
                 fixture.root.join(filename),
@@ -153,6 +160,21 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
                 "{route}: expected {expected_usage:?} in {stdout}"
             );
             assert!(output.stderr.is_empty(), "{route}: {:?}", output.stderr);
+            assert!(
+                !stdout.contains(['\u{202e}', '\u{2066}']),
+                "{route}: help must render directional controls visibly"
+            );
+            for (field, text, escaped) in [
+                ("EMPACK_STATE_DIR=", "日本", "\\u{202e}"),
+                ("EMPACK_CACHE_DIR=", "café", "\\u{2066}"),
+            ] {
+                if stdout.contains(field) {
+                    assert!(
+                        stdout.contains(text) && stdout.contains(escaped),
+                        "{route}: help must preserve ordinary Unicode and escaped controls"
+                    );
+                }
+            }
         }
         for args in [["-h"], ["--version"], ["-V"]] {
             let output = fixture.invoke(&args, 0);
