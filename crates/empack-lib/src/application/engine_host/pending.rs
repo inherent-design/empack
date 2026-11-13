@@ -266,7 +266,7 @@ async fn resume(
             cli::resume_synchronization_selected(session, file_args(files), selected.id).await
         }
         PendingKind::Instance => {
-            instance::resume_instance_selected(session, file_args(files), Some(&selected.id)).await
+            instance::resume_instance_selected(session, file_args(files), &selected.id).await
         }
     }
 }

@@ -500,14 +500,6 @@ pub enum ReleaseCommand {
 pub enum InstanceCommand {
     /// Verify installed managed content and saved ownership without repairing files
     Check(InstanceCheckArgs),
-    /// Resume an exact pending release with verified manual file associations.
-    Continue {
-        /// Associate exact missing content with its release file key
-        #[arg(long = "file", value_name = "KEY=PATH")]
-        files: Vec<String>,
-    },
-    /// Discard a selected pending instance recipe; keep the completed installation.
-    DiscardPending,
     /// Clear interrupted runtime evidence only after all remaining processes have stopped
     RecoverRuntime {
         #[arg(long, required = true)]
@@ -1423,7 +1415,7 @@ mod tests {
     }
 
     #[test]
-    fn retired_sync_continuation_flags_report_usage() {
+    fn retired_workflow_continuation_commands_report_usage() {
         for arguments in [
             vec!["empack", "sync", "--continue"],
             vec!["empack", "sync", "--file", "one/primary=file"],
@@ -1431,6 +1423,14 @@ mod tests {
         ] {
             let error = Cli::try_parse_from(arguments).unwrap_err();
             assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+        }
+        for command in ["continue", "discard-pending"] {
+            assert_eq!(
+                Cli::try_parse_from(["empack", "instance", command])
+                    .unwrap_err()
+                    .kind(),
+                clap::error::ErrorKind::InvalidSubcommand,
+            );
         }
         let cli = Cli::try_parse_from([
             "empack",

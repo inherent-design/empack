@@ -379,7 +379,7 @@ pub fn inspect_workspace(
         (
             super::continuation_store::Kind::Instance,
             "instance",
-            &["instance", "continue"][..],
+            &["pending", "list"][..],
         ),
     ] {
         match super::continuation_store::observe(state, kind, path, cancel) {

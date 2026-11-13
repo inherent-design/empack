@@ -6524,7 +6524,7 @@
           ],
           "assertions": [
             "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
-            "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
+            "Full and unique-prefix pending IDs install the same inventory and converge across repeated preparation; stale installation refuses replay"
           ]
         },
         {
@@ -12205,7 +12205,7 @@
       "id": "UX-069",
       "family": "Installed instances",
       "title": "Instance continuation and discard",
-      "public_surface": "instance continue / discard-pending; unified pending",
+      "public_surface": "pending resume / discard",
       "api_ids": [
         "INST",
         "PEND",

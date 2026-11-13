@@ -1093,16 +1093,6 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     assert!(format!("{error:#}").contains("manual inputs remain pending"));
     fs::remove_file(root.path().join("release.json")).unwrap();
     fs::write(root.path().join("a.jar"), b"A").unwrap();
-    let continuation = Commands::Instance {
-        command: InstanceCommand::Continue {
-            files: vec!["mod=a.jar".into()],
-        },
-    };
-    let before = snapshot(root.path());
-    execute_command_with_session(continuation.clone(), &session(root.path(), true, true))
-        .await
-        .unwrap();
-    assert_eq!(snapshot(root.path()), before);
     let pending = crate::engine::pending::inspect(
         &root.path().join("state"),
         &root.path().join("project"),
@@ -1110,34 +1100,32 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     )
     .unwrap();
     let id = pending.operations[0].id.clone();
-    execute_command_with_session(
-        Commands::Pending {
-            command: crate::application::cli::PendingCommand::Resume {
-                import_options: Default::default(),
-                id,
-                files: vec!["mod=a.jar".into()],
-                downloads_dir: None,
-                wait_downloads: None,
-                open_downloads: false,
-            },
+    let continuation = || Commands::Pending {
+        command: crate::application::cli::PendingCommand::Resume {
+            id: id.clone(),
+            files: vec!["mod=a.jar".into()],
+            downloads_dir: None,
+            wait_downloads: None,
+            open_downloads: false,
+            import_options: Default::default(),
         },
-        &session(root.path(), true, false),
-    )
-    .await
-    .unwrap();
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(continuation(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(continuation(), &session(root.path(), true, false))
+        .await
+        .unwrap();
     assert_eq!(
         fs::read(root.path().join("project/game/mods/a.jar")).unwrap(),
         b"A"
     );
     assert!(
-        execute_command_with_session(
-            Commands::Instance {
-                command: InstanceCommand::Continue { files: vec![] }
-            },
-            &session(root.path(), true, false)
-        )
-        .await
-        .is_err()
+        execute_command_with_session(continuation(), &session(root.path(), true, false))
+            .await
+            .is_err()
     );
 }
 

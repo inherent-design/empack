@@ -85,15 +85,15 @@ Add `--materialize` to acquire referenced bytes. Missing manual content can be s
 
 ## Installed instances
 
-Missing manual downloads can be saved after approval. The command reports the exact file key, byte count and SHA-256 address. Use `pending list`, then `pending resume ID --file KEY=PATH`; resuming checks the original assertions and instance base before showing a new plan. `instance continue --file KEY=PATH` remains available for an instance-specific continuation. A preview never saves or removes pending state. If the base or publisher enrollment has changed, inspect it and explicitly discard the stale recipe before selecting a new operation.
+Missing manual downloads can be saved after approval. The command reports the exact file key, byte count and SHA-256 address. Use `pending list`, then `pending resume ID --file KEY=PATH`; resuming checks the original assertions and instance base before showing a new plan. A preview never saves or removes pending state. If the base or publisher enrollment has changed, inspect it and explicitly discard the stale recipe before selecting a new operation.
 
 | Command                                          | Meaning                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `instance install`                               | Install or apply an explicitly selected local snapshot into an instance root               |
 | `instance prepare`                               | Launcher hook: install initially, then repair the active release without reverting updates |
 | `instance update`                                | Apply the exact signed release selected by the saved subscribed channel                    |
-| `instance continue --file KEY=PATH`              | Resume a retained exact release with verified manual inputs                                |
-| `instance discard-pending`                       | Explicitly discard a pending recipe without changing the installation                      |
+| `pending resume ID --file KEY=PATH`              | Resume a retained exact release with verified manual inputs                                |
+| `pending discard ID`                             | Explicitly discard a pending recipe without changing the installation                      |
 | `instance repair`                                | Restore the recorded release without selecting newer dependencies                          |
 | `instance options`                               | Inspect/change persistent optional choices                                                 |
 | `instance rollback`                              | Return managed content to a retained completed release                                     |
@@ -185,7 +185,7 @@ empack pending show OPERATION_ID
 empack pending resume OPERATION_ID --file 'EXACT_KEY=/absolute/path/to/download.jar'
 ```
 
-Missing import files are reported with their exact selector and a local-file argument when representable. After saving the import, its Downloads-folder search is also available. Continuation keeps the original recipes and verifies the supplied bytes. Use `pending resume ID --file SELECTOR=PATH` for saved imports, or `instance continue --file KEY=PATH` for installed releases; these identifiers are shown in the respective diagnostics.
+Missing import files are reported with their exact selector and a local-file argument when representable. After saving the import, its Downloads-folder search is also available. Continuation keeps the original recipes and verifies the supplied bytes. Use `pending resume ID --file SELECTOR=PATH` for saved imports and installed releases; these identifiers are shown in the respective diagnostics.
 
 ## Interaction and failures
 
@@ -320,7 +320,7 @@ empack --workdir imported-pack pending resume OPERATION_ID --file EXACT_KEY=/pat
 empack --workdir my-pack pending discard OPERATION_ID
 ```
 
-`pending list` summarizes saved work; `pending show ID` lists the recorded files, names, sizes and checksums. Add `--json` for the complete report, including recorded download addresses. Changed or unreadable records remain visible with their diagnostic. IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `instance continue` remains supported.
+`pending list` summarizes saved work; `pending show ID` lists the recorded files, names, sizes and checksums. Add `--json` for the complete report, including recorded download addresses. Changed or unreadable records remain visible with their diagnostic. IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md).
 
 ## Generated GitHub workflows
 

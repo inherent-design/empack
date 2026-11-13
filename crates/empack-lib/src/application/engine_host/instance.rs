@@ -282,8 +282,6 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
-        InstanceCommand::Continue { files } => resume_instance(session, files).await,
-        InstanceCommand::DiscardPending => discard_pending(session).await,
         InstanceCommand::RecoverRuntime {
             acknowledge_stopped,
         } => {
@@ -899,16 +897,17 @@ pub(super) async fn save_pending(
     pending: crate::engine::api::PreparationContinuation,
 ) -> Result<()> {
     let saved = cancellable(session, engine.suspend_instance(pending, None)).await?;
-    session.display().status().info(&format!("Saved pending instance with {} verified files; resume with instance continue --file KEY=PATH",saved.retained_files));
+    session.display().status().info(&format!(
+        "Saved installation with {} verified files.\nResume: empack pending resume {}",
+        saved.retained_files,
+        saved.saved.identity()
+    ));
     anyhow::bail!("Instance was not applied; exact manual inputs remain pending")
-}
-async fn resume_instance(session: &dyn Session, files: Vec<String>) -> Result<()> {
-    resume_instance_selected(session, files, None).await
 }
 pub(super) async fn resume_instance_selected(
     session: &dyn Session,
     files: Vec<String>,
-    expected: Option<&str>,
+    expected: &str,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut associations = BTreeMap::new();
@@ -936,7 +935,7 @@ pub(super) async fn resume_instance_selected(
         .await?
         .context("No pending instance operation")?;
         ensure!(
-            expected.is_none_or(|id| id == resumed.saved.identity()),
+            expected == resumed.saved.identity(),
             "Selected pending instance changed; inspect its new identity"
         );
         let Some(prepared) = require_instance_ready(session, &engine, resumed.preparation).await?
@@ -970,29 +969,6 @@ pub(super) async fn resume_instance_selected(
                     "Instance applied; pending cleanup failed: {error:#}"
                 )),
             }
-        }
-        Ok(())
-    }
-    .await;
-    engine.shutdown().await;
-    result
-}
-async fn discard_pending(session: &dyn Session) -> Result<()> {
-    let (invocation, root) = project_path(session)?;
-    let engine = engine(session.config().app_config(), &invocation)?;
-    let result = async {
-        let pending = cancellable(session, engine.observe_pending_instance(root))
-            .await?
-            .context("No pending instance operation")?;
-        if approve(session, "Discard pending instance")? {
-            ensure!(
-                cancellable(session, engine.discard_pending_instance(pending)).await?,
-                "Pending state changed; inspect it again"
-            );
-            session
-                .display()
-                .status()
-                .complete("Pending instance discarded; installed content retained");
         }
         Ok(())
     }
