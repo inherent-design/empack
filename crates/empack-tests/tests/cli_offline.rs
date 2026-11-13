@@ -760,7 +760,6 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
 #[test]
 fn cli_update_terminal_clears_progress_before_one_final_report() {
     use empack_tests::harness::{process, terminal};
-    use expectrl::Expect;
     let project = initialized();
     let path = project.dir().join("manual-pack.zip");
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -780,40 +779,7 @@ fn cli_update_terminal_clears_progress_before_one_final_report() {
         command
             .env("TERM", "xterm-256color")
             .args(["update", "--all"]);
-        let mut session = terminal::spawn(command);
-        session.set_expect_timeout(Some(Duration::from_secs(15)));
-        #[cfg(unix)]
-        session
-            .get_process_mut()
-            .set_window_size(columns, 40)
-            .unwrap();
-        #[cfg(windows)]
-        session
-            .get_process_mut()
-            .resize(columns as i16, 40)
-            .unwrap();
-        #[cfg(not(windows))]
-        let output = {
-            let output = session.expect(expectrl::Eof).unwrap().as_bytes().to_vec();
-            terminal::wait_for_exit(session.get_process(), 0);
-            output
-        };
-        #[cfg(windows)]
-        let output = {
-            assert_eq!(session.get_process().wait(Some(15_000)).unwrap(), 0);
-            let mut output = Vec::new();
-            let mut buffer = [0u8; 8192];
-            loop {
-                match session.try_read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(size) => output.extend_from_slice(&buffer[..size]),
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(error) => panic!("read terminal: {error}"),
-                }
-                assert!(output.len() < 1 << 20, "unbounded terminal output");
-            }
-            output
-        };
+        let output = terminal::capture_output(command, columns, 40, 0);
         let mut parser = vt100::Parser::new(40, columns, 0);
         parser.process(&output);
         let screen = parser.screen().contents();
@@ -821,11 +787,15 @@ fn cli_update_terminal_clears_progress_before_one_final_report() {
             !screen.contains("Checking"),
             "stale progress at {columns} columns: {screen:?}"
         );
-        assert_eq!(screen.matches("Proposal:").count(), 1, "{screen:?}");
+        assert_eq!(
+            screen.matches("Proposal:").count(),
+            1,
+            "at {columns} columns: {screen:?}"
+        );
         assert_eq!(
             screen.matches("Update plan: 1 dependency").count(),
             1,
-            "{screen:?}"
+            "at {columns} columns: {screen:?}"
         );
         assert!(screen.contains("manual-pack: no change"), "{screen:?}");
         assert!(screen.contains("Preview only; use --apply"), "{screen:?}");
