@@ -607,7 +607,7 @@ mod progress;
 pub use initialize::initialize;
 
 mod build;
-pub use build::{BuildDecisions, build, build_with_local_files, continue_build};
+pub use build::{BuildDecisions, build, build_with_local_files};
 
 mod dependencies;
 pub use dependencies::{AddHostInput, add, add_providers, adopt_observed, remove, synchronize};

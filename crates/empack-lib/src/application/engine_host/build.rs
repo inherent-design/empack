@@ -92,10 +92,6 @@ async fn build_with_inputs(
     supplied: BuildAcquisitions,
     files: BTreeMap<AcquisitionKey, PathBuf>,
 ) -> Result<()> {
-    ensure!(
-        !args.continue_build && args.associate_downloads.is_empty(),
-        "Use the continuation entry point for a saved build and its file associations"
-    );
     assistance::validate(args)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -185,33 +181,20 @@ fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
     Ok(engine)
 }
 
-/// Continue an explicitly saved native build. Saved choices remain intact; new recipe flags
-/// are rejected, and every file association is checked against current captured obligations.
-pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
-    continue_build_selected(session, args, None).await
+/// Assistance for one selected saved build; recipe changes are not representable here.
+#[derive(Clone, Default)]
+pub(super) struct BuildResumeOptions {
+    pub files: BTreeMap<String, String>,
+    pub downloads: Option<PathBuf>,
+    pub wait_seconds: Option<u64>,
+    pub open_downloads: bool,
 }
-pub(super) async fn continue_build_selected(
+pub(super) async fn resume_saved(
     session: &dyn Session,
-    args: &BuildArgs,
-    expected: Option<&str>,
+    expected: &str,
+    options: BuildResumeOptions,
 ) -> Result<()> {
-    ensure!(
-        args.continue_build
-            && args.profiles.is_empty()
-            && !args.ad_hoc
-            && !args.explain
-            && args.delivery.is_none()
-            && args.environment.is_none()
-            && args.updates.is_none()
-            && args.targets.is_empty()
-            && args.format.is_none()
-            && !args.clean
-            && !args.optional_defaults
-            && args.optional_choices.is_empty()
-            && !args.allow_optional_metadata_loss,
-        "Continuation uses its saved recipe; targets, archive overrides and clean require a new build"
-    );
-    assistance::validate(args)?;
+    assistance::validate_wait(options.downloads.is_some(), options.wait_seconds)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = configured_engine(session.config().app_config(), &invocation)?;
@@ -226,18 +209,18 @@ pub(super) async fn continue_build_selected(
             crate::engine::api::SavedBuildResume::Prepared(resumed) => *resumed,
         };
         ensure!(
-            expected.is_none_or(|id| id == resumed.saved.identity()),
+            expected == resumed.saved.identity(),
             "Selected pending build changed; inspect its new identity"
         );
         let mut prepared = resumed.preparation;
-        if !args.associate_downloads.is_empty() {
+        if !options.files.is_empty() {
             let view = match &prepared {
                 Preparation::Ready(value) => value.view(),
                 Preparation::NeedsInput(value) => value.view(),
             };
             let files = associations(
                 view.build().context("Missing build preview")?,
-                &args.associate_downloads,
+                &options.files,
                 &invocation,
             )?;
             let Preparation::NeedsInput(pending) = prepared else {
@@ -246,17 +229,19 @@ pub(super) async fn continue_build_selected(
             prepared =
                 cancellable(session, engine.resume_with_local_files(*pending, files)).await?;
         }
-        let downloads = args
-            .downloads_dir
-            .as_ref()
-            .map(|path| absolute(&invocation, Path::new(path)));
+        let dry = session.config().app_config().dry_run;
+        let downloads = if dry {
+            None
+        } else {
+            options.downloads.map(|path| absolute(&invocation, &path))
+        };
         let (published, cleaned) = assistance::finish(
             session,
             &engine,
             prepared,
             downloads,
-            args.wait_downloads,
-            args.open_downloads,
+            if dry { None } else { options.wait_seconds },
+            options.open_downloads && !dry,
         )
         .await?;
         if published && !cleaned {
@@ -279,30 +264,23 @@ fn input_selector(key: &AcquisitionKey) -> String {
 }
 fn associations(
     view: &crate::engine::api::BuildPreview,
-    values: &[String],
+    values: &BTreeMap<String, String>,
     invocation: &Path,
 ) -> Result<BTreeMap<AcquisitionKey, PathBuf>> {
     let mut files = BTreeMap::new();
-    for value in values {
-        let (name, path) = value
-            .split_once('=')
-            .context("Use FILENAME=PATH for each download association")?;
+    for (name, path) in values {
         ensure!(
             !name.is_empty() && !path.is_empty(),
-            "Download association needs a filename and source path"
+            "Download association needs an exact file key and source path"
         );
         let matches: Vec<_> = view
-            .file_names()
+            .unresolved
             .iter()
-            .filter(|(key, names)| {
-                view.unresolved.contains(key)
-                    && (names.contains(name) || input_selector(key) == name)
-            })
-            .map(|(key, _)| key)
+            .filter(|key| input_selector(key) == *name)
             .collect();
         ensure!(
             matches.len() == 1,
-            "Download selector must match exactly one pending obligation; use its displayed locked: selector when filenames are ambiguous"
+            "Download key must identify one unresolved file from pending show"
         );
         ensure!(
             files
@@ -462,7 +440,7 @@ async fn finish_once(
         session
             .display()
             .status()
-            .info(&text::saved(saved.retained_files));
+            .info(&text::saved(saved.retained_files, &saved.saved.identity()));
         return Err(PendingBuildSaved { saved: saved.saved }.into());
     }
     let Preparation::Ready(prepared) = prepared else {
@@ -550,6 +528,6 @@ pub(super) async fn save_execution_input(
     session
         .display()
         .status()
-        .info(&text::saved(saved.retained_files));
+        .info(&text::saved(saved.retained_files, &saved.saved.identity()));
     Err(PendingBuildSaved { saved: saved.saved }.into())
 }

@@ -293,15 +293,21 @@ async fn client_full_archives_contain_current_content_for_every_format() -> Resu
     Ok(())
 }
 #[tokio::test]
-async fn build_continue_missing_state_and_unknown_clean_scope_preserve_files() -> Result<()> {
+async fn pending_missing_state_and_unknown_clean_scope_preserve_files() -> Result<()> {
     let project = Project::new();
     project.initialize("none", None).await?;
     let before = project.snapshot();
     for command in [
-        Commands::Build(BuildArgs {
-            continue_build: true,
-            ..Default::default()
-        }),
+        Commands::Pending {
+            command: empack_lib::application::cli::PendingCommand::Resume {
+                id: "abcdef".into(),
+                files: vec![],
+                downloads_dir: None,
+                wait_downloads: None,
+                open_downloads: false,
+                import_options: Default::default(),
+            },
+        },
         Commands::Clean {
             targets: vec!["builds".into(), "unknown".into()],
         },

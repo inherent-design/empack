@@ -1,7 +1,7 @@
 //! Shared selectors delegate to the existing workflow hosts and exact cleanup handles.
 use super::*;
 use crate::{
-    application::{BuildArgs, InitArgs, cli::PendingCommand},
+    application::{InitArgs, cli::PendingCommand},
     engine::pending::{PendingKind, PendingOperation, PendingReport},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -138,13 +138,7 @@ async fn resume(
         selected.kind == PendingKind::Import || import_options == Default::default(),
         crate::application::cli::CommandInputRequired("Import options require a pending import")
     );
-    if let Some(seconds) = wait_seconds {
-        ensure!(
-            (1..=3600).contains(&seconds) && downloads.is_some(),
-            crate::application::cli::CommandInputRequired(
-                "Download waiting needs --downloads-dir and 1–3600 seconds"
-            )
-        );
+    if wait_seconds.is_some() {
         ensure!(
             selected.kind == PendingKind::Build,
             crate::application::cli::CommandInputRequired(
@@ -153,41 +147,15 @@ async fn resume(
         );
     }
     let mut files = associations(&selected, files)?;
-    if selected.kind == PendingKind::Build {
-        let dry = session.config().app_config().dry_run;
-        let downloads = if dry { None } else { downloads };
-        return build::continue_build_selected(
-            session,
-            &BuildArgs {
-                continue_build: true,
-                associate_downloads: files
-                    .into_iter()
-                    .map(|(key, path)| format!("{key}={path}"))
-                    .collect(),
-                downloads_dir: downloads
-                    .map(|path| {
-                        path.to_str()
-                            .map(str::to_owned)
-                            .context("Downloads directory must be UTF-8")
-                    })
-                    .transpose()?,
-                open_downloads: open && !dry,
-                wait_downloads: if dry { None } else { wait_seconds },
-                ..Default::default()
-            },
-            Some(&selected.id),
-        )
-        .await;
-    }
-    if !session.config().app_config().dry_run {
+    if selected.kind != PendingKind::Build && !session.config().app_config().dry_run {
         let verified = if selected.kind == PendingKind::Sync && (downloads.is_some() || open) {
             cli::retained_sync_input_keys(session, &selected.id).await?
         } else {
             BTreeSet::new()
         };
-        if let Some(downloads) = downloads {
+        if let Some(downloads) = downloads.as_ref() {
             let (invocation, _) = project_path(session)?;
-            let downloads = absolute(&invocation, &downloads);
+            let downloads = absolute(&invocation, downloads);
             let requirements = selected
                 .inputs
                 .iter()
@@ -249,20 +217,23 @@ async fn resume(
             build::browser::open_pins(session, pins, &mut BTreeSet::new(), None).await?;
         }
     }
-    let files = files
-        .into_iter()
-        .map(|(key, path)| format!("{key}={path}"))
-        .collect();
+    let file_args = |files: BTreeMap<String, String>| -> Vec<String> {
+        files
+            .into_iter()
+            .map(|(key, path)| format!("{key}={path}"))
+            .collect()
+    };
     match selected.kind {
         PendingKind::Build => {
-            build::continue_build_selected(
+            build::resume_saved(
                 session,
-                &BuildArgs {
-                    continue_build: true,
-                    associate_downloads: files,
-                    ..Default::default()
+                &selected.id,
+                build::BuildResumeOptions {
+                    files,
+                    downloads,
+                    wait_seconds,
+                    open_downloads: open,
                 },
-                Some(&selected.id),
             )
             .await
         }
@@ -271,7 +242,7 @@ async fn resume(
                 session,
                 &InitArgs {
                     continue_import: true,
-                    import_files: files,
+                    import_files: file_args(files),
                     import_optional_default: import_options.import_optional_default,
                     import_local_files: import_options.import_local_files,
                     exclude_auxiliary: import_options.exclude_auxiliary,
@@ -293,10 +264,10 @@ async fn resume(
             .await
         }
         PendingKind::Sync => {
-            cli::resume_synchronization_selected(session, files, selected.id).await
+            cli::resume_synchronization_selected(session, file_args(files), selected.id).await
         }
         PendingKind::Instance => {
-            instance::resume_instance_selected(session, files, Some(&selected.id)).await
+            instance::resume_instance_selected(session, file_args(files), Some(&selected.id)).await
         }
     }
 }

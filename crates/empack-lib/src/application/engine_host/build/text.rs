@@ -72,15 +72,16 @@ pub(super) fn requirement(kind: ContentRequirementKind) -> &'static str {
     }
 }
 
-pub(super) fn saved(files: usize) -> String {
-    if files == 0 {
-        "Saved build. Continue with empack build --continue.".into()
+pub(super) fn saved(files: usize, id: &str) -> String {
+    let summary = if files == 0 {
+        "Saved build".into()
     } else {
         format!(
-            "Saved build with {files} verified {}. Continue with empack build --continue.",
+            "Saved build with {files} verified {}",
             if files == 1 { "file" } else { "files" }
         )
-    }
+    };
+    format!("{summary}.\nResume: empack pending resume {id}")
 }
 
 pub(super) fn preview(view: &BuildPreview) -> String {

@@ -392,7 +392,7 @@ pub fn inspect_workspace(
         Ok(true) => report.finding(
             "pending-input",
             "Retained build input exists; resume will validate it and request fresh approval",
-            &["build", "--continue"],
+            &["pending", "list"],
         ),
         Ok(false) => {}
         Err(_) => report.finding(

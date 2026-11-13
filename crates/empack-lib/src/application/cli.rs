@@ -369,18 +369,18 @@ All requested outputs are verified before combined publication.
 Examples:
   empack build --dry-run modrinth prism
   empack build prism server --delivery references
-  empack build --continue")]
+  empack pending list")]
 pub struct BuildArgs {
     /// Select complete authored profiles; repeat to build several together
-    #[arg(long = "profile", value_name = "NAME", conflicts_with_all = ["targets", "ad_hoc", "continue_build"])]
+    #[arg(long = "profile", value_name = "NAME", conflicts_with_all = ["targets", "ad_hoc"])]
     pub profiles: Vec<String>,
 
     /// Create consumer recipes from built-in defaults instead of configured profiles
-    #[arg(long, requires = "targets", conflicts_with = "continue_build")]
+    #[arg(long, requires = "targets")]
     pub ad_hoc: bool,
 
     /// Show effective profiles, overrides and recipient requirements without building
-    #[arg(long, conflicts_with_all = ["continue_build", "open_downloads", "wait_downloads", "associate_downloads"])]
+    #[arg(long, conflicts_with_all = ["open_downloads", "wait_downloads"])]
     pub explain: bool,
 
     /// Emit the effective build explanation as versioned JSON
@@ -391,30 +391,21 @@ pub struct BuildArgs {
     #[arg(
         help = "Consumers with a unique configured profile (or use --ad-hoc)",
         value_name = "CONSUMERS",
-        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"],
-        conflicts_with = "continue_build"
+        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"]
     )]
     pub targets: Vec<String>,
 
     /// How dependency bytes reach the consumer; independent of update authority
-    #[arg(long, value_parser = ["references", "bundled"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["references", "bundled"])]
     pub delivery: Option<String>,
 
     /// Environment to project; each consumer validates the selected side
-    #[arg(long, value_parser = ["client", "server", "both"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["client", "server", "both"])]
     pub environment: Option<String>,
 
     /// Who may select future releases; requires a bound platform or publisher association
-    #[arg(long, value_parser = ["snapshot", "platform", "empack"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["snapshot", "platform", "empack"])]
     pub updates: Option<String>,
-
-    /// Continue a previously blocked restricted-mod build
-    #[arg(
-        long = "continue",
-        help = "Resume a saved build after supplying missing downloads",
-        conflicts_with = "clean"
-    )]
-    pub continue_build: bool,
 
     /// Remove obsolete artifacts when the verified build is published
     #[arg(
@@ -425,7 +416,7 @@ pub struct BuildArgs {
     pub clean: bool,
 
     /// Archive format override for distributions; mrpack and curseforge always use ZIP
-    #[arg(long, value_enum, conflicts_with = "continue_build")]
+    #[arg(long, value_enum)]
     pub format: Option<CliArchiveFormat>,
 
     /// Directory to scan for manually downloaded restricted mods
@@ -440,28 +431,16 @@ pub struct BuildArgs {
     #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
     pub wait_downloads: Option<u64>,
 
-    /// Explicitly associate a local download with a pending filename
-    #[arg(
-        long = "associate-download",
-        value_name = "FILENAME=PATH",
-        requires = "continue_build"
-    )]
-    pub associate_downloads: Vec<String>,
-
     /// Use authored defaults for optional files in materialized distributions.
-    #[arg(long, conflicts_with = "continue_build")]
+    #[arg(long)]
     pub optional_defaults: bool,
 
     /// Decide one optional choice explicitly.
-    #[arg(
-        long = "optional",
-        value_name = "CHOICE=true|false",
-        conflicts_with = "continue_build"
-    )]
+    #[arg(long = "optional", value_name = "CHOICE=true|false")]
     pub optional_choices: Vec<String>,
 
     /// Allow reference archives to omit optional choice keys, defaults and descriptions.
-    #[arg(long, conflicts_with = "continue_build")]
+    #[arg(long)]
     pub allow_optional_metadata_loss: bool,
 }
 
@@ -1325,7 +1304,7 @@ mod tests {
             "empack --workdir my-pack build modrinth",
             "empack build prism --optional-defaults",
             "empack build server --optional CHOICE=true",
-            "empack build --continue --associate-download FILENAME=/tmp/download.jar",
+            "empack pending resume abcdef --file locked:mod:main=/tmp/download.jar",
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
@@ -1608,7 +1587,6 @@ mod tests {
     fn build_args_default_matches_expected_defaults() {
         let args = BuildArgs::default();
         assert!(args.targets.is_empty());
-        assert!(!args.continue_build);
         assert!(!args.clean);
         assert_eq!(args.format, None);
         assert_eq!(args.downloads_dir, None);
@@ -1709,31 +1687,36 @@ mod tests {
     }
 
     #[test]
-    fn cli_command_graph_exposes_build_continue_contract() {
+    fn cli_command_graph_exposes_build_and_pending_assistance_contract() {
         let command = Cli::command();
         let build = command
             .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "build")
-            .expect("build subcommand");
-
-        let continue_arg = build
+            .find(|c| c.get_name() == "build")
+            .unwrap();
+        assert!(!build.get_arguments().any(|a| matches!(
+            a.get_id().as_str(),
+            "continue_build" | "associate_downloads"
+        )));
+        let downloads = build
             .get_arguments()
-            .find(|arg| arg.get_id().as_str() == "continue_build")
-            .expect("build --continue arg");
-        assert_eq!(continue_arg.get_long(), Some("continue"));
-
-        let downloads_arg = build
-            .get_arguments()
-            .find(|arg| arg.get_id().as_str() == "downloads_dir")
-            .expect("build --downloads-dir arg");
-        assert_eq!(downloads_arg.get_long(), Some("downloads-dir"));
+            .find(|a| a.get_id() == "downloads_dir")
+            .unwrap();
+        assert_eq!(downloads.get_long(), Some("downloads-dir"));
         assert_eq!(
-            downloads_arg
-                .get_env()
-                .map(|value| value.to_string_lossy().to_string())
-                .as_deref(),
+            downloads.get_env().and_then(|v| v.to_str()),
             Some("EMPACK_DOWNLOADS_DIR")
         );
+        let pending = command
+            .get_subcommands()
+            .find(|c| c.get_name() == "pending")
+            .unwrap();
+        let resume = pending
+            .get_subcommands()
+            .find(|c| c.get_name() == "resume")
+            .unwrap();
+        for key in ["files", "downloads_dir", "wait_downloads", "open_downloads"] {
+            assert!(resume.get_arguments().any(|a| a.get_id() == key), "{key}");
+        }
     }
 
     #[test]
@@ -1751,87 +1734,72 @@ mod tests {
     }
 
     #[test]
-    fn cli_config_load_from_rejects_build_continue_with_targets() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "prism"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with targets should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--continue"));
-    }
-
-    #[test]
-    fn cli_config_load_from_rejects_build_continue_with_clean() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "--clean"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with clean should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--clean"));
-    }
-
-    #[test]
-    fn cli_config_load_from_rejects_build_continue_with_format() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "--format", "tar.gz"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with format should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--format"));
-    }
-
-    #[test]
-    fn cli_config_load_from_parses_build_continue_with_downloads_dir() {
-        let config = CliConfig::load_from([
-            "empack",
-            "build",
-            "--continue",
-            "--downloads-dir",
-            "/tmp/downloads",
-        ])
-        .expect("parse continue build");
-
-        let Some(Commands::Build(args)) = config.command else {
-            panic!("expected build command");
-        };
-
-        assert!(args.continue_build);
-        assert!(args.targets.is_empty());
-        assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/downloads"));
-    }
-
-    #[test]
-    fn explicit_download_association_requires_continuation() {
-        assert!(
-            CliConfig::load_from([
+    fn retired_build_continuation_flags_report_usage() {
+        for args in [
+            vec!["empack", "build", "--continue"],
+            vec!["empack", "build", "--continue", "prism"],
+            vec!["empack", "build", "--continue", "--clean"],
+            vec!["empack", "build", "--continue", "--format", "tar.gz"],
+            vec![
                 "empack",
                 "build",
                 "--associate-download",
-                "mod.jar=chosen.jar"
-            ])
-            .is_err()
-        );
-        let parsed = CliConfig::load_from([
+                "mod.jar=chosen.jar",
+            ],
+            vec!["empack", "pending", "resume", "abcdef", "--clean"],
+            vec![
+                "empack", "pending", "resume", "abcdef", "--format", "tar.gz",
+            ],
+            vec!["empack", "pending", "resume", "abcdef", "prism"],
+        ] {
+            let error = CliConfig::load_from(args)
+                .err()
+                .expect("retired flags and saved recipe changes must refuse");
+            assert!(error.to_string().contains("unexpected"), "{error}");
+        }
+    }
+
+    #[test]
+    fn pending_resume_parses_download_directory() {
+        let config = CliConfig::load_from([
             "empack",
-            "build",
-            "--continue",
-            "--associate-download",
-            "mod.jar=chosen.jar",
+            "pending",
+            "resume",
+            "abcdef",
+            "--downloads-dir",
+            "/tmp/downloads",
         ])
         .unwrap();
-        let Some(Commands::Build(args)) = parsed.command else {
-            panic!("expected build");
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { downloads_dir, .. },
+        }) = config.command
+        else {
+            panic!("expected pending resume")
         };
-        assert_eq!(args.associate_downloads, ["mod.jar=chosen.jar"]);
+        assert_eq!(
+            downloads_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/downloads"))
+        );
+    }
+
+    #[test]
+    fn pending_resume_parses_exact_file_associations() {
+        let config = CliConfig::load_from([
+            "empack",
+            "pending",
+            "resume",
+            "abcdef",
+            "--file",
+            "locked:mod:main=chosen.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { files, .. },
+        }) = config.command
+        else {
+            panic!("expected pending resume")
+        };
+        assert_eq!(files, ["locked:mod:main=chosen.jar"]);
     }
 
     #[test]

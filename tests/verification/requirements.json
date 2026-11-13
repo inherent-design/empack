@@ -6716,7 +6716,7 @@
           ],
           "assertions": [
             "A timed-out restricted build retains its recipe and prior artifacts",
-            "A fresh build --continue invocation accepts verified renamed bytes and produces the independently expected complete MRPack"
+            "A selected pending resume invocation accepts verified renamed bytes and produces the independently expected complete MRPack"
           ]
         },
         {
@@ -9440,7 +9440,7 @@
           "test_ids": [
             "empack-lib::application::engine_host::build::tests::native_build_target_mapping_retains_archives_defaults_and_explicit_decisions",
             "empack-lib::application::engine_host::build::tests::curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output",
-            "empack-lib::application::engine_host::build::tests::native_build_rejects_unsupported_flags_and_invalid_targets_without_effects"
+            "empack-lib::application::engine_host::build::tests::native_build_rejects_invalid_targets_without_effects"
           ],
           "required_platforms": [
             "linux",

@@ -438,7 +438,7 @@ fn cli_invalid_choice_arguments_preserve_project() {
     let before = snapshot(&project);
     for args in [
         vec!["build", "modrinth", "--optional", "choice=maybe"],
-        vec!["build", "--continue", "--optional-defaults"],
+        vec!["pending", "resume", "abcdef", "--optional-defaults"],
         vec!["remove", "fixture", "--forget", "--acknowledge-unknown"],
     ] {
         command(&project).args(args).assert().failure();
@@ -656,7 +656,7 @@ fn cli_build_explanation_is_json_and_preserves_missing_lock_workspace() {
     assert_eq!(snapshot(&project), before);
     for args in [
         vec!["build", "--profile", "prism", "server"],
-        vec!["build", "--continue", "--profile", "prism"],
+        vec!["pending", "resume", "abcdef", "--profile", "prism"],
         vec!["build", "--json"],
         vec!["build", "--ad-hoc"],
         vec!["build", "curseforge", "--explain"],

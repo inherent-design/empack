@@ -175,24 +175,18 @@ async fn native_clean_build_keeps_all_prior_artifacts_when_one_recipe_fails() {
     assert_eq!(snapshot(&project), before);
 }
 #[tokio::test]
-async fn native_build_rejects_unsupported_flags_and_invalid_targets_without_effects() {
+async fn native_build_rejects_invalid_targets_without_effects() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let before = snapshot(root.path());
-    for variant in ["continue", "associate", "unknown-after-all"] {
-        let mut options = args();
-        match variant {
-            "continue" => options.continue_build = true,
-            "associate" => options.associate_downloads.push("a=b".into()),
-            _ => options.targets = vec!["all".into(), "typo".into()],
-        }
-        assert!(
-            run(root.path(), &options, true, false).await.is_err(),
-            "{variant}"
-        );
-        assert_eq!(snapshot(root.path()), before, "{variant}");
-    }
+    let options = BuildArgs {
+        targets: vec!["all".into(), "typo".into()],
+        ..args()
+    };
+    assert!(run(root.path(), &options, true, false).await.is_err());
+    assert_eq!(snapshot(root.path()), before);
 }
+
 #[tokio::test]
 async fn native_build_target_mapping_retains_archives_defaults_and_explicit_decisions() {
     let root = tempfile::tempdir().unwrap();
@@ -655,16 +649,24 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     );
     assert_eq!(snapshot(&project), project_before);
     assert!(root.path().join("state/pending-builds").is_dir());
+    let observed =
+        crate::engine::pending::inspect(&root.path().join("state"), &project, &Default::default())
+            .unwrap();
+    let saved_id = observed
+        .operations
+        .iter()
+        .find(|op| op.kind == crate::engine::pending::PendingKind::Build)
+        .unwrap()
+        .id
+        .clone();
     let original_intent = fs::read(project.join("empack.yml")).unwrap();
     fs::write(project.join("empack.yml"), b"invalid changed document: [").unwrap();
     let stale = snapshot(root.path());
     for dry in [true, false] {
-        let error = continue_build(
+        let error = resume_saved(
             &session(root.path(), true, dry),
-            &BuildArgs {
-                continue_build: true,
-                ..Default::default()
-            },
+            &saved_id,
+            BuildResumeOptions::default(),
         )
         .await
         .unwrap_err();
@@ -692,46 +694,55 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         run(root.path(), &discovered, yes, dry).await.unwrap();
         assert_eq!(snapshot(root.path()), before_discovery);
     }
-    let continuing = BuildArgs {
-        continue_build: true,
-        downloads_dir: Some("downloads".into()),
+    let continuing = BuildResumeOptions {
+        downloads: Some("downloads".into()),
         ..Default::default()
     };
     for (yes, dry) in [(true, true), (false, false)] {
-        continue_build(&session(root.path(), yes, dry), &continuing)
-            .await
-            .unwrap();
-        assert_eq!(snapshot(root.path()), before_discovery);
-    }
-    for values in [
-        vec!["custom.zip=downloads/custom.zip".into()],
-        vec!["unknown=downloads/renamed.bin".into()],
-        vec![
-            "custom.zip=downloads/renamed.bin".into(),
-            "custom.zip=downloads/renamed.bin".into(),
-        ],
-    ] {
-        let invalid = BuildArgs {
-            associate_downloads: values,
-            ..continuing.clone()
-        };
-        assert!(
-            continue_build(&session(root.path(), true, false), &invalid)
-                .await
-                .is_err()
-        );
+        resume_saved(
+            &session(root.path(), yes, dry),
+            &saved_id,
+            continuing.clone(),
+        )
+        .await
+        .unwrap();
         assert_eq!(snapshot(root.path()), before_discovery);
     }
     let selected_key = AcquisitionKey::Locked(LockedFileKey {
         dependency: key.clone(),
         slot: slot.clone(),
     });
-    let explicit = BuildArgs {
-        associate_downloads: vec![format!(
-            "{}=downloads/renamed.bin",
-            input_selector(&selected_key)
-        )],
-        downloads_dir: None,
+    let selector = input_selector(&selected_key);
+    for files in [
+        vec!["custom.zip=downloads/custom.zip".into()],
+        vec!["unknown=downloads/renamed.bin".into()],
+        vec![format!("{selector}=downloads/custom.zip")],
+        vec![
+            format!("{selector}=downloads/renamed.bin"),
+            format!("{selector}=downloads/renamed.bin"),
+        ],
+    ] {
+        let invalid = crate::application::cli::PendingCommand::Resume {
+            id: saved_id.clone(),
+            files,
+            downloads_dir: None,
+            wait_downloads: None,
+            open_downloads: false,
+            import_options: Default::default(),
+        };
+        assert!(
+            crate::application::engine_host::pending::dispatch(
+                &session(root.path(), true, false),
+                invalid
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before_discovery);
+    }
+    let explicit = BuildResumeOptions {
+        files: BTreeMap::from([(selector, "downloads/renamed.bin".into())]),
+        downloads: None,
         ..continuing.clone()
     };
     let shared =
@@ -775,10 +786,10 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     .unwrap();
     assert_eq!(snapshot(root.path()), saved_tree);
     assert!(
-        continue_build_selected(
+        resume_saved(
             &session(root.path(), true, false),
-            &continuing,
-            Some(&"0".repeat(64))
+            &"0".repeat(64),
+            continuing.clone()
         )
         .await
         .unwrap_err()
@@ -798,7 +809,11 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         crate::application::cli::PendingCommand::Resume {
             import_options: Default::default(),
             id: operation.id[..12].into(),
-            files: explicit.associate_downloads.clone(),
+            files: explicit
+                .files
+                .iter()
+                .map(|(key, path)| format!("{key}={path}"))
+                .collect(),
             downloads_dir: None,
             wait_downloads: None,
             open_downloads: false,
@@ -817,9 +832,13 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     );
     let completed = snapshot(root.path());
     assert!(
-        continue_build(&session(root.path(), true, false), &continuing)
-            .await
-            .is_err()
+        resume_saved(
+            &session(root.path(), true, false),
+            &saved_id,
+            continuing.clone()
+        )
+        .await
+        .is_err()
     );
     assert_eq!(snapshot(root.path()), completed);
     run(root.path(), &discovered, true, false).await.unwrap();
