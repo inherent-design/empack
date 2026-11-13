@@ -145,3 +145,126 @@ fn cli_prompt_uses_input_and_stderr_instead_of_result_stdout() {
         assert_eq!(snapshot(root.path()), before);
     }
 }
+
+#[test]
+fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
+    use expectrl::process::unix::Signal;
+    use std::os::unix::fs::PermissionsExt;
+
+    // A controlled slow version response exercises CLI progress and retirement;
+    // it does not establish compatibility with an actual JVM.
+    let root = tempfile::tempdir().unwrap();
+    let probe = root.path().join("version probe Ω 日本");
+    fs::write(
+        &probe,
+        "#!/bin/sh\n/bin/sleep 0.7\nprintf 'java.specification.version = 21\\n' >&2\n",
+    )
+    .unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o755)).unwrap();
+    let before = snapshot(root.path());
+    for width in [12, 40, 80] {
+        for mode in [
+            "human",
+            "json",
+            "interrupt",
+            "quiet",
+            "combined",
+            "forced",
+            "automatic",
+        ] {
+            if matches!(mode, "interrupt" | "combined" | "forced" | "automatic") && width != 80 {
+                continue;
+            }
+            let capture = tempfile::NamedTempFile::new().unwrap();
+            let mut command = offline_empack_cmd(root.path());
+            command
+                .env_remove("NO_COLOR")
+                .env("TERM", "xterm-256color")
+                .env("LC_ALL", "en_US.UTF-8")
+                .args([
+                    "--color",
+                    match mode {
+                        "forced" => "always",
+                        "automatic" => "auto",
+                        _ => "never",
+                    },
+                    "doctor",
+                    "--java",
+                ])
+                .arg(&probe);
+            if !matches!(mode, "human" | "combined") {
+                command.arg("--json");
+            }
+            if mode == "quiet" {
+                command.arg("--quiet");
+            }
+            let mut session = terminal::spawn(if mode == "combined" {
+                command
+            } else {
+                redirect(command, capture.path(), true)
+            });
+            session.set_expect_timeout(Some(Duration::from_secs(20)));
+            session
+                .get_process_mut()
+                .set_window_size(width, 30)
+                .unwrap();
+            let mut rendered = Vec::new();
+            if mode != "quiet" {
+                rendered.extend_from_slice(
+                    session
+                        .expect(Regex("Checking selected Java"))
+                        .unwrap()
+                        .as_bytes(),
+                );
+            }
+            if mode == "interrupt" {
+                session.get_process_mut().signal(Signal::SIGINT).unwrap();
+            }
+            rendered.extend_from_slice(session.expect(expectrl::Eof).unwrap().as_bytes());
+            terminal::wait_for_exit(
+                session.get_process(),
+                if mode == "interrupt" { 130 } else { 0 },
+            );
+            assert_eq!(
+                styled(&rendered),
+                matches!(mode, "forced" | "automatic"),
+                "Progress color policy: width={width}, {mode}: {}",
+                String::from_utf8_lossy(&rendered)
+            );
+            if mode == "quiet" {
+                assert!(!String::from_utf8_lossy(&rendered).contains("Checking selected Java"));
+            }
+            let mut parser = vt100::Parser::new(30, width, 0);
+            parser.process(&rendered);
+            let screen = parser.screen().contents();
+            assert!(
+                !parser.screen().hide_cursor(),
+                "cursor remained hidden: {mode}"
+            );
+            assert!(!screen.contains("Checking"), "{width} {mode}: {screen}");
+            if mode == "interrupt" {
+                assert!(screen.contains("interrupted"), "{screen}");
+            } else if mode == "combined" {
+                assert!(screen.contains("Java: reported major 21"), "{screen}");
+            } else {
+                assert!(screen.trim().is_empty(), "{width} {mode}: {screen}");
+            }
+            if mode == "combined" {
+                assert_eq!(snapshot(root.path()), before);
+                continue;
+            }
+            let output = fs::read(capture.path()).unwrap();
+            assert!(!styled(&output));
+            if mode == "human" {
+                assert!(String::from_utf8_lossy(&output).contains("Java: reported major 21"));
+            } else {
+                let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+                assert_eq!(report["complete"], mode != "interrupt");
+                if mode != "interrupt" {
+                    assert_eq!(report["java"]["major"], 21);
+                }
+            }
+            assert_eq!(snapshot(root.path()), before);
+        }
+    }
+}

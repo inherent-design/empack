@@ -23,7 +23,7 @@
       "mode": "run"
     },
     {
-      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 71)",
+      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 54)",
       "ignored": false,
       "boundary": "U",
       "requirements": [
