@@ -161,12 +161,19 @@ async fn install_with_transport(
         let state = state_root(session.config().app_config(), &invocation)?;
         let proof = initialize::discover(session, move |mut scope| async move {
             let Some(selected) = selected else {
+                let record =
+                    read_subscription(&mut scope, selected_root.clone(), state.clone()).await?;
+                let expected = record
+                    .floor
+                    .clone()
+                    .context("Subscription has no authenticated observation")?;
                 return crate::engine::instance::subscription::fetch_release(
                     &mut scope,
                     selected_root,
                     state,
                     &transport,
                     version,
+                    expected,
                 )
                 .await;
             };

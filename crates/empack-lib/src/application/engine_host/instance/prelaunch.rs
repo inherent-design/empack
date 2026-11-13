@@ -80,6 +80,7 @@ async fn update_with_transport(
             anyhow::bail!("Unexpected subscription preview");
         };
         show_offer(session, &view.record)?;
+        let expected_offer = view.record.floor.clone().context("Verified update offer has no floor")?;
         // Never continue after preview/decline: fetching a new release requires the durable floor.
         if !approve(session, "Update offer")? {
             return Ok(None);
@@ -96,6 +97,7 @@ async fn update_with_transport(
                 state,
                 &transport,
                 version,
+                expected_offer,
             ).await
         }).await?;
         ensure!(proof.release().document().runtime == release.document().runtime

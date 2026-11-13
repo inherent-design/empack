@@ -10545,6 +10545,7 @@
           ],
           "assertions": [
             "Engine enrollment retains the exact selected pack, channel, full HTTPS URL and public key bytes; a fresh engine reopens the same identity/URL without changing the persisted trust bytes during preview",
+            "Subscription previews distinguish the prior recorded floor from first, repeated and newer candidate observations without writing the stored record",
             "A copied current-format enrollment cannot authorize observation at another root; a local trust edit after preparation invalidates execution and is preserved rather than overwritten"
           ]
         }
@@ -10953,6 +10954,7 @@
           ],
           "assertions": [
             "A durable authenticated channel binds the exact release before preparation; hosted relative assets are not requested until execution approval",
+            "An unaccepted floor cannot fetch a release; an offer change during metadata download refuses the stale selection even when the release ID is unchanged, preserves the newer native-generated record and allows a subsequent selection under that floor",
             "Asset, URL, provider, manual and archive-member provenance retain exact bytes and source meaning through hosted acquisition; corrupt content refuses before installation while preserving the observed sequence floor",
             "Repair after trust revocation uses the retained completed locator without selecting an update; it restores managed content but does not refill an initialized world, and the fetch reservations retire"
           ],

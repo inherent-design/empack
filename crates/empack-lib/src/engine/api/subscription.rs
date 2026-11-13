@@ -37,6 +37,8 @@ pub enum SubscriptionRequest {
 pub struct SubscriptionPreview {
     pub plan: PlanId,
     pub record: SubscriptionRecord,
+    /// Durable floor captured before this request; this fact grants no authentication or writes.
+    pub previous_floor: Option<release::trust::SequenceFloor>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
 }
@@ -113,6 +115,7 @@ pub(super) async fn prepare(
                     "Installed record belongs to another root"
                 );
             }
+            let previous_floor = previous.as_ref().and_then(|record| record.floor.clone());
             let record = match request {
                 SubscriptionRequest::Enroll {
                     pack,
@@ -198,6 +201,7 @@ pub(super) async fn prepare(
                 replacement: project_change::summary(&files)?,
                 files,
                 record,
+                previous_floor,
             };
             Ok::<_, anyhow::Error>(PreparedSubscription { view, root, change })
         },

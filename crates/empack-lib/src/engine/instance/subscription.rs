@@ -132,6 +132,14 @@ pub fn select_release(
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<SubscribedRelease> {
     let (record, subscription) = read_current(selected_root, recovery, cancel)?;
+    select_from_record(record, subscription, envelope, version)
+}
+fn select_from_record(
+    record: SubscriptionRecord,
+    subscription: String,
+    envelope: &[u8],
+    version: &semver::Version,
+) -> Result<SubscribedRelease> {
     let channel = record.authenticated_channel(version)?;
     let selected = channel.release(&record.trust()?, envelope, version)?;
     Ok(SubscribedRelease {
@@ -252,13 +260,14 @@ pub async fn fetch_channel(
 }
 
 /// Fetch only the release selected by an already durable authenticated observation.
-/// The channel floor must have been published before this acquisition is called.
+/// The selected floor must already be durable and must still match before and after acquisition.
 pub async fn fetch_release(
     scope: &mut crate::engine::runtime::WorkScope,
     root: std::path::PathBuf,
     state: std::path::PathBuf,
     transport: &crate::engine::acquisition::HttpAcquisition,
     version: semver::Version,
+    expected: SequenceFloor,
 ) -> Result<crate::engine::runtime::RetainedOutput<SubscribedRelease>> {
     use crate::engine::{publication::RecoveryReader, resources::ResourceRequest};
     let selected_root = root.clone();
@@ -277,6 +286,7 @@ pub async fn fetch_release(
         move |cancel| inspect(&selected_root, RecoveryReader::new(selected_state), &cancel),
     )?;
     let record = scope.accept(read.wait().await?)?.transpose()?;
+    require_selected_offer(&record, &expected)?;
     let channel = record.authenticated_channel(&version)?;
     let envelope = transport
         .publisher_metadata(
@@ -298,17 +308,21 @@ pub async fn fetch_release(
             ..Default::default()
         },
         move |cancel| {
-            select_release(
-                &root,
-                &envelope,
-                &version,
-                RecoveryReader::new(state),
-                &cancel,
-            )
+            let (record, subscription) = read_current(&root, RecoveryReader::new(state), &cancel)?;
+            require_selected_offer(&record, &expected)?;
+            select_from_record(record, subscription, &envelope, &version)
         },
     )?;
     scope.accept(work.wait().await?)?.transpose()
 }
+fn require_selected_offer(record: &SubscriptionRecord, expected: &SequenceFloor) -> Result<()> {
+    ensure!(
+        record.floor.as_ref() == Some(expected),
+        "Recorded update offer changed; run instance update again before selecting a release"
+    );
+    Ok(())
+}
+
 fn asset_base(release_url: &str) -> Result<reqwest::Url> {
     let mut base = release::https(release_url)?;
     base.set_query(None);
