@@ -114,6 +114,18 @@ fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> 
     .unwrap()
 }
 
+fn update_request(apply: bool) -> InstanceCommand {
+    InstanceCommand::Update {
+        apply,
+        conflicts: Default::default(),
+        release: None,
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    }
+}
+
 #[tokio::test]
 async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
     let root = tempfile::tempdir().unwrap();
@@ -229,7 +241,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
             false,
             true,
             false,
-            "stop Prism, run instance update, then relaunch",
+            "stop Prism, run instance update --apply, then relaunch",
         ),
         (
             "Prism cannot claim server mode",
@@ -238,7 +250,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
             true,
             true,
             false,
-            "stop Prism, run instance update, then relaunch",
+            "stop Prism, run instance update --apply, then relaunch",
         ),
         (
             "game client",
@@ -690,7 +702,7 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
     fs::write(root.path().join("observed.json"), signed(&observed, &key)).unwrap();
     super::super::dispatch(
         &session(root.path(), true, false),
-        InstanceCommand::ObserveChannel {
+        InstanceCommand::CheckUpdates {
             envelope: Some("observed.json".into()),
         },
     )
@@ -769,7 +781,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         .create_async()
         .await;
     let update = || InstanceCommand::Update {
-        check: true,
+        apply: true,
         conflicts: Default::default(),
         release: None,
         side: None,
@@ -778,6 +790,38 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         files: vec![],
     };
     let before = crate::test_support::file_bytes(&root.path().join("project"));
+    let no_release = server
+        .mock("GET", "/release.json")
+        .with_status(500)
+        .expect(0)
+        .create_async()
+        .await;
+    let full_before = crate::test_support::file_bytes(root.path());
+    for yes in [false, true] {
+        let interactive = MockInteractiveProvider::new().with_confirm(true);
+        let prompts = interactive.confirm_calls.clone();
+        let (host, messages) = session(root.path(), yes, false)
+            .with_interactive(interactive)
+            .record_messages();
+        super::super::install_with_transport(
+            &host,
+            update_request(false),
+            transport(&server.url()),
+        )
+        .await
+        .unwrap();
+        assert!(
+            messages
+                .lock()
+                .unwrap()
+                .join("\n")
+                .contains("installation plan is not prepared")
+        );
+        assert_eq!(prompts.lock().unwrap().len(), 0);
+        assert_eq!(crate::test_support::file_bytes(root.path()), full_before);
+    }
+    no_release.assert_async().await;
+    no_release.remove_async().await;
     for (yes, dry) in [(true, true), (false, false)] {
         super::super::install_with_transport(
             &session(root.path(), yes, dry),
@@ -815,6 +859,19 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         .with_body(envelope)
         .create_async()
         .await;
+    let full_before = crate::test_support::file_bytes(root.path());
+    let (preview, messages) = session(root.path(), true, false).record_messages();
+    super::super::install_with_transport(&preview, update_request(false), transport(&server.url()))
+        .await
+        .unwrap();
+    assert!(
+        messages
+            .lock()
+            .unwrap()
+            .join("\n")
+            .contains("Preview only; use --apply")
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), full_before);
     let interactive = MockInteractiveProvider::new();
     interactive
         .response_queue
@@ -857,4 +914,142 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
     .unwrap();
     assert_eq!(installed.0.release, offered.id());
     assert_eq!(installed.0.side, InstanceSide::Server);
+}
+
+#[tokio::test]
+async fn update_preview_requires_manual_inputs_without_saving() {
+    use sha2::Digest;
+    let root = tempfile::tempdir().unwrap();
+    let key = fixture(root.path()).await;
+    let payload = b"manual update bytes";
+    let mut document = release("manual B").document().clone();
+    document.files.push(ReleaseFile {
+        world_root: None,
+        key: "manual".into(),
+        destination: "mods/manual.jar".into(),
+        layer: ReleaseLayer::Common,
+        policy: FilePolicy::Managed,
+        client: Participation::Required,
+        server: Participation::Required,
+        sha256: sha2::Sha256::digest(payload)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+        bytes: payload.len() as u64,
+        readonly: false,
+        executable: false,
+        assertions: vec![],
+        asset: None,
+        source: ReleaseSource::Manual {
+            instructions: "Supply the exact manual file".into(),
+            selection: None,
+        },
+    });
+    let offered = DecodedRelease::encode(document).unwrap();
+    let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+    let offer = channel(&offered, &key, envelope.len() as u64);
+    fs::write(root.path().join("manual-offer.json"), &offer).unwrap();
+    super::super::dispatch(
+        &session(root.path(), true, false),
+        InstanceCommand::CheckUpdates {
+            envelope: Some("manual-offer.json".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let _pointer = server
+        .mock("GET", "/channel.json")
+        .with_body(offer)
+        .create_async()
+        .await;
+    let _release = server
+        .mock("GET", "/release.json")
+        .with_body(envelope)
+        .create_async()
+        .await;
+    let before = crate::test_support::file_bytes(root.path());
+    for (apply, dry) in [(false, false), (true, true)] {
+        let error = super::super::install_with_transport(
+            &session(root.path(), true, dry),
+            update_request(apply),
+            transport(&server.url()),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<crate::application::cli::CommandInputRequired>()
+                .is_some(),
+            "{error:#}"
+        );
+        assert!(format!("{error:#}").contains("Installation needs manual files"));
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        assert!(!root.path().join("state/pending-instances").exists());
+    }
+    let error = super::super::install_with_transport(
+        &session(root.path(), true, false),
+        update_request(true),
+        transport(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("manual inputs remain pending"));
+    let report = crate::engine::pending::inspect(
+        &root.path().join("state"),
+        &root.path().join("project"),
+        &Default::default(),
+    )
+    .unwrap();
+    let operation = report
+        .operations
+        .iter()
+        .find(|op| op.kind == crate::engine::pending::PendingKind::Instance)
+        .unwrap();
+    fs::write(root.path().join("manual-input.jar"), payload).unwrap();
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        crate::application::cli::PendingCommand::Resume {
+            id: operation.id.clone(),
+            files: vec!["manual=manual-input.jar".into()],
+            downloads_dir: None,
+            wait_downloads: None,
+            open_downloads: false,
+            import_options: Default::default(),
+        },
+    )
+    .await
+    .unwrap();
+    let installed = inspect(
+        &session(root.path(), true, false),
+        root.path().join("project"),
+        None,
+        root.path().join("state"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed.0.release, offered.id());
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/manual.jar")).unwrap(),
+        payload
+    );
+    let completed = crate::test_support::file_bytes(root.path());
+    super::super::install_with_transport(
+        &session(root.path(), true, false),
+        update_request(false),
+        transport(&server.url()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(crate::test_support::file_bytes(root.path()), completed);
+    assert!(
+        crate::engine::pending::inspect(
+            &root.path().join("state"),
+            &root.path().join("project"),
+            &Default::default()
+        )
+        .unwrap()
+        .operations
+        .is_empty()
+    );
 }

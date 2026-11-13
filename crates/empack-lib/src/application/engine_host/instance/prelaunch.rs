@@ -103,7 +103,7 @@ async fn update_with_transport(
         ensure!(proof.release().document().runtime == release.document().runtime
             || (server && record.side == InstanceSide::Server && proof.release().document().server_launch.is_some()),
             if record.layout == InstanceLayout::Prism {
-                "Channel release changes the runtime; stop Prism, run instance update, then relaunch so Prism reloads its components"
+                "Channel release changes the runtime; stop Prism, run instance update --apply, then relaunch so Prism reloads its components"
             } else {
                 "Channel release changes the runtime; prepare its launcher/runtime integration before launch"
             });
@@ -122,7 +122,7 @@ async fn update_with_transport(
             assets: None,
         };
         let Some(prepared) = require_instance_ready(
-            session, &engine, cancellable(session, engine.prepare(root, request)).await?
+            session, &engine, cancellable(session, engine.prepare(root, request)).await?, ApplicationMode::Apply
         ).await? else { return Ok(None); };
         let OperationPreview::Instance(view) = prepared.view() else { anyhow::bail!("Unexpected instance preview"); };
         session.display().status().message(&text::plan(&view.record.release, view.files.changes().len(), view.downloads.len()));

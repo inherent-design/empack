@@ -1274,7 +1274,7 @@ fn runtime_defers_update(instance: &Path, envelope: &Path) {
         assert_eq!(current, held);
     };
     offline_command(instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(envelope)
         .assert()
         .failure()
@@ -1456,7 +1456,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     observe(&instance, &channel_a).success();
     assert_eq!(snapshot(&instance.join("game")), initial_game);
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_a)
         .assert()
         .success();
@@ -1552,12 +1552,29 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     // Refused high-sequence evidence must not poison the accepted replay floor.
     observe(&instance, &channel_b).success();
     installed(&instance, &a, b"1.0.0");
+    // An explicit signed local source previews the saved offer offline. Neither
+    // --yes nor a ready plan authorizes application or saves waiting work.
+    let before_preview = snapshot(root);
+    for yes in [false, true] {
+        let mut preview = offline_command(&instance);
+        if yes {
+            preview.arg("--yes");
+        }
+        preview
+            .args(["instance", "update"])
+            .arg(&envelope_b)
+            .assert()
+            .success()
+            .stdout(contains("Preview only; use --apply"));
+        assert_eq!(snapshot(root), before_preview);
+        installed(&instance, &a, b"1.0.0");
+    }
     runtime_defers_update(&instance, &envelope_b);
     installed(&instance, &a, b"1.0.0");
     write(&instance, "game/managed.txt", b"local conflict");
     let conflicted = snapshot(&instance);
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .failure()
@@ -1567,7 +1584,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     let signed_b = fs::read(&envelope_b).unwrap();
     let original_b = fs::read(export_b.join("release.json")).unwrap();
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .args(["--preserve", "managed.txt"])
         .assert()
@@ -1588,7 +1605,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         if command == "repair" {
             invocation.arg("--assets").arg(envelope_b.parent().unwrap());
         } else {
-            invocation.arg(&envelope_b);
+            invocation.arg("--apply").arg(&envelope_b);
         }
         invocation.assert().success();
         installed(&instance, &b, b"local conflict");
@@ -1622,7 +1639,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         )));
     fs::write(&merge, b"later source edit").unwrap();
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .success();
@@ -1747,7 +1764,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     observe(&instance, &channel_c).success();
     let after_rotation = snapshot(&instance);
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .failure()
@@ -1775,7 +1792,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         &export_b.join("release.json"),
     );
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&rotated_release)
         .assert()
         .success();
@@ -1994,7 +2011,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
     };
     observe(0);
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&releases[0].1)
         .args([
             "--side",
@@ -2053,14 +2070,14 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
     observe(1);
     let before_b = snapshot(&instance);
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&releases[1].1)
         .args(["--choice", "visuals=unknown"])
         .assert()
         .failure();
     assert_eq!(snapshot(&instance), before_b);
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&releases[1].1)
         .assert()
         .failure()
@@ -2158,7 +2175,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
     let before_choice = snapshot(&instance);
     let host_before_choice = snapshot(host.path());
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&releases[2].1)
         .assert()
         .failure()
@@ -2167,7 +2184,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
     assert_eq!(snapshot(host.path()), host_before_choice);
     expected("B", 1, true);
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&releases[2].1)
         .args(["--choice", "textures=none"])
         .assert()
@@ -2298,7 +2315,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             .assert()
             .success();
         command()
-            .args(["--yes", "instance", "update"])
+            .args(["--yes", "instance", "update", "--apply"])
             .arg(&releases[0].1)
             .args(["--layout", layout, "--side", side])
             .assert()
@@ -2339,7 +2356,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             let host_before = snapshot(host.path());
             for decisions in [vec![], vec!["--replace", "icon.png"]] {
                 command()
-                    .args(["--yes", "instance", "update"])
+                    .args(["--yes", "instance", "update", "--apply"])
                     .arg(&releases[2].1)
                     .args(decisions)
                     .assert()
@@ -2370,7 +2387,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                 _ => unreachable!(),
             };
             command()
-                .args(["--yes", "instance", "update"])
+                .args(["--yes", "instance", "update", "--apply"])
                 .arg(&releases[1].1)
                 .args([option, value])
                 .assert()
@@ -2379,7 +2396,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             assert_eq!(snapshot(&instance), before);
         }
         command()
-            .args(["--yes", "instance", "update"])
+            .args(["--yes", "instance", "update", "--apply"])
             .arg(&releases[1].1)
             .assert()
             .success();
@@ -2615,13 +2632,13 @@ fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
     observe(&instance, &channel_b).success();
     let before = snapshot(&instance);
     offline_command(&instance)
-        .args(["--yes", "--dry-run", "instance", "update"])
+        .args(["--yes", "--dry-run", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .success()
         .stdout(contains("Dry run complete - no changes applied"));
     offline_command(&instance)
-        .args(["instance", "update"])
+        .args(["instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .failure()
@@ -2632,7 +2649,7 @@ fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
     fs::write(&profile_path, serde_json::to_vec_pretty(&invalid).unwrap()).unwrap();
     let edited = snapshot(&instance);
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .failure()
@@ -2644,7 +2661,7 @@ fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
     )
     .unwrap();
     offline_command(&instance)
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .arg(&envelope_b)
         .assert()
         .success();

@@ -16,7 +16,7 @@ Status shows the pack, runtime and lock status, followed by any problems and nex
 
 A successful status command means the inspection completed, not that its records are ready for a build or launch. In JSON schema 1, inspect `selected`, `contexts` and `findings`; `content_verified` is false. A valid author record can still have a missing, invalid or stale resolution lock. An ambiguous workspace has no automatic selection. `--context` chooses the context shown in the human report; JSON retains the other discovered contexts as well.
 
-Status does not verify installed content, authenticate a channel or establish that Minecraft will launch. `update` previews author dependency changes and applies them with `--apply`; `instance update` applies a published pack release. Neither updates empack itself.
+Status does not verify installed content, authenticate a channel or establish that Minecraft will launch. `update` previews author dependency changes and applies them with `--apply`; `instance update` previews a published pack release and applies it with `--apply`. Neither updates empack itself.
 
 ## Authoring
 
@@ -91,7 +91,7 @@ Missing manual downloads can be saved after approval. The command reports the ex
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `instance install`                               | Install or apply an explicitly selected local snapshot into an instance root               |
 | `instance ensure`                                | Launcher hook: install initially, then repair the active release without reverting updates |
-| `instance update`                                | Apply the exact signed release selected by the saved subscribed channel                    |
+| `instance update`                                | Check the subscribed channel and preview its update; use `--apply` to install              |
 | `pending resume ID --file KEY=PATH`              | Resume a retained exact release with verified manual inputs                                |
 | `pending discard ID`                             | Explicitly discard a pending recipe without changing the installation                      |
 | `instance repair`                                | Restore the recorded release without selecting newer dependencies                          |
@@ -278,12 +278,15 @@ Publisher enrollment is explicit and separate from snapshot installation:
 
 ```sh
 empack --workdir instance instance subscribe --pack my-pack --channel stable https://packs.example.org/channels/stable.json --key PUBLIC_KEY_HEX
-empack --workdir instance instance check-updates
 empack --workdir instance instance update
+empack --workdir instance instance update --apply
 ```
 
-Enrollment and observation save trust and authenticated sequence observations. `instance check-updates` fetches the enrolled HTTPS URL and saves the verified observation after approval. `instance update` fetches the exact signed release selected by that saved channel. Both commands also accept a local envelope path. Update checks current trust, sequence and exact release identity before applying content. Updates infer the validated installed side and layout; explicit conflicting options fail before acquisition. First installation defaults to client/game and prints that selection; choose `--side server` for a new server. `instance update
---check` composes a fresh observation and update through separate approvals. Check approval persists the anti-replay floor even if installation never follows; preview saves nothing and never authorizes a later update. Local assets, verified cache entries and exact download sources supply its files. Remote immutable assets resolve relative to the authenticated release URL. `--file KEY=PATH` supplies restricted content. For Prism layouts, content application also updates the exact game/loader component profile in the same publication. Runtime-changing updates require stopping and relaunching Prism so it reloads that profile. Empack does not install Java or client game binaries; Prism performs its normal runtime preparation. Server runtime preparation remains a separate obligation. Key replacement and revocation retain the highest observed sequence, including across restart and managed rollback. These are separate maintenance actions, not installation steps. To rotate trust, run `empack --workdir instance instance trust --key REPLACEMENT_PUBLIC_KEY_HEX` after independently verifying the replacement public key. To disable channel updates, use `empack --workdir instance instance trust --revoke-all`.
+Enrollment saves the channel URL and trusted keys. `instance update` fetches and verifies its latest offer without changing saved history or installed content. If the offer has not been saved, the result identifies the release and explains that an installation plan is not yet prepared. When the exact offer is already saved, the command can preview its file changes. `--yes` alone never applies an update.
+
+`instance update --apply` asks separately to save the authenticated offer and to install the prepared release. Saving the offer advances replay protection even if later acquisition or installation fails or is declined. `--dry-run` prevents both changes. To save an offer without installing it, use `instance check-updates [CHANNEL_ENVELOPE]`; without a path it fetches the enrolled HTTPS channel. `instance update [RELEASE_ENVELOPE]` is the offline alternative: it verifies a local signed release against the already saved offer without fetching a new channel. It still requires `--apply` to install.
+
+Updates infer the validated installed side and layout; explicit conflicting options fail before acquisition. First installation defaults to client/game and prints that selection; choose `--side server` for a new server. Local assets, verified cache entries and exact download sources supply its files. Remote immutable assets resolve relative to the authenticated release URL. `--file KEY=PATH` supplies restricted content. A preview requiring manual files stops without saving waiting work; `--apply` permits saving it for `pending resume`. For Prism layouts, content application also updates the exact game/loader component profile in the same publication. Runtime-changing updates require stopping Prism and restarting it after application so it reloads the component metadata.
 
 For an installed, explicitly enrolled **server export**, a local Java runtime can request prelaunch updates. This requires the managed entry point produced by `build server`; a generic `build empack` content archive does not provide it:
 

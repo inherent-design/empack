@@ -11595,7 +11595,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Controlled host transport exercises check+update with inferred server context, preview/refusal and two separate observation/application approvals",
+            "Fresh update previews authenticate the offered release without changing history or fetching an unaccepted release, with or without --yes; a saved offer supports a nonapplying full plan",
+            "Explicit --apply requires separate observation/content approvals; dry-run and declined approval stop before their respective effects",
             "A missing release after approved channel observation preserves its durable sequence floor; declining application keeps A installed and accepting later applies B",
             "This host-only transport adapter is absent from the ordinary product; it is not actual hosted HTTPS or browser capability evidence"
           ]
@@ -11625,6 +11626,26 @@
           "assertions": [
             "Each declared final archive executes the public inferred-context/contradictory-override and managed-conflict update journeys",
             "Native component/suite observations cannot replace the exact five-target archive execution binding"
+          ]
+        },
+        {
+          "id": "UX-064.update-preview-manual-input",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::update_preview_requires_manual_inputs_without_saving"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A saved authenticated offer requiring manual content reports missing input in preview, including --yes and --apply with dry-run, without saving history or pending work",
+            "Explicit application saves the exact waiting operation; pending resume with the exact file installs that release, clears waiting work and permits a subsequent unchanged preview"
           ]
         }
       ],

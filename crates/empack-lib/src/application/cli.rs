@@ -84,7 +84,8 @@ Export for a launcher: empack --workdir my-pack build modrinth
 
 Author commands use empack.yml and empack.lock.
 Instance commands manage a separate installed game directory.
-Author update selects dependency versions; instance update applies a published pack release.
+Author update checks dependency versions; instance update checks published pack releases.
+Both preview by default; add --apply to apply the selected changes.
 Neither command updates the empack executable. Use empack status to inspect a workspace.
 Use --dry-run before a command to preview changes.
 Run empack <command> --help for its options.")]
@@ -523,14 +524,14 @@ pub enum InstanceCommand {
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
-    /// Apply the exact signed release selected by the saved authenticated channel observation
+    /// Check publisher updates; use --apply to accept and install the selected release
     Update {
-        /// Check and approve a fresh channel observation before separately approving installation
+        /// Accept the verified offer and apply the prepared installation after approval
         #[arg(long)]
-        check: bool,
+        apply: bool,
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
-        /// Local signed release envelope; omit to fetch the saved channel's exact release
+        /// Local signed release envelope using the saved offer; omit to check the current channel
         release: Option<std::path::PathBuf>,
         /// Infer the installed environment; first installation defaults to client
         #[arg(long, value_parser = ["client", "server"])]
@@ -574,8 +575,7 @@ pub enum InstanceCommand {
         revoke_all: bool,
     },
     /// Verify a signed channel envelope and save its anti-replay floor without installing content
-    #[command(name = "check-updates", visible_alias = "observe-channel")]
-    ObserveChannel {
+    CheckUpdates {
         /// Local signed envelope; omit to fetch the enrolled HTTPS channel
         envelope: Option<std::path::PathBuf>,
     },
@@ -870,9 +870,9 @@ pub enum Commands {
     #[command(
         after_help = "Select an existing directory with empack --workdir INSTANCE instance <command>.
 Create an empty directory before the first installation.
-Use install for a local snapshot; subscribe, check-updates and update for a signed channel.
+Use install for a local snapshot; subscribe then update --apply for a signed channel.
 First installation defaults to client; choose --side server for a server.
-Updates infer the installed side/layout. update --check checks before applying."
+Updates infer the installed side/layout; omit --apply to preview without saving an offer or installing files."
     )]
     Instance {
         #[command(subcommand)]
@@ -1248,29 +1248,26 @@ mod tests {
         assert!(
             Cli::try_parse_from(["empack", "release", "init", "--key-file", "private/key"]).is_ok()
         );
-        for command in ["check-updates", "observe-channel"] {
-            assert!(matches!(
-                Cli::try_parse_from(["empack", "instance", command])
-                    .unwrap()
-                    .command,
-                Some(Commands::Instance {
-                    command: InstanceCommand::ObserveChannel { envelope: None }
-                })
-            ));
-        }
         assert!(matches!(
-            Cli::try_parse_from(["empack", "instance", "update", "--check"])
+            Cli::try_parse_from(["empack", "instance", "check-updates"])
                 .unwrap()
                 .command,
             Some(Commands::Instance {
-                command: InstanceCommand::Update {
-                    check: true,
-                    side: None,
-                    layout: None,
-                    ..
-                }
+                command: InstanceCommand::CheckUpdates { envelope: None }
             })
         ));
+        assert!(Cli::try_parse_from(["empack", "instance", "observe-channel"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "instance", "update", "--check"]).is_err());
+        for (flags, expected) in [
+            (vec![], false),
+            (vec!["--yes"], false),
+            (vec!["--apply"], true),
+        ] {
+            let mut arguments = vec!["empack", "instance", "update"];
+            arguments.extend(flags);
+            assert!(matches!(Cli::try_parse_from(arguments).unwrap().command,
+                Some(Commands::Instance { command: InstanceCommand::Update { apply, .. } }) if apply == expected));
+        }
     }
 
     #[test]

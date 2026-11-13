@@ -379,7 +379,11 @@ async fn apply_in_mode(
         session
             .display()
             .status()
-            .message("Preview only; use --apply to apply these changes.");
+            .message(if session.config().app_config().dry_run {
+                "Dry run complete - no changes applied"
+            } else {
+                "Preview only; use --apply to apply these changes."
+            });
         return Ok(());
     }
     if !approve(session, label)? {

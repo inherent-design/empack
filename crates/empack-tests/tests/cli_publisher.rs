@@ -429,7 +429,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
     // Only the signed channel is supplied locally. No local release or assets
     // argument may substitute for fetching the immutable HTTPS fixture.
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply"])
         .assert()
         .success();
     let assert_installed = |label: &str| {
@@ -524,7 +524,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .success();
     for _ in 0..2 {
         command()
-            .args(["--yes", "instance", "update"])
+            .args(["--yes", "instance", "update", "--apply"])
             .assert()
             .success();
         assert_installed("b");

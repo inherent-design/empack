@@ -680,7 +680,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
             let error = execute_command_with_session(
                 Commands::Instance {
                     command: InstanceCommand::Update {
-                        check: true,
+                        apply: true,
                         conflicts: Default::default(),
                         release: Some("missing-release.json".into()),
                         side: explicit_side,
@@ -882,7 +882,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
-            check: false,
+            apply: true,
             conflicts: Default::default(),
             release: Some("signed-release.json".into()),
             side: Some("client".into()),
@@ -916,7 +916,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     let before_check = snapshot(&root.path().join("project"));
     execute_command_with_session(
         Commands::Instance {
-            command: InstanceCommand::ObserveChannel {
+            command: InstanceCommand::CheckUpdates {
                 envelope: Some("channel.json".into()),
             },
         },
@@ -927,7 +927,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     assert_eq!(before_check, snapshot(&root.path().join("project")));
     execute_command_with_session(
         Commands::Instance {
-            command: InstanceCommand::ObserveChannel {
+            command: InstanceCommand::CheckUpdates {
                 envelope: Some("channel.json".into()),
             },
         },

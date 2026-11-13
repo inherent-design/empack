@@ -86,7 +86,14 @@ pub(super) fn inspect(record: &InstanceRecord, version: &str) -> String {
 }
 
 pub(super) fn plan(release: &str, changed: usize, downloads: usize) -> String {
-    let mut lines = vec![format!("Release: {}", display_line(release))];
+    format!(
+        "Release: {}\n{}",
+        display_line(release),
+        changes(changed, downloads)
+    )
+}
+pub(super) fn changes(changed: usize, downloads: usize) -> String {
+    let mut lines = Vec::new();
     if changed == 0 {
         lines.push("No file changes needed.".into());
     } else {
@@ -123,6 +130,18 @@ pub(super) fn publisher(
         lines.push(format!("Key fingerprint: {}", display_line(fingerprint)));
     }
     lines.join("\n")
+}
+
+pub(super) fn offer_preview(release: &str, sequence: u64, dry_run: bool) -> String {
+    format!(
+        "Offered release: {}\nUpdate number: {sequence}\nOffer verified; installation plan is not prepared because this offer has not been saved.\n{}",
+        display_line(release),
+        if dry_run {
+            "Run without --dry-run and with --apply to accept the offer and prepare installation."
+        } else {
+            "Call with --apply to accept the offer and prepare installation."
+        },
+    )
 }
 
 pub(super) fn offer(release: &str, sequence: u64) -> String {
