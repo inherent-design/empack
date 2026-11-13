@@ -1,4 +1,4 @@
-//! Restricted content exercises native saved recipes, not simulated packwiz output.
+//! Restricted content exercises saved native build recipes.
 use empack_tests::{
     fixtures::restricted::fixture,
     harness::process::{TestProject, assert_dist_artifact_suffix},
@@ -13,11 +13,6 @@ use empack_tests::harness::workspace::snapshot;
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
     let mut command = assert_cmd::Command::from_std(project.cmd());
     command.arg("--state-dir").arg(state).arg("--yes");
-    // No external backend can manufacture the missing-content decision.
-    command.env(
-        "EMPACK_PACKWIZ_BIN",
-        project.dir().join("unavailable-packwiz"),
-    );
     command.timeout(std::time::Duration::from_secs(90));
     command
 }

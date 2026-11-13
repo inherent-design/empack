@@ -14,11 +14,7 @@ mod journeys;
 
 fn command(project: &TestProject) -> assert_cmd::Command {
     let mut cmd = empack_tests::harness::process::offline_command(project.dir());
-    cmd.env(
-        "EMPACK_PACKWIZ_BIN",
-        project.dir().join("must-not-be-executed"),
-    )
-    .timeout(Duration::from_secs(15));
+    cmd.timeout(Duration::from_secs(15));
     cmd
 }
 fn initialized() -> TestProject {

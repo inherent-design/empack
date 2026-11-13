@@ -13,8 +13,7 @@ fn command(project: &TestProject) -> Command {
     command
         .env_remove("EMPACK_DRY_RUN")
         .env_remove("EMPACK_YES")
-        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
-        .env("EMPACK_PACKWIZ_BIN", project.dir().join("must-not-run"));
+        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"));
     command
 }
 fn output(project: &TestProject, arguments: &[&str]) -> Output {

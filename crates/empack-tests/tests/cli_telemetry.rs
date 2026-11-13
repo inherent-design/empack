@@ -2,7 +2,6 @@ use empack_tests::harness::process::TestProject;
 
 fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Command {
     let mut cmd = project.cmd();
-    cmd.env("EMPACK_PACKWIZ_BIN", project.dir().join("missing-backend"));
     cmd.env("EMPACK_PROFILE", profile)
         .env("OTEL_SDK_DISABLED", "false")
         .env("OTEL_TRACES_SAMPLER", "always_on")
