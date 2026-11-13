@@ -61,10 +61,10 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     let cancel = Cancellation::default();
     for kind in [Kind::Import, Kind::Synchronization, Kind::Instance] {
         let record = OpaqueRecord {
-            schema: if matches!(kind, Kind::Synchronization | Kind::Instance) {
-                2
-            } else {
-                1
+            schema: match kind {
+                Kind::Import => 1,
+                Kind::Synchronization => 2,
+                Kind::Instance => 3,
             },
             binding: store::bind_for(&state, kind, &target, &cancel).unwrap().1,
             marker: 0,
@@ -124,7 +124,12 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
             PendingKind::Sync => "Missing synchronization mode",
             PendingKind::Instance => "Missing release payload",
         };
-        assert!(operation.diagnostic.as_ref().unwrap().contains(diagnostic));
+        assert!(
+            operation.diagnostic.as_ref().unwrap().contains(diagnostic),
+            "{:?}: expected {diagnostic:?}, got {:?}",
+            operation.kind,
+            operation.diagnostic,
+        );
         assert_eq!(
             operation.next,
             vec!["pending", "resume", operation.id.as_str()]
