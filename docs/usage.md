@@ -185,7 +185,7 @@ empack pending show OPERATION_ID
 empack pending resume OPERATION_ID --file 'EXACT_KEY=/absolute/path/to/download.jar'
 ```
 
-Missing import files are reported with their exact selector and a local-file argument when representable. After saving the import, its Downloads-folder search is also available. Continuation keeps the original recipes and verifies the supplied bytes. Use `--import-file SELECTOR=PATH` with `init --continue` for imports, or `instance continue --file KEY=PATH` for installed releases; these identifiers are shown in the respective diagnostics.
+Missing import files are reported with their exact selector and a local-file argument when representable. After saving the import, its Downloads-folder search is also available. Continuation keeps the original recipes and verifies the supplied bytes. Use `pending resume ID --file SELECTOR=PATH` for saved imports, or `instance continue --file KEY=PATH` for installed releases; these identifiers are shown in the respective diagnostics.
 
 ## Interaction and failures
 
@@ -320,7 +320,7 @@ empack --workdir imported-pack pending resume OPERATION_ID --file EXACT_KEY=/pat
 empack --workdir my-pack pending discard OPERATION_ID
 ```
 
-`pending list` summarizes saved work; `pending show ID` lists the recorded files, names, sizes and checksums. Add `--json` for the complete report, including recorded download addresses. Changed or unreadable records remain visible with their diagnostic. IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `init --continue` and `instance continue` remain supported.
+`pending list` summarizes saved work; `pending show ID` lists the recorded files, names, sizes and checksums. Add `--json` for the complete report, including recorded download addresses. Changed or unreadable records remain visible with their diagnostic. IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `instance continue` remains supported.
 
 ## Generated GitHub workflows
 

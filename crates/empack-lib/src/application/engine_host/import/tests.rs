@@ -735,6 +735,17 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     };
     assert_eq!(records().len(), 1);
     let saved_path = records().pop().unwrap();
+    let saved_id = crate::engine::pending::inspect(
+        &root.path().join("state"),
+        &root.path().join("project"),
+        &Default::default(),
+    )
+    .unwrap()
+    .operations
+    .into_iter()
+    .find(|operation| operation.kind == crate::engine::pending::PendingKind::Import)
+    .unwrap()
+    .id;
     let pending_tree = crate::test_support::file_bytes(root.path());
     super::super::clean(&session(root.path(), true, true), &["import".into()])
         .await
@@ -751,9 +762,21 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         filename: "fixture.jar".into(),
     };
     let before_resume = crate::test_support::file_bytes(root.path());
+    let mismatched = import_with_services(
+        &session(root.path(), true, false),
+        request(ImportSource::Saved("0".repeat(64)), false),
+        |_| panic!("changed saved identity must not reach conversion"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{mismatched:#}").contains("Selected pending import changed"));
+    assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
     let preview = import_with_services(
         &session(root.path(), true, true),
-        request(ImportSource::Saved, false),
+        request(ImportSource::Saved(saved_id.clone()), false),
         |_| panic!("pending preview must not convert"),
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         HttpAcquisition::for_loopback_tests(),
@@ -762,7 +785,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     .await;
     assert!(preview.is_err());
     assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
-    let mut wrong = request(ImportSource::Saved, false);
+    let mut wrong = request(ImportSource::Saved(saved_id.clone()), false);
     wrong.supplied.insert(key.clone(), observed(b"changed"));
     let wrong = import_with_services(
         &session(root.path(), true, false),
@@ -779,7 +802,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         "wrong supplied bytes created an import destination"
     );
     assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
-    let mut selected = request(ImportSource::Saved, false);
+    let mut selected = request(ImportSource::Saved(saved_id.clone()), false);
     selected.supplied.insert(key.clone(), observed(b"payload"));
     let decide = |content: &VerifiedImportContent| -> Result<ImportCandidateOptions> {
         assert_eq!(content.content().len(), 3);
@@ -841,7 +864,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     // Supplying restricted bytes grants no permission to discard their provider
     // identity. Neither a local-file nor URL conversion may publish the draft.
     for persistence in [ImportPersistence::Local, ImportPersistence::Url] {
-        let mut invalid = request(ImportSource::Saved, false);
+        let mut invalid = request(ImportSource::Saved(saved_id.clone()), false);
         invalid.supplied.insert(key.clone(), observed(b"payload"));
         let rejected = import_with_services(
             &session(root.path(), true, false),

@@ -238,10 +238,9 @@ async fn resume(
             .await
         }
         PendingKind::Import => {
-            cli::initialize_selected(
+            cli::resume_saved_import(
                 session,
                 &InitArgs {
-                    continue_import: true,
                     import_files: file_args(files),
                     import_optional_default: import_options.import_optional_default,
                     import_local_files: import_options.import_local_files,
@@ -259,7 +258,7 @@ async fn resume(
                     game_versions: import_options.game_versions,
                     ..Default::default()
                 },
-                Some(selected.id),
+                &selected.id,
             )
             .await
         }

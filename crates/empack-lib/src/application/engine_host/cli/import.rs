@@ -24,46 +24,15 @@ use empack_core::{
 use std::collections::BTreeMap;
 
 pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
-    initialize_selected(session, args, None).await
-}
-pub(in crate::application::engine_host) async fn initialize_selected(
-    session: &dyn Session,
-    args: &InitArgs,
-    pending_id: Option<String>,
-) -> Result<()> {
-    if args.from_source.is_none() && !args.continue_import {
+    let Some(source) = args.from_source.as_deref() else {
         return super::super::initialize(session, args).await;
-    }
-    let source = args.from_source.as_deref().unwrap_or_default();
-    ensure!(
-        args.import_files.len() <= 128,
-        "At most 128 import-file associations are allowed"
-    );
-    let local_files = args
-        .import_files
-        .iter()
-        .map(|value| {
-            let (selector, path) = value
-                .split_once('=')
-                .context("Import file association must be SELECTOR=PATH")?;
-            ensure!(
-                !selector.is_empty() && !path.is_empty(),
-                "Import file association needs a selector and source path"
-            );
-            Ok(ImportLocalFile {
-                selector: selector.into(),
-                source: path.into(),
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
+    };
     let expected = ExpectedContent {
         digests: None,
         size: None,
         accepted_observation: None,
     };
-    let source = if args.continue_import {
-        pending_id.map_or(ImportSource::Saved, ImportSource::SavedSelected)
-    } else if let Some(provider) = url_provider(source)? {
+    let source = if let Some(provider) = url_provider(source)? {
         ImportSource::Provider {
             selector: ModpackSelector::parse(provider, source)?,
             releases: ReleasePolicy::PreferStable,
@@ -88,6 +57,37 @@ pub(in crate::application::engine_host) async fn initialize_selected(
             expected,
         }
     };
+    import_source(session, args, source).await
+}
+pub(in crate::application::engine_host) async fn resume_saved_import(
+    session: &dyn Session,
+    args: &InitArgs,
+    pending_id: &str,
+) -> Result<()> {
+    import_source(session, args, ImportSource::Saved(pending_id.to_owned())).await
+}
+async fn import_source(session: &dyn Session, args: &InitArgs, source: ImportSource) -> Result<()> {
+    ensure!(
+        args.import_files.len() <= 128,
+        "At most 128 import-file associations are allowed"
+    );
+    let local_files = args
+        .import_files
+        .iter()
+        .map(|value| {
+            let (selector, path) = value
+                .split_once('=')
+                .context("Import file association must be SELECTOR=PATH")?;
+            ensure!(
+                !selector.is_empty() && !path.is_empty(),
+                "Import file association needs a selector and source path"
+            );
+            Ok(ImportLocalFile {
+                selector: selector.into(),
+                source: path.into(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     super::super::import(
         session,
         ImportHostRequest {

@@ -105,7 +105,7 @@ fn restricted_inputs(output: &Output) -> Vec<String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(text.contains("Import continuation was saved"), "{text}");
+    assert!(text.contains("Import was saved"), "{text}");
     let mut selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {

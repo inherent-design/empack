@@ -20,8 +20,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit archive selection. Transient download URLs are never formatted or serialized here.
 pub enum ImportSource {
-    Saved,
-    SavedSelected(String),
+    Saved(String),
     Provider {
         selector: ModpackSelector,
         releases: ReleasePolicy,
@@ -157,17 +156,13 @@ pub(super) async fn import_with_services(
     let (content, mut saved) = scoped(session, shared.clone(), move |mut scope| async move {
         let mut resumed = None;
         let archive = match source {
-            source @ (ImportSource::Saved | ImportSource::SavedSelected(_)) => {
-                let expected = match source {
-                    ImportSource::SavedSelected(id) => Some(id),
-                    _ => None,
-                };
+            ImportSource::Saved(expected) => {
                 let saved =
                     crate::engine::import::load_pending_import(&mut scope, load_state, load_target)
                         .await?
                         .context("No saved import exists for this destination")?;
                 ensure!(
-                    expected.is_none_or(|id| id == saved.saved.identity()),
+                    expected == saved.saved.identity(),
                     "Selected pending import changed; inspect its new identity"
                 );
                 let archive = saved.archive.clone();
@@ -310,7 +305,7 @@ pub(super) async fn import_with_services(
                     .await
                 })
                 .await?;
-                session.display().status().info("Import continuation was saved; use init --continue with the same destination and --import-file SELECTOR=PATH");
+                session.display().status().info("Import was saved; use pending list, then pending show ID and pending resume ID --file SELECTOR=PATH in the same destination");
             }
             anyhow::bail!(
                 "Import was not published: {} content obligations need explicit input",

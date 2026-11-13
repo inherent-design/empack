@@ -118,19 +118,11 @@ impl ImportFixture {
         assert!(String::from_utf8_lossy(&output.stderr).contains("--import-file="));
         import_selectors(&output)
     }
-    fn resume(&self, operation: &Value, legacy: bool, association: &str) -> assert_cmd::Command {
+    fn resume(&self, operation: &Value, prefix: bool, association: &str) -> assert_cmd::Command {
         let mut command = self.command();
-        if legacy {
-            command.args(["init", "--continue", "--import-file", association]);
-        } else {
-            command.args([
-                "pending",
-                "resume",
-                operation["id"].as_str().unwrap(),
-                "--file",
-                association,
-            ]);
-        }
+        let id = operation["id"].as_str().unwrap();
+        let id = if prefix { &id[..12] } else { id };
+        command.args(["pending", "resume", id, "--file", association]);
         command.arg("--import-local-files");
         command
     }
@@ -530,7 +522,7 @@ fn import_selectors(output: &std::process::Output) -> Vec<String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(text.contains("Import continuation was saved"), "{text}");
+    assert!(text.contains("Import was saved"), "{text}");
     let selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {
@@ -546,7 +538,7 @@ fn import_selectors(output: &std::process::Output) -> Vec<String> {
 
 #[test]
 fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume_commands() {
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         let fixture = ImportFixture::with_files(json!([
             {"path":"resourcepacks/first.zip","downloads":["http://example.invalid/first"],"fileSize":5,
              "hashes":{"sha512":"7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd"}},
@@ -573,7 +565,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         let output = fixture
             .resume(
                 &operation,
-                legacy,
+                prefix,
                 &format!("{}={}", selectors[0], first.display()),
             )
             .assert()
@@ -596,7 +588,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         fs::write(&backing, b"WRONG").unwrap();
         let corrupted = snapshot(&fixture.state).files;
         fixture
-            .resume(&partial, legacy, &association)
+            .resume(&partial, prefix, &association)
             .assert()
             .failure()
             .stderr(predicates::str::contains("sha512 digest mismatch"));
@@ -607,7 +599,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
 
         fs::remove_file(&backing).unwrap();
         let output = fixture
-            .resume(&partial, legacy, &association)
+            .resume(&partial, prefix, &association)
             .assert()
             .failure()
             .get_output()
@@ -640,7 +632,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         fixture
             .resume(
                 &missing,
-                legacy,
+                prefix,
                 &format!("{}={}", selectors[0], first.display()),
             )
             .assert()

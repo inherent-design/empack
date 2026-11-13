@@ -6401,7 +6401,7 @@
       "id": "UX-036",
       "family": "Missing input and pending work",
       "title": "Continue across executable restart",
-      "public_surface": "pending resume; legacy continuations",
+      "public_surface": "pending resume; saved-input operations",
       "api_ids": [
         "PEND",
         "IO",
@@ -6693,7 +6693,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Public diagnostic selectors associate two distinct manual payloads through both pending resume and init --continue, across separate executable invocations",
+            "Public diagnostic selectors associate two distinct manual payloads through full and unique-prefix pending IDs across separate executable invocations",
             "After the original archive and first download are removed, same-length corruption fails the original SHA-512 without changing saved state, author notes, prior artifacts or the absent destination",
             "Missing payload becomes a new obligation while the other payload is retained; inspection lists retained content without claiming complete discovery",
             "Fresh verified replacement completes an exact independently asserted exported inventory after both original downloads and ordinary cache are removed; repeated synchronization converges"
@@ -17586,7 +17586,7 @@
     "PEND": {
       "owner_now": "engine::pending + workflow-specific persisted records; application::engine_host",
       "owner_09": "shared pending semantics + native/browser retention and UI",
-      "route": "PendingCommand::{List,Show,Resume,Discard} \u2192 selected unchanged workflow record \u2192 exact input association \u2192 reprepare \u2192 fresh grant; legacy build/import/sync/instance continuation adapters",
+      "route": "PendingCommand::{List,Show,Resume,Discard} \u2192 selected unchanged workflow record \u2192 exact input association \u2192 reprepare \u2192 fresh grant; native build/import/sync/instance workflow owners",
       "sources": [
         "S11",
         "S12",

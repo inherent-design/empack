@@ -32,7 +32,7 @@ mod migration;
 mod synchronization;
 mod update;
 pub use import::initialize;
-pub(super) use import::initialize_selected;
+pub(super) use import::resume_saved_import;
 pub use migration::migrate;
 pub use synchronization::synchronize;
 pub(super) use synchronization::{

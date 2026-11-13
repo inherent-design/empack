@@ -698,10 +698,7 @@ pub fn assert_pending_import_lifecycle(
         diagnostic.contains("content obligations need explicit input"),
         "{diagnostic}"
     );
-    assert!(
-        diagnostic.contains("Import continuation was saved"),
-        "{diagnostic}"
-    );
+    assert!(diagnostic.contains("Import was saved"), "{diagnostic}");
     let target_path = workdir.join(target);
     assert!(
         !target_path.exists(),

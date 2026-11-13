@@ -369,7 +369,7 @@ pub fn inspect_workspace(
         (
             super::continuation_store::Kind::Import,
             "import",
-            &["init", "--continue"][..],
+            &["pending", "list"][..],
         ),
         (
             super::continuation_store::Kind::Synchronization,
