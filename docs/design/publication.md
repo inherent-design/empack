@@ -36,7 +36,7 @@ New-root publication accepts a verified, complete create-only file plan containi
 
 New schema-2 creation journals retain persistent parent and candidate identities. The parent association is established before selecting the creation index, and the candidate association is durable before index intent. Original native labels remain physical storage addresses; read-only lookup verifies the persistent association and retains the original index, root-state directory and locks. It creates no state. Missing or inconsistent candidate associations and mixed identity formats refuse recovery rather than creating new authority from a journal.
 
-Schema-1 journals keep their original strict native checks. Inspection and recovery do not silently convert them. Persistent journal evidence is separate from a fresh recovery approval: prepared recovery captures the live parent and candidate/root identities, rechecks them before effects, and refuses a stale native observation. A completed creation remains readable after ordinary project edits; it does not require its original file inventory to remain the current project inventory.
+Persistent journal evidence is separate from a fresh recovery approval: prepared recovery captures the live parent and candidate/root identities, rechecks them before effects, and refuses a stale native observation. A completed creation remains readable after ordinary project edits; it does not require its original file inventory to remain the current project inventory.
 
 ### Durable protocol
 

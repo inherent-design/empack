@@ -899,13 +899,20 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         saved,
         fs::read(root.path().join("project/.empack/subscription.json")).unwrap()
     );
-    super::super::install_with_transport(
-        &session(root.path(), true, false),
-        update(),
-        transport(&server.url()),
-    )
-    .await
-    .unwrap();
+    let (applied, messages) = session(root.path(), true, false).record_messages();
+    super::super::install_with_transport(&applied, update(), transport(&server.url()))
+        .await
+        .unwrap();
+    assert_eq!(
+        messages
+            .lock()
+            .unwrap()
+            .join("\n")
+            .matches(offered.id())
+            .count(),
+        1,
+        "the authenticated offer already identifies the selected release"
+    );
     let installed = inspect(
         &host,
         root.path().join("project"),
@@ -1150,13 +1157,24 @@ async fn local_channel_update_preserves_preview_and_requires_authenticated_offer
         .expect(1)
         .create_async()
         .await;
+    let (applied, messages) = session(root.path(), true, false).record_messages();
     super::super::install_with_transport(
-        &session(root.path(), true, false),
+        &applied,
         local_update(true, "local-channel.json"),
         transport(&server.url()),
     )
     .await
     .unwrap();
+    assert_eq!(
+        messages
+            .lock()
+            .unwrap()
+            .join("\n")
+            .matches(offered.id())
+            .count(),
+        1,
+        "local channel input uses the same single offer-to-install report"
+    );
     release_route.assert_async().await;
     pointer.assert_async().await;
     let installed = inspect(

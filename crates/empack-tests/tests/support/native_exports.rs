@@ -557,7 +557,8 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .args(["--yes", "instance", "repair"])
             .assert()
             .success()
-            .stdout(contains(format!("Applied release {identity}")));
+            .stdout(contains(format!("Release: {identity}")))
+            .stdout(contains("Instance files ready:"));
         assert_eq!(snapshot(&instance.join(game)).files, expected);
 
         // A verified cache hit does not authorize discarding local managed edits.
@@ -586,7 +587,9 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .stderr(contains(
                 "Instance was not applied; exact manual inputs remain pending",
             ))
-            .stdout(contains("Applied release").not());
+            .stdout(contains("Selected version: 1"))
+            .stdout(contains(format!("Release: {identity}")))
+            .stdout(contains("Instance files ready:").not());
         assert_eq!(snapshot(&instance), missing);
         let pending_host = snapshot(host.path());
         let output = command_with_cache(&instance, host.path(), &absent_cache)

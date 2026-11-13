@@ -122,17 +122,15 @@ async fn update_with_transport(
             assets: None,
         };
         let Some(prepared) = require_instance_ready(
-            session, &engine, cancellable(session, engine.prepare(root, request)).await?, ApplicationMode::Apply
+            session, &engine, cancellable(session, engine.prepare(root, request)).await?, ApplicationMode::Apply, false
         ).await? else { return Ok(None); };
-        let OperationPreview::Instance(view) = prepared.view() else { anyhow::bail!("Unexpected instance preview"); };
-        session.display().status().message(&text::plan(&view.record.release, view.files.changes().len(), view.downloads.len()));
         if !approve(session, "Prelaunch update")? {
             return Ok(None);
         }
         execute_approved(session, &engine, prepared, "Prelaunch update", |receipt| {
             let ExecutionReceipt::Instance(receipt) = receipt else { anyhow::bail!("Unexpected instance receipt"); };
             ensure!(receipt.record.release == expected, "Prelaunch installed another release");
-            Ok(format!("Prepared release {} for launch", receipt.record.release))
+            Ok(text::completed(&receipt.record, &receipt.release_version))
         }).await?;
         Ok(Some(expected))
     }.await;

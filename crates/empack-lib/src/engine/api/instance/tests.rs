@@ -94,10 +94,21 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     }
 }
 async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) -> InstanceRecord {
+    apply_with_versions(engine, root, request).await.0
+}
+async fn apply_with_versions(
+    engine: &Engine,
+    root: &Path,
+    request: InstallInstanceRequest,
+) -> (InstanceRecord, String, String) {
     let Preparation::Ready(prepared) = engine.prepare(root.to_owned(), request).await.unwrap()
     else {
         panic!("input required")
     };
+    let OperationPreview::Instance(view) = prepared.view() else {
+        panic!("unexpected preview")
+    };
+    let preview_version = view.release_version.clone();
     let grant = ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
@@ -110,7 +121,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
     let record = match &*outcome {
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
             receipt,
-        ))) => receipt.record.clone(),
+        ))) => (receipt.record.clone(), receipt.release_version.clone()),
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(e)) => {
             panic!("failed: {e:#}")
         }
@@ -122,7 +133,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
     drop(outcome);
     engine.release_completed(operation.id());
     drop(operation);
-    record
+    (record.0, preview_version, record.1)
 }
 #[tokio::test]
 async fn install_update_repair_and_rollback_preserve_seeds_and_unowned_data() {
@@ -916,6 +927,9 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
     };
     let a = apply(&engine, root.path(), original()).await;
     let next = request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
+    let mut document = next.release.release().document().clone();
+    document.version = "2".into();
+    let next = replace_document(next, document);
     let b = apply(&engine, root.path(), next).await;
     assert_ne!(a.release, b.release);
     let old_consumer = || {
@@ -923,8 +937,11 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
         input.supplied.clear();
         input
     };
-    let kept = apply(&engine, root.path(), old_consumer()).await;
+    let (kept, preview_version, receipt_version) =
+        apply_with_versions(&engine, root.path(), old_consumer()).await;
     assert_eq!(kept, b);
+    assert_eq!(preview_version, "2");
+    assert_eq!(receipt_version, "2");
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"B");
     let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
     let mut wrong = old_consumer();

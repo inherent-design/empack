@@ -1686,9 +1686,19 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     }
     let active_game = snapshot(&instance.join("game"));
     for _ in 0..2 {
-        prepare_bootstrap(&instance, &export_a, &a)
+        let output = prepare_bootstrap(&instance, &export_a, &a)
             .assert()
-            .success();
+            .success()
+            .stdout(contains("Selected version: 2.0.0"))
+            .stdout(contains("Selected version: 1.0.0").not())
+            .stdout(contains(format!("Release: {a}")).not())
+            .stdout(contains(
+                "Instance files ready: verification.publisher 2.0.0",
+            ))
+            .get_output()
+            .stdout
+            .clone();
+        assert_eq!(String::from_utf8(output).unwrap().matches(&b).count(), 1);
         installed(&instance, &b, b"2.0.0");
         assert_eq!(snapshot(&instance.join("game")), active_game);
     }

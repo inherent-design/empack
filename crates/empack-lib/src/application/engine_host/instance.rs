@@ -116,6 +116,10 @@ async fn install_with_transport(
         session.display().status().info(&text::first(side, layout));
     }
     let selected = release.map(|path| absolute(&invocation, &path));
+    // An applying channel journey announces its authenticated offer before preparation.
+    // Other paths announce the effective prepared identity with the file plan.
+    let show_selected_identity =
+        !(subscribed && selected.is_none() && mode == ApplicationMode::Apply);
     ensure!(
         selected.is_none() || channel_file.is_none(),
         crate::application::cli::CommandInputRequired(
@@ -248,10 +252,6 @@ async fn install_with_transport(
             SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
         }
     };
-    session
-        .display()
-        .status()
-        .message(&text::selected(&release));
     let request = InstallInstanceRequest {
         require_subscription,
         conflicts,
@@ -275,18 +275,12 @@ async fn install_with_transport(
             &engine,
             cancellable(session, engine.prepare(root, request)).await?,
             mode,
+            show_selected_identity,
         )
         .await?
         else {
             return Ok(());
         };
-        let OperationPreview::Instance(view) = prepared.view() else {
-            anyhow::bail!("Unexpected instance preview");
-        };
-        session.display().status().message(&text::changes(
-            view.files.changes().len(),
-            view.downloads.len(),
-        ));
         apply_in_mode(
             session,
             &engine,
@@ -298,11 +292,7 @@ async fn install_with_transport(
                 let ExecutionReceipt::Instance(receipt) = receipt else {
                     anyhow::bail!("Unexpected instance receipt");
                 };
-                Ok(format!(
-                    "Applied release {} to {}/",
-                    receipt.record.release,
-                    receipt.record.layout.directory()
-                ))
+                Ok(text::completed(&receipt.record, &receipt.release_version))
             },
         )
         .await
@@ -550,19 +540,12 @@ async fn maintain(
             &engine,
             cancellable(session, engine.prepare(root, request)).await?,
             ApplicationMode::Apply,
+            true,
         )
         .await?
         else {
             return Ok(());
         };
-        let OperationPreview::Instance(view) = prepared.view() else {
-            anyhow::bail!("Unexpected instance preview");
-        };
-        session.display().status().message(&text::plan(
-            &view.record.release,
-            view.files.changes().len(),
-            view.downloads.len(),
-        ));
         apply(
             session,
             &engine,
@@ -572,11 +555,7 @@ async fn maintain(
                 let ExecutionReceipt::Instance(receipt) = receipt else {
                     anyhow::bail!("Unexpected instance receipt");
                 };
-                Ok(format!(
-                    "Applied release {} to {}/",
-                    receipt.record.release,
-                    receipt.record.layout.directory()
-                ))
+                Ok(text::completed(&receipt.record, &receipt.release_version))
             },
         )
         .await
@@ -972,7 +951,19 @@ async fn require_instance_ready(
     engine: &Engine,
     preparation: Preparation,
     mode: ApplicationMode,
+    show_identity: bool,
 ) -> Result<Option<crate::engine::api::PreparedOperation>> {
+    let view = match &preparation {
+        Preparation::Ready(prepared) => prepared.view(),
+        Preparation::NeedsInput(pending) => pending.view(),
+    };
+    let OperationPreview::Instance(view) = view else {
+        anyhow::bail!("Unexpected instance preview");
+    };
+    session
+        .display()
+        .status()
+        .message(&text::plan(view, show_identity));
     match preparation {
         Preparation::Ready(prepared) => Ok(Some(prepared)),
         Preparation::NeedsInput(pending) => {
@@ -1046,6 +1037,7 @@ pub(super) async fn resume_instance_selected(
             &engine,
             resumed.preparation,
             ApplicationMode::Apply,
+            true,
         )
         .await?
         else {
@@ -1062,7 +1054,7 @@ pub(super) async fn resume_instance_selected(
                     anyhow::bail!("Unexpected instance receipt")
                 };
                 published = true;
-                Ok(format!("Applied release {}", receipt.record.release))
+                Ok(text::completed(&receipt.record, &receipt.release_version))
             },
         )
         .await?;

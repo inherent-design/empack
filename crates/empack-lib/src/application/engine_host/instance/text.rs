@@ -1,9 +1,7 @@
 //! Instance presentation describes the captured selection, not a new ownership policy.
 use crate::engine::{
-    instance::{
-        InstanceLayout, InstanceRecord, InstanceSide, SelectedRelease,
-        subscription::SubscriptionRecord,
-    },
+    api::InstancePreview,
+    instance::{InstanceLayout, InstanceRecord, InstanceSide, subscription::SubscriptionRecord},
     release::DecodedRelease,
 };
 use crate::terminal::display_line;
@@ -25,26 +23,28 @@ pub(super) fn first(side_value: InstanceSide, layout: InstanceLayout) -> String 
 
 pub(super) fn installed(record: &InstanceRecord, release: &DecodedRelease) -> String {
     format!(
-        "Installed: {} {} ({})\nGame directory: {}/\nRelease: {}",
+        "Installed: {} {} ({})\nGame directory: {}/",
         display_line(&record.pack),
         display_line(&release.document().version),
         side(record.side),
         record.layout.directory(),
-        display_line(&record.release)
     )
 }
 
-pub(super) fn selected(release: &SelectedRelease) -> String {
-    let source = match release {
-        SelectedRelease::Snapshot(_) => "selected snapshot",
-        SelectedRelease::Publisher(_) | SelectedRelease::Subscribed(_) => {
-            "signed publisher release"
-        }
-    };
+fn selected(record: &InstanceRecord, version: &str, show_identity: bool) -> String {
+    let mut lines = vec![format!("Selected version: {}", display_line(version))];
+    if show_identity {
+        lines.push(format!("Release: {}", display_line(&record.release)));
+    }
+    lines.join("\n")
+}
+
+pub(super) fn completed(record: &InstanceRecord, version: &str) -> String {
     format!(
-        "Selected version: {} ({source})\nRelease: {}",
-        display_line(&release.release().document().version),
-        release.release().id()
+        "Instance files ready: {} {} ({}/)",
+        display_line(&record.pack),
+        display_line(version),
+        record.layout.directory()
     )
 }
 
@@ -85,10 +85,25 @@ pub(super) fn inspect(record: &InstanceRecord, version: &str) -> String {
     lines.join("\n")
 }
 
-pub(super) fn plan(release: &str, changed: usize, downloads: usize) -> String {
+pub(super) fn plan(view: &InstancePreview, show_identity: bool) -> String {
+    selection_plan(
+        &view.record,
+        &view.release_version,
+        show_identity,
+        view.files.changes().len(),
+        view.downloads.len(),
+    )
+}
+fn selection_plan(
+    record: &InstanceRecord,
+    version: &str,
+    show_identity: bool,
+    changed: usize,
+    downloads: usize,
+) -> String {
     format!(
-        "Release: {}\n{}",
-        display_line(release),
+        "{}\n{}",
+        selected(record, version, show_identity),
         changes(changed, downloads)
     )
 }
@@ -202,6 +217,15 @@ mod tests {
             first(InstanceSide::Server, InstanceLayout::Game),
             "First installation: server (game/)"
         );
+        assert_eq!(
+            selected(&record, "2", true),
+            format!("Selected version: 2\nRelease: {}", record.release)
+        );
+        assert_eq!(selected(&record, "2", false), "Selected version: 2");
+        assert_eq!(
+            completed(&record, "2"),
+            "Instance files ready: Workshop 日本 2 (.minecraft/)"
+        );
     }
     #[test]
     fn external_labels_cannot_insert_report_lines_or_hide_identity() {
@@ -251,12 +275,15 @@ mod tests {
     #[test]
     fn a_verified_unchanged_plan_does_not_claim_a_download_or_install() {
         assert_eq!(
-            plan("release", 0, 0),
-            "Release: release\nNo file changes needed."
+            selection_plan(&record(), "2", true, 0, 0),
+            format!(
+                "Selected version: 2\nRelease: {}\nNo file changes needed.",
+                "a".repeat(64)
+            )
         );
         assert_eq!(
-            plan("release", 2, 1),
-            "Release: release\nFile changes: 2\nDownloads: 1"
+            selection_plan(&record(), "2", false, 2, 1),
+            "Selected version: 2\nFile changes: 2\nDownloads: 1"
         );
     }
 }
