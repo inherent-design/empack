@@ -68,12 +68,20 @@ pub(crate) mod test_support {
         fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
             for entry in fs::read_dir(dir).unwrap() {
                 let entry = entry.unwrap();
-                if entry.file_type().unwrap().is_dir() {
+                let kind = entry.file_type().unwrap();
+                if kind.is_dir() {
                     visit(root, &entry.path(), files);
                 } else {
+                    // Windows byte-range locks can block reads of empty coordination files.
+                    // Keep their paths and empty contents without reading a locked byte.
+                    let bytes = if kind.is_file() && entry.metadata().unwrap().len() == 0 {
+                        Vec::new()
+                    } else {
+                        fs::read(entry.path()).unwrap()
+                    };
                     files.insert(
                         entry.path().strip_prefix(root).unwrap().to_path_buf(),
-                        fs::read(entry.path()).unwrap(),
+                        bytes,
                     );
                 }
             }
