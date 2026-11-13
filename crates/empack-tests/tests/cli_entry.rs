@@ -90,20 +90,10 @@ fn cli_identity_outside_checkout_preserves_state() {
     let expected = format!("empack {}", expected_cli_version());
     for hostile in [false, true] {
         let fixture = EntryFixture::new(hostile);
-        for args in [["--version"], ["-V"], ["version"]] {
+        for args in [["--version"], ["-V"]] {
             let output = fixture.invoke(&args, 0);
             let stdout = String::from_utf8(output.stdout).unwrap();
-            if args == ["version"] {
-                assert!(
-                    stdout.lines().any(|line| line.trim() == expected),
-                    "{stdout}"
-                );
-                for label in ["Built from commit", "Build date", "Target"] {
-                    assert!(stdout.contains(label), "{stdout}");
-                }
-            } else {
-                assert_eq!(stdout.trim(), expected);
-            }
+            assert_eq!(stdout.trim(), expected);
             assert!(output.stderr.is_empty(), "{args:?}: {:?}", output.stderr);
         }
     }
@@ -214,7 +204,7 @@ fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
             b"EMPACK_KEY_CURSEFORGE='empack-synthetic-secret-do-not-render\n",
         )
         .unwrap();
-        for args in [vec!["version"], vec![]] {
+        for args in [vec!["doctor"], vec![]] {
             let output = fixture.invoke(&args, 2);
             let stderr = String::from_utf8(output.stderr).unwrap();
             assert!(stderr.contains("Error:"), "{stderr}");
@@ -232,15 +222,15 @@ fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
 
 /// Runtime inspection describes native capabilities without installing tooling.
 #[test]
-fn cli_requirements_describes_native_capabilities_without_bootstrap() {
+fn cli_doctor_describes_native_capabilities_without_bootstrap() {
     let missing_java = |output: &std::process::Output| {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("Java was not found"), "{stderr}");
-        assert!(!stdout.contains("Java was not found"), "{stdout}");
+        assert!(stderr.is_empty(), "{stderr}");
+        assert!(stdout.contains("Java: not found"), "{stdout}");
     };
     let fixture = EntryFixture::new(false);
-    let output = fixture.invoke(&["requirements"], 0);
+    let output = fixture.invoke(&["doctor", "--details"], 0);
     missing_java(&output);
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
@@ -249,19 +239,18 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
     );
     assert!(stdout.contains("ZIP, TAR.GZ and 7z"), "{stdout}");
     assert!(
-        stdout.contains("CurseForge also requires an API key"),
+        stdout.contains("Provider connectivity and credentials: not checked"),
         "{stdout}"
     );
-    assert!(
-        stdout.contains("not version compatibility with the selected runtime"),
-        "{stdout}"
-    );
+    assert!(stdout.contains("Built from commit:"), "{stdout}");
+    assert!(stdout.contains("Build date:"), "{stdout}");
+    assert!(stdout.contains("Executable:"), "{stdout}");
 
     let bin = fixture.root.join("controlled tools Ω");
     fs::create_dir(&bin).unwrap();
     let program = bin.join(if cfg!(windows) { "java.CMD" } else { "java" });
     // Valid executable fixtures advertise different versions only if invoked.
-    // Requirement inspection must discover the path without running any of them.
+    // Default doctor must discover the path without running any of them.
     for version in ["1.8", "21", "not-a-version"] {
         #[cfg(unix)]
         {
@@ -271,14 +260,11 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
         }
         #[cfg(windows)]
         fs::write(&program, format!("@echo off\r\n> \"%~f0.invoked\" echo invoked\r\necho java.specification.version = {version} 1>&2\r\nexit /b 77\r\n")).unwrap();
-        let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+        let output = fixture.invoke_with_path(&["doctor", "--details"], 0, bin.as_os_str());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains(program.to_str().unwrap()), "{stdout}");
         assert!(!String::from_utf8_lossy(&output.stderr).contains("Java was not found"));
-        assert!(
-            stdout.contains("not version compatibility with the selected runtime"),
-            "{stdout}"
-        );
+        assert!(stdout.contains("version not checked"), "{stdout}");
         let marker = program.with_file_name(format!(
             "{}.invoked",
             program.file_name().unwrap().to_str().unwrap()
@@ -289,11 +275,219 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&program, fs::Permissions::from_mode(0o600)).unwrap();
-        let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+        let output = fixture.invoke_with_path(&["doctor", "--details"], 0, bin.as_os_str());
         missing_java(&output);
     }
     fs::remove_file(&program).unwrap();
     fs::create_dir(&program).unwrap();
-    let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+    let output = fixture.invoke_with_path(&["doctor", "--details"], 0, bin.as_os_str());
     missing_java(&output);
+}
+
+fn java_fixture(fixture: &EntryFixture, properties: &[&str], status: i32) -> PathBuf {
+    let bin = fixture.root.join("selected Java Ω");
+    fs::create_dir_all(&bin).unwrap();
+    let program = bin.join(if cfg!(windows) { "java.CMD" } else { "java" });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut text = String::from(
+            "#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = '-XshowSettings:properties' ] && [ \"$2\" = '-version' ] || exit 101\n",
+        );
+        for property in properties {
+            assert!(!property.contains('\''));
+            text.push_str(&format!("printf '%s\\n' '{property}' >&2\n"));
+        }
+        text.push_str(&format!("exit {status}\n"));
+        fs::write(&program, text).unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        let mut text = String::from(
+            "@echo off\r\nif not \"%~1\"==\"-XshowSettings:properties\" exit /b 101\r\nif not \"%~2\"==\"-version\" exit /b 101\r\nif not \"%~3\"==\"\" exit /b 101\r\n",
+        );
+        for property in properties {
+            assert!(!property.contains(['&', '|', '%', '<', '>']));
+            text.push_str(&format!("echo {property} 1>&2\r\n"));
+        }
+        text.push_str(&format!("exit /b {status}\r\n"));
+        fs::write(&program, text).unwrap();
+    }
+    program
+}
+
+#[test]
+fn cli_doctor_probes_only_explicit_tools_and_reports_java_policy() {
+    let fixture = EntryFixture::new(true);
+    let missing = fixture.invoke(&["doctor", "--minecraft", "1.21.1", "--json"], 1);
+    let report: serde_json::Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(report["java"]["state"], "failed");
+    assert_eq!(report["target"]["actual_admitted"], serde_json::Value::Null);
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("Java was not found"));
+
+    for (version, game, code, admitted, recommended) in [
+        ("1.8", None, 0, None, None),
+        ("16", Some("1.17.1"), 0, Some(true), Some(17)),
+        ("17", Some("1.17.1"), 0, Some(true), Some(17)),
+        ("21", Some("1.17.1"), 2, Some(false), Some(17)),
+        ("21", Some("1.21.1"), 0, Some(true), Some(21)),
+        ("25", Some("1.21.1"), 2, Some(false), Some(21)),
+        ("21", Some("custom"), 1, None, None),
+    ] {
+        let property = format!("java.specification.version = {version}");
+        let program = java_fixture(
+            &fixture,
+            &[&property, "user.home = do-not-render-jvm-home"],
+            0,
+        );
+        // Explicit paths resolve from the invocation directory, independently of workdir.
+        let relative = program
+            .strip_prefix(&fixture.root)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let mut args = vec![
+            "--workdir",
+            "missing-project",
+            "doctor",
+            "--java",
+            relative,
+            "--json",
+            "--quiet",
+        ];
+        if let Some(game) = game {
+            args.extend(["--minecraft", game]);
+        }
+        let output = fixture.invoke(&args, code);
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["schema"], 1);
+        assert_eq!(report["complete"], code == 0);
+        assert_eq!(report["java"]["state"], "checked");
+        assert_eq!(
+            report["java"]["major"],
+            version.trim_start_matches("1.").parse::<u16>().unwrap()
+        );
+        let observed = PathBuf::from(report["java"]["program"].as_str().unwrap());
+        assert!(observed.ends_with(relative));
+        assert_eq!(
+            observed.canonicalize().unwrap(),
+            program.canonicalize().unwrap()
+        );
+        assert_eq!(report["network_checked"], false);
+        if game.is_some() {
+            assert_eq!(
+                report["target"]["actual_admitted"],
+                serde_json::json!(admitted)
+            );
+            assert_eq!(
+                report["target"]["recommended"],
+                serde_json::json!(recommended)
+            );
+        } else {
+            assert!(report["target"].is_null());
+        }
+        for bytes in [&output.stdout, &output.stderr] {
+            assert!(!String::from_utf8_lossy(bytes).contains("do-not-render-jvm-home"));
+        }
+        if code == 0 {
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+    let program = java_fixture(&fixture, &["java.specification.version = 21"], 0);
+    let output = fixture.invoke(
+        &[
+            "doctor",
+            "--java",
+            program.to_str().unwrap(),
+            "--minecraft",
+            "1.21.1",
+            "--details",
+            "--quiet",
+        ],
+        0,
+    );
+    let human = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "Java: reported major 21",
+        "Java executable:",
+        program.to_str().unwrap(),
+        "Recommended Java: 21",
+        "Mods and loaders can have stricter requirements; startup was not tested.",
+    ] {
+        assert!(human.contains(expected), "{human}");
+    }
+    assert!(!human.contains("Call with --details"));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn cli_doctor_retains_failed_probes_without_exposing_jvm_properties() {
+    let fixture = EntryFixture::new(true);
+    for (properties, status, expected) in [
+        (
+            vec![
+                "java.specification.version = 21",
+                "user.home = do-not-render-jvm-home",
+            ],
+            77,
+            "failed its version check",
+        ),
+        (
+            vec![
+                "java.specification.version = 21",
+                "java.specification.version = 17",
+            ],
+            0,
+            "ambiguous specification versions",
+        ),
+        (
+            vec!["java.specification.version = 21.0.1"],
+            0,
+            "Invalid Java specification version",
+        ),
+        (
+            vec!["user.home = do-not-render-jvm-home"],
+            0,
+            "did not report a Java specification version",
+        ),
+    ] {
+        let program = java_fixture(&fixture, &properties, status);
+        let output = fixture.invoke(
+            &[
+                "doctor",
+                "--java",
+                program.to_str().unwrap(),
+                "--json",
+                "--quiet",
+            ],
+            1,
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["java"]["state"], "failed");
+        assert!(report["java"]["major"].is_null());
+        assert!(
+            report["java"]["problem"]
+                .as_str()
+                .unwrap()
+                .contains(expected)
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
+        for bytes in [&output.stdout, &output.stderr] {
+            assert!(!String::from_utf8_lossy(bytes).contains("do-not-render-jvm-home"));
+        }
+    }
+    let program = java_fixture(&fixture, &["java.specification.version = 21"], 0);
+    let output = fixture.invoke(
+        &["--dry-run", "doctor", "--java", program.to_str().unwrap()],
+        1,
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Java probes require execution"));
+    fixture.invoke(&["doctor", "--details", "--json"], 2);
+    for removed in ["requirements", "version"] {
+        let output = fixture.invoke(&[removed], 2);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
+    }
 }

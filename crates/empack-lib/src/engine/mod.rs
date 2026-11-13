@@ -33,6 +33,7 @@ pub mod import;
 pub mod initialize;
 pub mod instance;
 mod io;
+pub(crate) mod java;
 pub mod layout;
 pub mod mrpack;
 mod native;

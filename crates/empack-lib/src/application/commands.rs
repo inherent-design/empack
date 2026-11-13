@@ -74,8 +74,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Clean { .. } => "clean",
         Commands::Sync { .. } => "sync",
         Commands::Recover { .. } => "recover",
-        Commands::Requirements => "requirements",
-        Commands::Version => "version",
+        Commands::Doctor(_) => "doctor",
     }
 }
 async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
@@ -115,8 +114,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         Commands::Recover { action, operation } => {
             Box::pin(engine_host::recover(session, action, operation)).await
         }
-        Commands::Requirements => Box::pin(handle_requirements(session)).await,
-        Commands::Version => Box::pin(handle_version(session)).await,
+        Commands::Doctor(options) => Box::pin(engine_host::doctor::inspect(session, options)).await,
         Commands::Init(args) => Box::pin(engine_host::cli::initialize(session, &args)).await,
         Commands::Add {
             mods,
@@ -231,56 +229,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
     }
 }
-async fn handle_requirements(session: &dyn Session) -> Result<()> {
-    session.display().status().section("Runtime capabilities");
-    session.display().status().success(
-        "project operations",
-        "native engine; no external dependency manager required",
-    );
-    session.display().status().success(
-        "archive support",
-        "native ZIP, TAR.GZ and 7z output; bounded ZIP import",
-    );
-    match session.process().find_program("java") {
-        Some(path) => session.display().status().success("java", &path),
-        None => session.display().status().warning(
-            "Java was not found; Forge/NeoForge server builds and generated launchers need it",
-        ),
-    }
-    session.display().status().info(
-        "Java discovery checks the executable path, not version compatibility with the selected runtime",
-    );
-    session
-        .display()
-        .status()
-        .info("Provider operations require network access; CurseForge also requires an API key");
-    Ok(())
-}
-async fn handle_version(session: &dyn Session) -> Result<()> {
-    session
-        .display()
-        .status()
-        .emphasis(&format!("empack {}", env!("CARGO_PKG_VERSION")));
-    session
-        .display()
-        .status()
-        .message("A Minecraft modpack development and distribution tool");
-    session.display().status().message("");
-
-    let build_info = [
-        (
-            "Built from commit",
-            option_env!("GIT_HASH").unwrap_or("unknown"),
-        ),
-        ("Build date", option_env!("BUILD_DATE").unwrap_or("unknown")),
-        ("Target", std::env::consts::ARCH),
-    ];
-
-    session.display().table().properties(&build_info);
-
-    Ok(())
-}
-
 #[cfg(test)]
 #[path = "commands.test.rs"]
 mod tests;

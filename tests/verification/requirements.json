@@ -65,7 +65,7 @@
       "id": "UX-001",
       "family": "Entry and inspection",
       "title": "Shipped executable identity and help",
-      "public_surface": "--help; --version; version; every command --help",
+      "public_surface": "--help; --version; every command --help",
       "api_ids": [
         "CLI",
         "PACKAGE"
@@ -97,7 +97,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Version flags match the selected executable identity without loading ordinary command configuration",
             "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
           ]
@@ -159,7 +159,7 @@
             "default"
           ],
           "assertions": [
-            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Version flags match the selected executable identity without loading ordinary command configuration",
             "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
             "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
@@ -828,14 +828,14 @@
     {
       "id": "UX-004",
       "family": "Entry and inspection",
-      "title": "Tool requirements are observational",
-      "public_surface": "requirements",
+      "title": "Host diagnostics distinguish tool discovery from requested validation",
+      "public_surface": "doctor [--details|--json] [--java PATH] [--minecraft VERSION] [--quiet]",
       "api_ids": [
         "CLI",
         "RUN"
       ],
-      "required_assertions": "Report absent Java/tools accurately without installing backend or creating state; no broad compatibility claim from PATH alone.",
-      "required_work": "Package test with empty controlled PATH and explicit supported/unsupported Java probe fixtures.",
+      "required_assertions": "Default host/tool discovery does not execute Java or load project/state; explicit bounded Java probes retain missing/invalid/unsupported failures, use recorded game policy without compatibility claims for mods, preserve inputs, and do not render raw JVM properties.",
+      "required_work": "Run controlled missing, discovered, explicit, failed and game-policy Java fixtures through the public executable and final extracted products.",
       "evidence_tiers": [
         "H",
         "X",
@@ -862,14 +862,14 @@
             "telemetry"
           ],
           "assertions": [
-            "Requirements and version dispatch succeed without an author project and preserve all fixture bytes; no backend bootstrap is part of inspection"
+            "Default doctor dispatch succeeds without an author project and preserves all fixture bytes; no backend bootstrap is part of inspection"
           ]
         },
         {
           "id": "UX-004.cli-path-discovery-is-observational",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap",
+            "empack-tests::cli_entry::cli_doctor_describes_native_capabilities_without_bootstrap",
             "empack-tests::cli_offline::cli_bootstrap_probe_ignores_configuration_and_cannot_execute_work"
           ],
           "required_platforms": [
@@ -892,7 +892,9 @@
           "id": "UX-004.packaged-tool-inspection",
           "boundary": "P",
           "test_ids": [
-            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+            "empack-tests::cli_entry::cli_doctor_describes_native_capabilities_without_bootstrap",
+            "empack-tests::cli_entry::cli_doctor_probes_only_explicit_tools_and_reports_java_policy",
+            "empack-tests::cli_entry::cli_doctor_retains_failed_probes_without_exposing_jvm_properties"
           ],
           "required_platforms": [
             "linux",
@@ -904,7 +906,8 @@
           ],
           "assertions": [
             "The final extracted product runs the same empty-PATH and controlled-tool inspection outside the checkout without bootstrap or tool execution",
-            "Archive admission binds the inspection to the exact distributed binary identity and native target; ordinary source suites cannot qualify this case"
+            "Archive admission binds the inspection to the exact distributed binary identity and native target; ordinary source suites cannot qualify this case",
+            "The same extracted native product runs explicit Java/game-policy and failure-redaction fixtures; synthetic tools establish command/probe behavior rather than real-game acceptance"
           ],
           "required_targets": [
             "x86_64-unknown-linux-gnu",
@@ -912,6 +915,29 @@
             "x86_64-apple-darwin",
             "aarch64-apple-darwin",
             "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-004.explicit-java-policy-and-failure",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_doctor_probes_only_explicit_tools_and_reports_java_policy",
+            "empack-tests::cli_entry::cli_doctor_retains_failed_probes_without_exposing_jvm_properties"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only explicit Java or Minecraft selection executes a bounded version probe; exact static arguments are checked and relative paths resolve from the invocation directory independently of workdir",
+            "Known admitted majors succeed, known out-of-profile majors fail through existing typed classification, unknown game profiles remain unverified, and missing Java fails only a requested check",
+            "Failed, ambiguous and malformed probes retain an unsuccessful structured report and diagnostic without exposing unrelated JVM properties; dry-run refuses explicit execution and contradictory output options fail locally",
+            "Malformed author text, hostile state/cache/home paths, fixture content/permissions and prior artifacts remain unchanged; no request reaches the configured proxy; retired requirements/version verbs are not aliases"
           ]
         }
       ],
@@ -12911,7 +12937,7 @@
           "id": "UX-073.java-specification-parser",
           "boundary": "U",
           "test_ids": [
-            "empack-lib::engine::api::launch::tests::java_properties_reject_ambiguous_missing_or_malformed_versions"
+            "empack-lib::engine::java::tests::java_properties_reject_ambiguous_missing_or_malformed_versions"
           ],
           "required_platforms": [
             "linux",

@@ -63,6 +63,7 @@ pub enum OperationOutcome<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkProgress {
     CheckingContentCache,
+    CheckingJava,
     Downloading {
         received_bytes: u64,
         total_bytes: Option<u64>,

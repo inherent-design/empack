@@ -589,6 +589,7 @@ fn retained_failure(
 pub(super) mod tests;
 
 pub(super) mod checking;
+pub(super) mod doctor;
 mod initialize;
 mod java;
 mod progress;

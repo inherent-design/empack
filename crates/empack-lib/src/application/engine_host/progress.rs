@@ -53,6 +53,7 @@ impl ProgressDisplay {
                     format!("Checking file {index} of {total}: {path}")
                 },
             ),
+            WorkProgress::CheckingJava => ("java", "Checking selected Java".to_owned()),
             WorkProgress::CheckingContentCache => {
                 ("cache", "Checking exact content cache".to_owned())
             }
@@ -272,6 +273,7 @@ mod tests {
         assert_eq!(messages.lock().unwrap().last().unwrap(), "<clear>");
         let (mut shared, recorded) = self::display(true, false);
         for (observation, expected) in [
+            (WorkProgress::CheckingJava, "Checking selected Java"),
             (
                 WorkProgress::CheckingDependency {
                     key: "example".into(),

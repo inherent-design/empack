@@ -803,6 +803,26 @@ pub struct InstanceCheckArgs {
     pub quiet: bool,
 }
 
+/// Native host information; no project or state directory is required.
+#[derive(Debug, Clone, Default, Args)]
+pub struct DoctorArgs {
+    /// Probe this local Java executable; relative paths use the invocation directory
+    #[arg(long)]
+    pub java: Option<PathBuf>,
+    /// Probe Java and compare it with empack's policy for this exact Minecraft version
+    #[arg(long)]
+    pub minecraft: Option<String>,
+    /// Include executable/build information and native capability details
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit a structured host report, including unsuccessful requested checks
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary probe progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
@@ -855,11 +875,8 @@ Updates infer the installed side/layout. update --check checks before applying."
         command: InstanceCommand,
     },
 
-    /// Check tool dependencies and show setup guidance
-    Requirements,
-
-    /// Show version information
-    Version,
+    /// Inspect this binary and local tools; explicit Java/runtime options run a version probe
+    Doctor(DoctorArgs),
 
     /// Create a project or import a modpack archive
     Init(InitArgs),
@@ -1057,6 +1074,7 @@ impl Commands {
             self,
             Self::Status { json: true, .. }
                 | Self::Check(CheckArgs { json: true, .. })
+                | Self::Doctor(DoctorArgs { json: true, .. })
                 | Self::Instance {
                     command: InstanceCommand::Check(InstanceCheckArgs { json: true, .. })
                 }
@@ -1081,8 +1099,7 @@ impl Commands {
                 false
             }
             Commands::Recover { .. } => false,
-            Commands::Check(_) | Commands::Requirements | Commands::Status { .. } => false,
-            Commands::Version => false,
+            Commands::Check(_) | Commands::Doctor(_) | Commands::Status { .. } => false,
             Commands::Init(..) => false,
             Commands::Sync { .. }
             | Commands::Manifest { .. }
@@ -1103,8 +1120,7 @@ impl Commands {
         match self {
             Commands::Instance { .. } | Commands::Release { .. } | Commands::Pending { .. } => 1,
             Commands::Recover { .. } => 0,
-            Commands::Check(_) | Commands::Requirements | Commands::Status { .. } => 0,
-            Commands::Version => 0,
+            Commands::Check(_) | Commands::Doctor(_) | Commands::Status { .. } => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. }
@@ -1428,8 +1444,7 @@ mod tests {
 
     #[test]
     fn commands_surface_metadata_matches_expected_values() {
-        assert!(!Commands::Requirements.requires_modpack());
-        assert!(!Commands::Version.requires_modpack());
+        assert!(!Commands::Doctor(DoctorArgs::default()).requires_modpack());
         assert!(
             Commands::Sync {
                 materialize: false,
@@ -1439,8 +1454,7 @@ mod tests {
             .requires_modpack()
         );
         assert!(Commands::Build(BuildArgs::default()).requires_modpack());
-        assert_eq!(Commands::Requirements.execution_order(), 0);
-        assert_eq!(Commands::Version.execution_order(), 0);
+        assert_eq!(Commands::Doctor(DoctorArgs::default()).execution_order(), 0);
         assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
         assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
         assert_eq!(

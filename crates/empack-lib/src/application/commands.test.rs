@@ -304,12 +304,12 @@ async fn inspection_commands_need_no_project_or_backend_bootstrap() {
     let root = tempfile::tempdir().unwrap();
     let selected = session(root.path(), true, false);
     let before = snapshot(root.path());
-    execute_command_with_session(Commands::Requirements, &selected)
-        .await
-        .unwrap();
-    execute_command_with_session(Commands::Version, &selected)
-        .await
-        .unwrap();
+    execute_command_with_session(
+        Commands::Doctor(crate::application::cli::DoctorArgs::default()),
+        &selected,
+    )
+    .await
+    .unwrap();
     assert_eq!(snapshot(root.path()), before);
 }
 

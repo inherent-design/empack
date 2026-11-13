@@ -297,51 +297,9 @@ async fn check_java(
     required: crate::engine::release::ReleaseJava,
     cancel: crate::application::process_runtime::Cancellation,
 ) -> Result<Result<()>> {
-    let mut command = std::process::Command::new(runtime.get_program());
-    command.args(["-XshowSettings:properties", "-version"]);
-    command.stdin(std::process::Stdio::null());
-    if let Some(directory) = runtime.get_current_dir() {
-        command.current_dir(directory);
-    }
-    let output = crate::application::process_runtime::execute_captured(
-        command,
-        std::time::Duration::from_secs(15),
-        cancel,
-        None,
-        64 << 10,
-    )
-    .await?;
-    Ok(output.0.and_then(|output| {
-        ensure!(
-            output.success,
-            "Selected Java failed its version check: {}",
-            output.stderr
-        );
-        let actual = java_major(&output.stdout, &output.stderr)?;
+    let output = crate::engine::java::inspect(runtime, cancel).await?;
+    Ok(output.and_then(|actual| {
         required.check_actual(actual)?;
         Ok(())
     }))
-}
-fn java_major(stdout: &str, stderr: &str) -> Result<u16> {
-    let mut values = stdout.lines().chain(stderr.lines()).filter_map(|line| {
-        let (key, value) = line.split_once('=')?;
-        (key.trim() == "java.specification.version").then_some(value.trim())
-    });
-    let value = values
-        .next()
-        .context("Selected program did not report a Java specification version")?;
-    ensure!(
-        values.next().is_none(),
-        "Java reported ambiguous specification versions"
-    );
-    let version = value.strip_prefix("1.").unwrap_or(value);
-    ensure!(
-        !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()),
-        "Invalid Java specification version"
-    );
-    let version = version
-        .parse::<u16>()
-        .context("Invalid Java specification version")?;
-    ensure!(version >= 8, "Selected Java is older than supported Java 8");
-    Ok(version)
 }

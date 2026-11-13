@@ -189,7 +189,9 @@ Initialization, import and instance previews identify the selected directory bef
 
 Preview may resolve remote facts and use temporary scratch, but writes no project, instance, durable cache, subscription, tool installation or recovery record. Declining approval has the same preservation requirement. Unattended confirmation cannot invent missing choices or bypass integrity and ownership checks.
 
-`empack requirements` reports native capabilities and discovers Java on `PATH`. It does not execute Java or certify version compatibility. Managed server launch checks the selected Java against the pack's declared requirement after approval.
+`empack doctor` reports the binary platform and locates Java on `PATH` without executing it or loading an author project. `--details` adds native capabilities and available build information. A missing Java is informational unless you request a check.
+
+`doctor --java /path/to/java` runs a bounded local version probe; relative paths resolve from the invocation directory. Add `--minecraft 1.21.1` to compare that major with empack's recorded recommendation and admitted majors for that exact Minecraft version. Without `--java`, `--minecraft` checks the Java found on `PATH`. Unknown profiles remain unverified and make the requested check fail. Mods and loaders can impose stricter requirements; this is not a startup test. `--json` preserves the report on failure, and `--quiet` hides progress. Explicit probes cannot run with `--dry-run`. Managed server launch separately checks its selected Java against the pack's declared requirement after approval.
 
 Manual inputs use exact obligation-to-path associations. Resume retains original assertions and rejects stale recipes. Browser opening and bounded download waiting are explicit options rather than side effects of confirmation.
 
@@ -215,7 +217,7 @@ Configuration precedence, from lowest to highest, is defaults, `.env`, `.env.loc
 
 Command results and requested JSON use stdout. Checking messages, provisional catalog/acquisition progress, warnings and errors use stderr. Progress reports observed records or bytes, not an estimated completion percentage, and does not change the final result. `update --quiet` hides its progress while retaining reports and errors.
 
-Help and version display flags remain available when unrelated dotenv files are malformed. Ordinary commands, including `version` and an invocation with no command, load configuration and report malformed dotenv as an error. With valid configuration, invoking no command prints help guidance without creating project or host state.
+Help and version display flags remain available when unrelated dotenv files are malformed. Ordinary commands, including `doctor` and an invocation with no command, load configuration and report malformed dotenv as an error. With valid configuration, invoking no command prints help guidance without creating project or host state.
 
 ## Native release example
 
