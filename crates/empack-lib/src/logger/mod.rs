@@ -75,7 +75,7 @@ impl Logger {
                 .with_ansi(false)
                 .json()
                 .boxed(),
-            LogFormat::Yaml => fmt::layer()
+            LogFormat::Pretty => fmt::layer()
                 .with_writer(output)
                 .with_ansi(config.terminal_caps.color != TerminalColorCaps::None)
                 .pretty()

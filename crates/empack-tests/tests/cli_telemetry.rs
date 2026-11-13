@@ -113,7 +113,6 @@ fn cli_telemetry_json_report_keeps_logs_and_private_configuration_out_of_payload
     let output = project
         .cmd()
         .env("EMPACK_PROFILE", "chrome")
-        .env("EMPACK_KEY_MODRINTH", secret)
         .env("EMPACK_KEY_CURSEFORGE", secret)
         .args([
             "--color",

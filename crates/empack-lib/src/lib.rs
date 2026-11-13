@@ -120,12 +120,10 @@ pub(crate) mod test_support {
         files
     }
 
-    const CLI_ENV_VARS: [&str; 20] = [
+    const CLI_ENV_VARS: [&str; 18] = [
         "EMPACK_WORKDIR",
         "EMPACK_CPU_JOBS",
         "EMPACK_NET_TIMEOUT",
-        "EMPACK_ID_MODRINTH",
-        "EMPACK_KEY_MODRINTH",
         "EMPACK_KEY_CURSEFORGE",
         "EMPACK_LOG_LEVEL",
         "EMPACK_LOG_FORMAT",

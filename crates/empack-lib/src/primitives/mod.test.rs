@@ -104,8 +104,7 @@ test_fromstr_aliases!(
         ("txt", LogFormat::Text),
         ("plain", LogFormat::Text),
         ("json", LogFormat::Json),
-        ("yaml", LogFormat::Yaml),
-        ("yml", LogFormat::Yaml),
+        ("pretty", LogFormat::Pretty),
     ]
 );
 

@@ -47,9 +47,8 @@ pub enum LogFormat {
     /// alias: json
     Json,
 
-    /// YAML
-    /// alias: yaml, yml
-    Yaml,
+    /// Multiline human-readable text
+    Pretty,
 }
 
 /// Logger configuration combining terminal capabilities with application config
@@ -224,7 +223,7 @@ impl ValueEnum for LogLevel {
 
 impl ValueEnum for LogFormat {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Text, Self::Json, Self::Yaml]
+        &[Self::Text, Self::Json, Self::Pretty]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
@@ -235,7 +234,7 @@ impl ValueEnum for LogFormat {
                     .alias("plain"),
             ),
             Self::Json => Some(clap::builder::PossibleValue::new("json")),
-            Self::Yaml => Some(clap::builder::PossibleValue::new("yaml").alias("yml")),
+            Self::Pretty => Some(clap::builder::PossibleValue::new("pretty")),
         }
     }
 }

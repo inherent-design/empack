@@ -4,7 +4,7 @@ Empack separates pack authoring from installed game instances. Use `--workdir` b
 
 ## Reports, logs and exit status
 
-Commands with `--json` reserve stdout for their report. Logs go to stderr for those commands even if `--log-output stdout` is configured. `--log-format` changes logs, not the report schema; `--color always` does not add terminal escapes to JSON reports. Human-readable commands continue to honor the selected log destination.
+Commands with `--json` reserve stdout for their report. Logs go to stderr for those commands even if `--log-output stdout` is configured. `--log-format` selects compact `text`, multiline `pretty` text or `json` log events, without changing the report schema; `--color always` does not add terminal escapes to JSON reports. Human-readable commands continue to honor the selected log destination.
 
 Check the exit status as well as the report. A failed command can return a useful partial report, such as `update --all --json`; its diagnostic goes to stderr. A failure before a report is available does not produce a successful empty report. Cancellation requests do not replace the completed result: cleanup and recovery failures remain visible, and an operation that already completed successfully remains successful. Ctrl-C while answering a prompt cancels that decision; it does not grant approval. A later resume or recovery still requires fresh confirmation.
 

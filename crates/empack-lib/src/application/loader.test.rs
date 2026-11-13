@@ -47,8 +47,6 @@ fn test_config_merging() {
         workdir: Some(PathBuf::from("/tmp/override-workdir")),
         state_dir: Some(PathBuf::from("/tmp/override-state")),
         cache_dir: Some(PathBuf::from("/tmp/override-cache")),
-        modrinth_api_client_id: Some("modrinth-id".to_string()),
-        modrinth_api_client_key: Some("modrinth-key".to_string()),
         curseforge_api_client_key: Some("curseforge-key".to_string()),
         log_level: 4,
         net_timeout: 45,
@@ -56,7 +54,7 @@ fn test_config_merging() {
         cpu_jobs: 16,
         yes: true,
         dry_run: true,
-        log_format: crate::primitives::LogFormat::Yaml,
+        log_format: crate::primitives::LogFormat::Pretty,
         log_output: crate::primitives::LogOutput::Stdout,
     };
 
@@ -68,14 +66,6 @@ fn test_config_merging() {
         Some(PathBuf::from("/tmp/override-workdir"))
     );
     assert_eq!(
-        merged.modrinth_api_client_id,
-        Some("modrinth-id".to_string())
-    );
-    assert_eq!(
-        merged.modrinth_api_client_key,
-        Some("modrinth-key".to_string())
-    );
-    assert_eq!(
         merged.curseforge_api_client_key,
         Some("curseforge-key".to_string())
     );
@@ -85,7 +75,7 @@ fn test_config_merging() {
     assert_eq!(merged.cpu_jobs, 16);
     assert!(merged.yes);
     assert!(merged.dry_run);
-    assert_eq!(merged.log_format, crate::primitives::LogFormat::Yaml);
+    assert_eq!(merged.log_format, crate::primitives::LogFormat::Pretty);
     assert_eq!(merged.log_output, crate::primitives::LogOutput::Stdout);
 }
 
@@ -156,7 +146,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     std::fs::write(
         &env_local,
         format!(
-            "EMPACK_WORKDIR={}\nEMPACK_CPU_JOBS=12\nEMPACK_NET_TIMEOUT=37\nEMPACK_ID_MODRINTH=modrinth-id\nEMPACK_KEY_MODRINTH=modrinth-key\nEMPACK_KEY_CURSEFORGE=curseforge-key\nEMPACK_LOG_LEVEL=2\nEMPACK_LOG_FORMAT=json\nEMPACK_LOG_OUTPUT=stderr\nEMPACK_COLOR=never\nEMPACK_YES=true\nEMPACK_DRY_RUN=true\n",
+            "EMPACK_WORKDIR={}\nEMPACK_CPU_JOBS=12\nEMPACK_NET_TIMEOUT=37\nEMPACK_KEY_CURSEFORGE=curseforge-key\nEMPACK_LOG_LEVEL=2\nEMPACK_LOG_FORMAT=json\nEMPACK_LOG_OUTPUT=stderr\nEMPACK_COLOR=never\nEMPACK_YES=true\nEMPACK_DRY_RUN=true\n",
             env_workdir.display().to_string().replace('\\', "/"),
         ),
     )
@@ -171,7 +161,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
         "--log-level",
         "4",
         "--log-format",
-        "yaml",
+        "pretty",
         "--log-output",
         "stdout",
         "--net-timeout",
@@ -184,14 +174,12 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     assert_same_existing_path(config.workdir, &env_workdir);
     assert_eq!(config.cpu_jobs, 8);
     assert_eq!(config.net_timeout, 45);
-    assert_eq!(config.modrinth_api_client_id, Some("modrinth-id".to_string()));
-    assert_eq!(config.modrinth_api_client_key, Some("modrinth-key".to_string()));
     assert_eq!(
         config.curseforge_api_client_key,
         Some("curseforge-key".to_string())
     );
     assert_eq!(config.log_level, 4);
-    assert_eq!(config.log_format, crate::primitives::LogFormat::Yaml);
+    assert_eq!(config.log_format, crate::primitives::LogFormat::Pretty);
     assert_eq!(config.log_output, crate::primitives::LogOutput::Stdout);
     assert_eq!(config.color, TerminalCapsDetectIntent::Always);
     assert!(config.yes);

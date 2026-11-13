@@ -65,9 +65,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     let secret = "PRIVATE_REPORT_API_KEY_MUST_NOT_ENTER_OUTPUT";
     let report_command = || {
         let mut command = command(&project);
-        command
-            .env("EMPACK_KEY_MODRINTH", secret)
-            .env("EMPACK_KEY_CURSEFORGE", secret);
+        command.env("EMPACK_KEY_CURSEFORGE", secret);
         command
     };
     let routes: &[&[&str]] = &[
@@ -88,7 +86,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         ],
     ];
     for color in ["never", "always", "auto"] {
-        for format in ["text", "json", "yaml"] {
+        for format in ["text", "json", "pretty"] {
             for stream in ["stderr", "stdout"] {
                 for route in routes {
                     let result = report_command()
@@ -138,6 +136,20 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                             .contains("Logger initialized successfully"),
                         "logging must remain observable: {context}"
                     );
+                    if format == "json" {
+                        // stderr also carries plain progress, independently of log format.
+                        let diagnostics = String::from_utf8_lossy(&result.stderr);
+                        let event = diagnostics
+                            .lines()
+                            .find(|line| line.contains("Logger initialized successfully"))
+                            .unwrap();
+                        let event: serde_json::Value = serde_json::from_str(event)
+                            .unwrap_or_else(|error| panic!("{error}: {context}"));
+                        assert_eq!(
+                            event["fields"]["message"],
+                            "Logger initialized successfully"
+                        );
+                    }
                     assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
                     assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
                     assert!(!project.dir().join("dist").exists());

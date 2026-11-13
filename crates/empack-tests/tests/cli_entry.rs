@@ -185,12 +185,27 @@ fn cli_unknown_commands_report_usage_without_mutation() {
             vec!["add", "-f", "fixture"],
             vec!["remove", "--deps", "fixture"],
             vec!["remove", "-d", "fixture"],
+            vec!["--modrinth-api-client-id", "unused-fixture"],
+            vec!["--modrinth-api-client-key", "unused-fixture"],
         ] {
             let output = fixture.invoke(&args, 2);
             assert!(output.stdout.is_empty(), "{args:?}");
             assert!(
                 String::from_utf8_lossy(&output.stderr).contains("Usage:"),
                 "{args:?}: {output:?}"
+            );
+        }
+        for format in ["yaml", "yml"] {
+            let output = fixture.invoke(&["--log-format", format], 2);
+            assert!(output.stdout.is_empty());
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                stderr.contains(&format!("invalid value '{format}'")),
+                "{stderr}"
+            );
+            assert!(
+                stderr.contains("possible values: text, json, pretty"),
+                "{stderr}"
             );
         }
     }

@@ -142,7 +142,8 @@
             "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
-            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work"
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work",
+            "Retired unused Modrinth credential options and YAML log-format spellings fail as usage errors without changing author files or isolated host state"
           ]
         },
         {
@@ -220,7 +221,8 @@
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
             "Archive admission binds execution to the final packaged binary digest, version and native target without fallback",
-            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work"
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work",
+            "Retired unused Modrinth credential options and YAML log-format spellings fail as usage errors without changing author files or isolated host state"
           ],
           "required_targets": [
             "x86_64-unknown-linux-gnu",
@@ -277,7 +279,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Unlike display flags, the version command and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
+            "Unlike display flags, doctor and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
           ]
         },
         {
@@ -1639,7 +1641,8 @@
             "Seven executable JSON report routes remain single JSON values without ANSI across color/log-format/log-stream combinations",
             "Diagnostic logs remain observable on stderr; human output honors its chosen log stream",
             "Failed JSON lookups retain stderr diagnostics without a successful payload; author and lock bytes remain unchanged",
-            "Synthetic Modrinth and CurseForge API-key values remain absent from stdout and stderr across JSON reports, selected human log destinations and failed requests, in both product graphs"
+            "The configured synthetic CurseForge API-key value remains absent from stdout and stderr across JSON reports, selected human log destinations and failed requests, in both product graphs",
+            "Text, pretty text and JSON log events preserve report separation; formatted JSON log events remain parseable on stderr alongside independent plain progress"
           ]
         },
         {
