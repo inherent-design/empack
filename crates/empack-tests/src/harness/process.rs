@@ -726,9 +726,27 @@ pub fn assert_pending_import_lifecycle(
         std::fs::metadata(&archive).unwrap().len(),
         record["archive_bytes"].as_u64().unwrap()
     );
+    let listed = empack_cmd(workdir)
+        .env("EMPACK_STATE_DIR", state)
+        .args(["--workdir", target, "pending", "list", "--json"])
+        .output()
+        .unwrap();
+    assert!(listed.status.success(), "{listed:?}");
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let operations = listed["operations"].as_array().unwrap();
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0]["kind"], "import");
+    let pending_id = operations[0]["id"].as_str().unwrap();
     let preview = empack_cmd(workdir)
         .env("EMPACK_STATE_DIR", state)
-        .args(["init", "--continue", "--dry-run", target])
+        .args([
+            "--workdir",
+            target,
+            "--dry-run",
+            "pending",
+            "resume",
+            pending_id,
+        ])
         .output()
         .unwrap();
     assert!(!preview.status.success());

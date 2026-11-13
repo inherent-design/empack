@@ -17,7 +17,7 @@ pub fn message(error: &anyhow::Error) -> String {
     }
     lines.push("Instance has unresolved file conflicts".into());
     let command = match conflicts.action {
-        InstanceAction::Prepare => "prepare",
+        InstanceAction::Ensure => "ensure",
         InstanceAction::Apply if conflicts.authenticated_release => "update",
         InstanceAction::Apply => "install",
         InstanceAction::Repair => "repair",

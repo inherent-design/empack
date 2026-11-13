@@ -29,12 +29,12 @@ async fn install_with_transport(
 ) -> Result<()> {
     let require_subscription = matches!(
         &command,
-        InstanceCommand::Prepare {
+        InstanceCommand::Ensure {
             require_subscription: true,
             ..
         }
     );
-    let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
+    let ensure_current = matches!(command, InstanceCommand::Ensure { .. });
     let check = matches!(&command, InstanceCommand::Update { check: true, .. });
     let subscribed = matches!(command, InstanceCommand::Update { .. });
     let (release, sha256, side, layout, choices, files, conflicts) = match command {
@@ -47,7 +47,7 @@ async fn install_with_transport(
             choices,
             files,
         }
-        | InstanceCommand::Prepare {
+        | InstanceCommand::Ensure {
             require_subscription: _,
             conflicts,
             release,
@@ -228,8 +228,8 @@ async fn install_with_transport(
     let request = InstallInstanceRequest {
         require_subscription,
         conflicts: conflict_resolutions(conflicts, &invocation)?,
-        action: if prepare_current {
-            crate::engine::instance::InstanceAction::Prepare
+        action: if ensure_current {
+            crate::engine::instance::InstanceAction::Ensure
         } else {
             crate::engine::instance::InstanceAction::Apply
         },
@@ -325,7 +325,7 @@ pub(in crate::application) async fn dispatch(
             subscription(session, command).await.map(|_| ())
         }
         command @ (InstanceCommand::Install { .. }
-        | InstanceCommand::Prepare { .. }
+        | InstanceCommand::Ensure { .. }
         | InstanceCommand::Update { .. }) => install(session, command).await,
         InstanceCommand::Check(options) => super::checking::instance_check(session, options).await,
         InstanceCommand::Inspect => {

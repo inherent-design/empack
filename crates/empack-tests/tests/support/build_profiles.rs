@@ -207,7 +207,7 @@ fn assert_inventory(
             ".",
             "--yes",
             "instance",
-            "prepare",
+            "ensure",
             ".minecraft/.empack-consumer/release.json",
             "--sha256",
         ];
@@ -1132,7 +1132,7 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
                 .args([
                     "--yes",
                     "instance",
-                    "prepare",
+                    "ensure",
                     descriptor_name,
                     "--sha256",
                     embedded_digest,

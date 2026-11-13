@@ -440,7 +440,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                     let installed = snapshot(&instance);
                     for _ in 0..2 {
                         command(&instance, host.path())
-                            .args(["--yes", "instance", "prepare"])
+                            .args(["--yes", "instance", "ensure"])
                             .arg(&descriptor)
                             .args(["--sha256", &identity])
                             .assert()

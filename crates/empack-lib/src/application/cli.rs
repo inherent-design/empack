@@ -625,7 +625,7 @@ pub enum InstanceCommand {
     },
 
     /// Install the initial release or repair the active release without reverting updates
-    Prepare {
+    Ensure {
         /// Require an explicitly enrolled, non-revoked publisher for this pack
         #[arg(long)]
         require_subscription: bool,
@@ -1424,7 +1424,7 @@ mod tests {
             let error = Cli::try_parse_from(arguments).unwrap_err();
             assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
         }
-        for command in ["continue", "discard-pending"] {
+        for command in ["continue", "discard-pending", "prepare"] {
             assert_eq!(
                 Cli::try_parse_from(["empack", "instance", command])
                     .unwrap_err()

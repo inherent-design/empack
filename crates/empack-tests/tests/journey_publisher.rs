@@ -1107,7 +1107,7 @@ fn observe(instance: &Path, channel: &Path) -> assert_cmd::assert::Assert {
 fn prepare_bootstrap(instance: &Path, export: &Path, digest: &str) -> assert_cmd::Command {
     let mut command = offline_command(instance);
     command
-        .args(["--yes", "instance", "prepare"])
+        .args(["--yes", "instance", "ensure"])
         .arg(export.join("release.json"))
         .args(["--sha256", digest, "--require-subscription"]);
     command
@@ -2091,7 +2091,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
             .unwrap()
             .iter()
             .any(|finding| finding["code"] == "pending-input"
-                && finding["next"] == json!(["instance", "continue"]))
+                && finding["next"] == json!(["pending", "list"]))
     );
     expected("A", 0, false);
     assert_eq!(snapshot(host.path()), before_status);

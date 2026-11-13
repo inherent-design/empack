@@ -300,7 +300,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                             .as_array()
                             .unwrap()
                             .iter()
-                            .any(|value| value == "prepare")
+                            .any(|value| value == "ensure")
                     );
                     assert_eq!(prepare["append_arguments"], false);
                 }
@@ -353,7 +353,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                             side: InstanceSide::Server,
                             layout: Some(InstanceLayout::Game),
                             choices: vec![],
-                            action: InstanceAction::Prepare,
+                            action: InstanceAction::Ensure,
                         },
                         RecoveryReader::new(host.path().join("instance-state")),
                         SnapshotLimits::default(),
@@ -681,7 +681,7 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         root.path(),
         "bin/empack",
         br##"#!/bin/sh
-if [ "$5" = prepare ]; then
+if [ "$5" = ensure ]; then
   printf '%s\n' "$@" > "$EMPACK_TEST_ARGS"
   exit "$EMPACK_TEST_INSTALL_STATUS"
 fi
@@ -742,7 +742,7 @@ exec "$program" -jar server.jar "$@"
             assert_eq!(arguments.exists(), code == 0);
             let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
             let expected = format!(
-                "--workdir\n.\n--yes\ninstance\nprepare\n.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n"
+                "--workdir\n.\n--yes\ninstance\nensure\n.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n"
             );
             assert_eq!(selected, expected);
             if code == 0 {
@@ -772,7 +772,7 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     // CALL lets a batch fixture return like the empack executable it replaces.
     let install = install_batch(true).replace(
         &super::super::bootstrap::server(super::super::bootstrap::PREPARE, true),
-        "call fake-empack.cmd --workdir . --yes instance prepare dummy --layout game --side server",
+        "call fake-empack.cmd --workdir . --yes instance ensure dummy --layout game --side server",
     );
     put(root.path(), "install_pack.bat", install.as_bytes());
     put(
@@ -820,7 +820,7 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
             assert_eq!(status.code(), Some(code));
             assert_eq!(args.exists(), code == 0);
             let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
-            assert!(arguments.contains("instance prepare"));
+            assert!(arguments.contains("instance ensure"));
             assert!(arguments.contains("--layout game --side server"));
             if code == 0 {
                 let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
@@ -1340,10 +1340,10 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                             "{output:?}"
                         );
                         let calls = fs::read_to_string(log).unwrap();
-                        assert!(calls.contains("instance prepare"));
+                        assert!(calls.contains("instance ensure"));
                         if name != "install_pack.sh" {
                             assert!(
-                                calls.find("instance prepare").unwrap()
+                                calls.find("instance ensure").unwrap()
                                     < calls.find("instance launch").unwrap()
                             );
                             assert_eq!(calls.contains("nogui"), name == "start.sh");

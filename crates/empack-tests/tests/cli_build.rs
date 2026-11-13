@@ -123,7 +123,7 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
     assert_eq!(
         prepare_record,
         json!({"schema":"empack-bootstrap-invocation/1", "engine_version":version,
-        "arguments":["--workdir", ".", "--yes", "instance", "prepare", ".minecraft/.empack-consumer/release.json", "--sha256", hash, "--layout", "prism", "--side", "client"], "append_arguments":false})
+        "arguments":["--workdir", ".", "--yes", "instance", "ensure", ".minecraft/.empack-consumer/release.json", "--sha256", hash, "--layout", "prism", "--side", "client"], "append_arguments":false})
     );
     let launch_record: Value = serde_json::from_slice(bytes(".empack-tools/launch.json")).unwrap();
     assert_eq!(

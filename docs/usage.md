@@ -90,7 +90,7 @@ Missing manual downloads can be saved after approval. The command reports the ex
 | Command                                          | Meaning                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `instance install`                               | Install or apply an explicitly selected local snapshot into an instance root               |
-| `instance prepare`                               | Launcher hook: install initially, then repair the active release without reverting updates |
+| `instance ensure`                                | Launcher hook: install initially, then repair the active release without reverting updates |
 | `instance update`                                | Apply the exact signed release selected by the saved subscribed channel                    |
 | `pending resume ID --file KEY=PATH`              | Resume a retained exact release with verified manual inputs                                |
 | `pending discard ID`                             | Explicitly discard a pending recipe without changing the installation                      |

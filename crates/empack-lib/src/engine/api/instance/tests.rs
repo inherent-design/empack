@@ -911,7 +911,7 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
     let (engine, _) = super::super::tests::engine(state.path().join("state"));
     let original = || {
         let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
-        input.action = InstanceAction::Prepare;
+        input.action = InstanceAction::Ensure;
         input
     };
     let a = apply(&engine, root.path(), original()).await;
@@ -2115,7 +2115,7 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
     );
     let current = snapshot(root.path());
     let mut original_launcher = initial();
-    original_launcher.action = InstanceAction::Prepare;
+    original_launcher.action = InstanceAction::Ensure;
     original_launcher.supplied.clear();
     assert_eq!(
         apply(&engine, root.path(), original_launcher).await.release,
@@ -2173,7 +2173,7 @@ async fn server_release_updates_runtime_and_rolls_back_without_touching_user_dat
         b"runtime B"
     );
     let mut original = a();
-    original.action = InstanceAction::Prepare;
+    original.action = InstanceAction::Ensure;
     original.supplied.clear();
     assert_eq!(
         apply(&engine, root.path(), original).await.release,
@@ -2616,7 +2616,7 @@ async fn instance_inspection_and_preparation_use_the_associated_root_key() {
         bytes
     );
     let mut prepare = input();
-    prepare.action = InstanceAction::Prepare;
+    prepare.action = InstanceAction::Ensure;
     let prepared = apply(&engine, root.path(), prepare).await;
     assert_eq!(prepared.root, prior_key);
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
@@ -2686,6 +2686,7 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         ("a", "mods/a.jar", b"A", FilePolicy::Managed),
         ("b", "mods/b.jar", b"B", FilePolicy::Managed),
     ]);
+    input.action = InstanceAction::Ensure;
     input.supplied.remove("b");
     let Preparation::NeedsInput(pending) =
         engine.prepare(root.path().to_owned(), input).await.unwrap()
@@ -2699,10 +2700,13 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         .find(|p| p.extension().is_some_and(|s| s == "json"))
         .unwrap();
     let current = fs::read(&path).unwrap();
+    let current_record: serde_json::Value = serde_json::from_slice(&current).unwrap();
+    assert_eq!(current_record["schema"], 3);
+    assert_eq!(current_record["recipe"]["action"], "ensure");
     let supplied = state.path().join("b.jar");
     fs::write(&supplied, b"B").unwrap();
     let inputs = || BTreeMap::from([("b".into(), supplied.clone())]);
-    for schema in [0, 1, 3] {
+    for schema in [0, 1, 2, 4] {
         let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
         wire["schema"] = schema.into();
         let bytes = serde_json::to_vec(&wire).unwrap();
@@ -2715,6 +2719,21 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         assert!(
             format!("{error:#}").contains("Unsupported pending operation schema"),
             "{error:#}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+    for schema in [2, 3] {
+        let mut obsolete = current_record.clone();
+        obsolete["schema"] = schema.into();
+        obsolete["recipe"]["action"] = "prepare".into();
+        let bytes = serde_json::to_vec(&obsolete).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert!(
+            engine
+                .resume_saved_instance(root.path().to_owned(), inputs(), None)
+                .await
+                .is_err()
         );
         assert_eq!(fs::read(&path).unwrap(), bytes);
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);

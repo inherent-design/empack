@@ -75,7 +75,7 @@ impl Fixture {
     fn prepare(&self) -> assert_cmd::Command {
         let mut command = self.command();
         command
-            .args(["instance", "prepare"])
+            .args(["instance", "ensure"])
             .arg(&self.release)
             .args([
                 "--sha256",
@@ -329,7 +329,7 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         fs::write(&descriptor, &bytes).unwrap();
         fixture
             .command()
-            .args(["instance", "prepare"])
+            .args(["instance", "ensure"])
             .arg(&descriptor)
             .args([
                 "--sha256",

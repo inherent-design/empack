@@ -123,7 +123,7 @@ Prepare the exact vanilla, Fabric, Quilt, Forge or NeoForge server runtime and s
 
 Both deliveries place runtime files and selected game content under `game/`. Root `start.sh` and `start.bat` scripts supply `nogui` after the runtime launch arguments. `start_gui.sh` and `start_gui.bat` omit it. Both variants preserve separate user arguments, including historical JAR and loader argument-file launch forms. Managed variants use the same preparation and subscription checks before launch. Put server configuration templates under `templates/server/game/`; launcher scripts remain at the distribution root.
 
-Reference delivery packages `.empack-consumer/release.json` and authored assets. `install_pack.sh` and `install_pack.bat` invoke `empack instance prepare` with the exact descriptor hash and server environment. The generated start scripts run that step first and stop on failure. Bundled snapshot delivery needs no empack installer. Template files and runtime members cannot collide with future installed content.
+Reference delivery packages `.empack-consumer/release.json` and authored assets. `install_pack.sh` and `install_pack.bat` invoke `empack instance ensure` with the exact descriptor hash and server environment. The generated start scripts run that step first and stop on failure. Bundled snapshot delivery needs no empack installer. Template files and runtime members cannot collide with future installed content.
 
 Fabric/Quilt launcher layouts, Forge-family installer profiles, libraries and arguments are independently inspected after bounded installer execution. Exit zero or finding a JAR is insufficient. Snapshot bundles and reference distributions share one expected runtime; delivery changes acquisition, not runtime semantics.
 

@@ -478,7 +478,7 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                         side: InstanceSide::Client,
                         layout: Some(InstanceLayout::Prism),
                         choices: vec![],
-                        action: InstanceAction::Prepare,
+                        action: InstanceAction::Ensure,
                     },
                     RecoveryReader::new(host.path().join("instance-state")),
                     SnapshotLimits::default(),

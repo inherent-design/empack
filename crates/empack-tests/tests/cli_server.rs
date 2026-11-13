@@ -487,18 +487,27 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
         ),
         (
             "",
-            "fixture Java probe failure\n",
+            "fixture Java probe failure\nfixture.private.property = fixture-private-jvm-value\n",
             9,
-            "Selected Java failed its version check: fixture Java probe failure",
+            "Selected Java failed its version check; run that executable's version command separately for its output",
         ),
     ] {
         server.configure(stdout, stderr, status, 0);
         let tools = snapshot(server.program.parent().unwrap());
-        server
+        let output = server
             .launch(&["--yes"], server.program.as_os_str())
             .assert()
             .code(EmpackExitCode::General.as_i32())
-            .stderr(contains(diagnostic));
+            .stderr(contains(diagnostic))
+            .get_output()
+            .clone();
+        if status != 0 {
+            for stream in [&output.stdout, &output.stderr] {
+                let text = String::from_utf8_lossy(stream);
+                assert!(!text.contains("fixture Java probe failure"));
+                assert!(!text.contains("fixture-private-jvm-value"));
+            }
+        }
         server.invocation("probe.json", &["-XshowSettings:properties", "-version"]);
         server.not_started();
         assert_eq!(snapshot(server.program.parent().unwrap()), tools);

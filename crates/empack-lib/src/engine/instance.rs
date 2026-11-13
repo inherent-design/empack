@@ -79,7 +79,7 @@ impl InstanceLayout {
 #[serde(rename_all = "kebab-case")]
 pub enum InstanceAction {
     /// Install the initial snapshot, or retain and verify the active compatible release.
-    Prepare,
+    Ensure,
     Apply,
     Repair,
     /// Change persistent choices within the completed release, without selecting an update.
@@ -573,7 +573,7 @@ pub(super) fn plan(
         document_limits(limits),
         cancel,
     )?)?;
-    let active = if action == InstanceAction::Prepare {
+    let active = if action == InstanceAction::Ensure {
         if let Some(previous) = &previous {
             ensure!(
                 requested_choices.is_empty(),
@@ -640,7 +640,7 @@ pub(super) fn plan(
             .transpose()?;
     }
     match action {
-        InstanceAction::Prepare => {}
+        InstanceAction::Ensure => {}
         InstanceAction::Apply => {}
         InstanceAction::Repair | InstanceAction::ChangeChoices => {
             let previous = previous

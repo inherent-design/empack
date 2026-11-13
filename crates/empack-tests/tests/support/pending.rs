@@ -63,7 +63,7 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
         "build" => ("pending-builds", 5_u32),
         "import" => ("pending-imports", 1),
         "sync" => ("pending-sync", 2),
-        "instance" => ("pending-instances", 2),
+        "instance" => ("pending-instances", 3),
         _ => panic!("unsupported fixture family"),
     };
     let records: Vec<_> = fs::read_dir(state.join(directory))

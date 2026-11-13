@@ -50,7 +50,7 @@ pub(super) fn invocation(
     let mut arguments = vec!["--workdir", ".", "--yes", "instance"];
     if prepare {
         arguments.extend([
-            "prepare",
+            "ensure",
             if prism {
                 ".minecraft/.empack-consumer/release.json"
             } else {

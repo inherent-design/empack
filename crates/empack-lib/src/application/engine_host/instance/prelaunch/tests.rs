@@ -123,7 +123,7 @@ async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
     let next = release("B");
     fs::write(root.path().join("initial.json"), initial.bytes()).unwrap();
     fs::write(root.path().join("next.json"), next.bytes()).unwrap();
-    let prepare = |require_subscription, digest: String| InstanceCommand::Prepare {
+    let prepare = |require_subscription, digest: String| InstanceCommand::Ensure {
         require_subscription,
         conflicts: Default::default(),
         release: "initial.json".into(),

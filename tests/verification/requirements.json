@@ -7646,7 +7646,7 @@
         "INST",
         "RUN"
       ],
-      "required_assertions": "Exact descriptor/hash/assets and mandatory prelaunch/wrapper retained; instance prepare materializes correct bytes.",
+      "required_assertions": "Exact descriptor/hash/assets and mandatory prelaunch/wrapper retained; instance ensure materializes correct bytes.",
       "required_work": "Independent archive inspection then generated integration with actual binary; actual Prism import separately.",
       "evidence_tiers": [
         "H",
@@ -7676,7 +7676,7 @@
           ],
           "assertions": [
             "Independent complete archive members, literal selected bytes, SHA-256 descriptor/assets and generated command settings agree with the reference snapshot",
-            "Public instance prepare uses the hash extracted from the known emitted prelaunch fixture; changed descriptor bytes and equal-length corrupted assets refuse without altering instance files",
+            "Public instance ensure uses the hash extracted from the known emitted prelaunch fixture; changed descriptor bytes and equal-length corrupted assets refuse without altering instance files",
             "Preparation in a path with spaces and Unicode installs the exact visible inventory, preserves a world sentinel and player-edited seed content, and converges on repeated preparation",
             "Changing author configuration without changing the version produces a new descriptor identity and installs the new bytes into a fresh instance without changing unrelated author files",
             "The command fixture is a restricted expected string, not a substitute for Qt parsing or actual launcher execution"
@@ -11174,7 +11174,7 @@
       "id": "UX-062",
       "family": "Installed instances",
       "title": "Preparation does not roll back a newer installation",
-      "public_surface": "instance prepare",
+      "public_surface": "instance ensure",
       "api_ids": [
         "INST",
         "REL",
@@ -11209,7 +11209,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Fresh controlled host sessions require enrollment when instance prepare requests it, including against an already installed active release, without requiring the input descriptor itself to demand subscription",
+            "Fresh controlled host sessions require enrollment when instance ensure requests it, including against an already installed active release, without requiring the input descriptor itself to demand subscription",
             "Permitted preparation bootstraps A; after explicit snapshot installation of B, repeated preparation using A retains the active B selection and project bytes",
             "A wrong exact digest refuses without changing installed state or either descriptor; this empty-inventory handler fixture does not establish asset repair, signed updates or launcher execution"
           ]
@@ -12240,7 +12240,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Only schema-2 pending instance records can resume, using the persistent base fingerprint",
+            "Only schema-3 pending instance records can resume, using the persistent base fingerprint",
             "Obsolete/unknown schemas and mismatched fingerprints refuse continuation without changing retained records or the instance",
             "The supported record resumes exact retained/supplied content through fresh preparation without rewriting saved bytes or authorizing publication"
           ]
@@ -13083,6 +13083,7 @@
           ],
           "assertions": [
             "Old, absent, duplicate and malformed specification versions and nonzero probe status return specific diagnostics without invoking the runtime",
+            "Failed JVM probes provide actionable guidance without echoing unrelated JVM properties or raw captured output",
             "Every refusal allows an immediate compatible follow-up launch without runtime-recovery acknowledgement; publisher inputs, tools, player data and installation record remain intact",
             "A fixture runtime exiting 7 produces empack General status with its original runtime-status diagnostic, followed by a successful later launch"
           ]

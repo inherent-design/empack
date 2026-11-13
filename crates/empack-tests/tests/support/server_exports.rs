@@ -398,7 +398,7 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
                 ".",
                 "--yes",
                 "instance",
-                "prepare",
+                "ensure",
                 ".empack-consumer/release.json",
                 "--sha256",
                 hash,

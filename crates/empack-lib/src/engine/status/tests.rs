@@ -132,8 +132,8 @@ fn status_reports_pending_presence_without_validating_or_rewriting_it() {
         }
     }
     for (kind, next, completed_instance) in [
-        (Kind::Import, ["init", "--continue"], false),
-        (Kind::Instance, ["instance", "continue"], true),
+        (Kind::Import, ["pending", "list"], false),
+        (Kind::Instance, ["pending", "list"], true),
     ] {
         let parent = tempfile::tempdir().unwrap();
         let root = parent.path().join("project");
