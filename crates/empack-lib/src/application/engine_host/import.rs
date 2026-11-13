@@ -57,13 +57,38 @@ fn input_message(input: &crate::engine::import::ImportContentInput) -> Result<St
         }
     };
     let next = match crate::application::shell::association(&selector, "PATH") {
-        Some(argument) => format!("continue this import with --import-file={argument}"),
-        None => "save this import and use its Downloads-folder search".into(),
+        Some(argument) => {
+            format!("after saving, use pending resume ID --file={argument}")
+        }
+        None => "save this import, then use pending show ID for its file requirements".into(),
     };
     Ok(format!(
         "Missing import file {}: {reason}; {next}",
         crate::terminal::json_text(&selector)?
     ))
+}
+
+fn saved_import_hint(destination: &Path, state: &Path) -> String {
+    let command = destination
+        .to_str()
+        .zip(state.to_str())
+        .and_then(|(destination, state)| {
+            crate::application::shell::arguments(&[
+                "--workdir".into(),
+                destination.into(),
+                "--state-dir".into(),
+                state.into(),
+                "pending".into(),
+                "list".into(),
+            ])
+        });
+    match command {
+        Some(command) => format!(
+            "Import was saved.\nNext ({}): empack {command}\nUse the same destination and state directory for pending show ID and pending resume ID --file SELECTOR=PATH.",
+            crate::application::shell::NAME
+        ),
+        None => "Import was saved. Select its destination with --workdir and the original state directory with --state-dir, then use pending list, pending show ID and pending resume ID --file SELECTOR=PATH.".into(),
+    }
 }
 
 /// The decision callback receives verified source evidence, not a live project writer.
@@ -292,6 +317,7 @@ pub(super) async fn import_with_services(
                 session.display().status().warning(&input_message(input)?);
             }
             if approve(session, "Save incomplete import")? {
+                let hint = saved_import_hint(&selected_path, &state);
                 scoped(session, shared.clone(), move |mut scope| async move {
                     crate::engine::import::save_pending_import(
                         &mut scope,
@@ -305,12 +331,9 @@ pub(super) async fn import_with_services(
                     .await
                 })
                 .await?;
-                session.display().status().info("Import was saved; use pending list, then pending show ID and pending resume ID --file SELECTOR=PATH in the same destination");
+                session.display().status().info(&hint);
             }
-            anyhow::bail!(
-                "Import was not published: {} content obligations need explicit input",
-                pending.len()
-            );
+            anyhow::bail!("Import needs {}", counted(pending.len(), "file", "files"));
         }
     };
     for diagnostic in &content.plan().imported().diagnostics {

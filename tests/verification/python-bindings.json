@@ -720,6 +720,14 @@
       ]
     },
     {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_saved_import_uses_public_id_and_refuses_a_mutating_preview",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_relative_executable_is_bound_before_child_workdir_changes",
       "boundary": "H",
       "requirements": [

@@ -128,7 +128,12 @@ pub(super) fn journey() {
     plan.extend(["--dry-run", "--json"]);
     let output = run(&project, &plan);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["materialization_requested"], true);
+    assert_eq!(report["native_publication_performed"], false);
+    assert!(!report["file_changes"].as_array().unwrap().is_empty());
+    assert!(report["diagnostic"].is_null());
     assert_eq!(report["current_runtime"]["minecraft"], "1.21.1");
     assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.2");
     assert_eq!(author_snapshot(root), before);

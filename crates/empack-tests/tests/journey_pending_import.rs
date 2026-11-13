@@ -103,9 +103,7 @@ impl ImportFixture {
             .arg(&self.target)
             .assert()
             .failure()
-            .stderr(predicates::str::contains(
-                "content obligations need explicit input",
-            ))
+            .stderr(predicates::str::contains("Import needs"))
             .get_output()
             .clone();
         assert_eq!(snapshot(self.project.dir()).files, before);
@@ -115,7 +113,23 @@ impl ImportFixture {
                 .contains(&format!("Directory: {:?}", self.target)),
             "{output:?}"
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("--import-file="));
+        let guidance = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(guidance.contains("pending resume ID --file="), "{guidance}");
+        assert!(guidance.contains("--workdir"), "{guidance}");
+        assert!(guidance.contains("--state-dir"), "{guidance}");
+        assert!(
+            guidance.contains(&self.target.display().to_string()),
+            "{guidance}"
+        );
+        assert!(
+            guidance.contains(&self.state.display().to_string()),
+            "{guidance}"
+        );
+        assert!(!guidance.contains("--import-file"), "{guidance}");
         import_selectors(&output)
     }
     fn resume(&self, operation: &Value, prefix: bool, association: &str) -> assert_cmd::Command {

@@ -694,10 +694,7 @@ pub fn assert_pending_import_lifecycle(
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        diagnostic.contains("content obligations need explicit input"),
-        "{diagnostic}"
-    );
+    assert!(diagnostic.contains("Import needs"), "{diagnostic}");
     assert!(diagnostic.contains("Import was saved"), "{diagnostic}");
     let target_path = workdir.join(target);
     assert!(
@@ -755,10 +752,7 @@ pub fn assert_pending_import_lifecycle(
         String::from_utf8_lossy(&preview.stdout),
         String::from_utf8_lossy(&preview.stderr)
     );
-    assert!(
-        diagnostic.contains("content obligations need explicit input"),
-        "{diagnostic}"
-    );
+    assert!(diagnostic.contains("Import needs"), "{diagnostic}");
     assert_eq!(std::fs::read(&records[0]).unwrap(), original);
     assert!(!target_path.exists());
     for dry in [true, false] {

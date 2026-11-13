@@ -209,15 +209,20 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            pending["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &association,
         ],
     );
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("digest mismatch"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("digest mismatch"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!target.exists());
     assert_eq!(source_view(), before);
     assert_eq!(snapshot_excluding(&commands.state, &[]), retained);
@@ -248,10 +253,11 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            pending["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &supplied[0],
         ],
     );
@@ -274,10 +280,11 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            retained["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &supplied[1],
         ],
     );

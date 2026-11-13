@@ -722,9 +722,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         ImportLimits::default(),
     )
     .await;
-    assert!(
-        format!("{:#}", result.unwrap_err()).contains("content obligations need explicit input")
-    );
+    assert!(format!("{:#}", result.unwrap_err()).contains("Import needs"));
     assert!(!root.path().join("project").exists());
     let records = || {
         fs::read_dir(root.path().join("state/pending-imports"))
@@ -1284,7 +1282,7 @@ async fn shared_pending_import_preserves_interpretation_and_replacement_choices(
     )
     .await
     .unwrap_err();
-    assert!(format!("{error:#}").contains("content obligations need explicit input"));
+    assert!(format!("{error:#}").contains("Import needs"));
     fs::remove_file(root.path().join("source.mrpack")).unwrap();
     let view = crate::engine::pending::inspect(
         &root.path().join("state"),
