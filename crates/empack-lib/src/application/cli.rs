@@ -783,6 +783,9 @@ pub enum PendingCommand {
         /// Explicitly resolve and open permitted exact provider pages; never during preview
         #[arg(long)]
         open_downloads: bool,
+        /// Wait for missing saved-build downloads, then request fresh approval
+        #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
+        wait_downloads: Option<u64>,
     },
     /// Discard only this unchanged saved recipe; preserve downloads, content and recovery data
     Discard { id: String },
@@ -1186,6 +1189,8 @@ mod tests {
                 "--downloads-dir",
                 "/tmp/downloads",
                 "--open-downloads",
+                "--wait-downloads",
+                "1",
             ],
             vec![
                 "empack",
@@ -1245,6 +1250,38 @@ mod tests {
         assert!(
             Cli::try_parse_from(["empack", "pending", "resume", "abcdef", "--java", "7"]).is_err()
         );
+        for args in [
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--wait-downloads",
+                "1",
+            ],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--downloads-dir",
+                "/tmp/downloads",
+                "--wait-downloads",
+                "0",
+            ],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--downloads-dir",
+                "/tmp/downloads",
+                "--wait-downloads",
+                "3601",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
         assert!(Cli::try_parse_from(["empack", "pending", "discard"]).is_err());
         assert!(Cli::try_parse_from(["empack", "pending", "list", "--open-downloads"]).is_err());
     }

@@ -6380,7 +6380,8 @@
             "A retained import accepts explicit auxiliary exclusion, Java/runtime selection, content folders, metadata and additional accepted versions through the same import interpreter",
             "Replacing an existing project requires an explicit replacement choice and fresh native preparation; refusal and dry-run preserve all project/state/input bytes",
             "Resumption verifies the supplied file against the retained archive, preserves ordinary Unicode author metadata and removes the selected pending record after successful publication",
-            "Import-only arguments on saved builds return a usage error before Downloads scanning or browser launch, preserving the complete workspace"
+            "Import-only arguments on saved builds return a usage error before Downloads scanning or browser launch, preserving the complete workspace",
+            "Build-only wait assistance refuses an import with a usage error before scanning or browser opening, preserving saved work and supplied sources"
           ]
         }
       ],
@@ -6922,7 +6923,8 @@
           "assertions": [
             "Invalid wait bounds and preview leave authoring and saved state untouched",
             "A sole wrong same-length file times out; renamed verified bytes subsequently produce the complete expected archive while preserving downloads and prior author/artifact bytes",
-            "A changed saved recipe refuses automatic continuation"
+            "A changed saved recipe refuses automatic continuation",
+            "The public pending resume ID route waits for the selected saved build, preserves source/downloads on timeout and completes after verified bytes are supplied"
           ]
         },
         {

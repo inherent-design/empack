@@ -69,6 +69,7 @@ pub(in crate::application) async fn dispatch(
             files,
             downloads_dir,
             open_downloads,
+            wait_downloads,
             import_options,
         } => {
             let selected = view.select(&id)?.clone();
@@ -79,6 +80,7 @@ pub(in crate::application) async fn dispatch(
                 files,
                 downloads_dir,
                 open_downloads,
+                wait_downloads,
                 *import_options,
             )
             .await
@@ -125,6 +127,7 @@ async fn resume(
     files: Vec<String>,
     downloads: Option<PathBuf>,
     open: bool,
+    wait_seconds: Option<u64>,
     import_options: crate::application::cli::PendingImportOptions,
 ) -> Result<()> {
     ensure!(
@@ -135,6 +138,20 @@ async fn resume(
         selected.kind == PendingKind::Import || import_options == Default::default(),
         crate::application::cli::CommandInputRequired("Import options require a pending import")
     );
+    if let Some(seconds) = wait_seconds {
+        ensure!(
+            (1..=3600).contains(&seconds) && downloads.is_some(),
+            crate::application::cli::CommandInputRequired(
+                "Download waiting needs --downloads-dir and 1–3600 seconds"
+            )
+        );
+        ensure!(
+            selected.kind == PendingKind::Build,
+            crate::application::cli::CommandInputRequired(
+                "Automatic download waiting is available for saved builds; supply --file associations for this saved operation"
+            )
+        );
+    }
     let mut files = associations(&selected, files)?;
     if selected.kind == PendingKind::Build {
         let dry = session.config().app_config().dry_run;
@@ -155,6 +172,7 @@ async fn resume(
                     })
                     .transpose()?,
                 open_downloads: open && !dry,
+                wait_downloads: if dry { None } else { wait_seconds },
                 ..Default::default()
             },
             Some(&selected.id),

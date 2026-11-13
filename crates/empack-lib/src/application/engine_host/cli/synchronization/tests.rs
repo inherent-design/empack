@@ -1375,6 +1375,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             id: operation.id.clone(),
             files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
+            wait_downloads: None,
             open_downloads: false,
         },
     )
@@ -1399,6 +1400,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             id: operation.id.clone(),
             files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
+            wait_downloads: None,
             open_downloads: false,
         },
     )

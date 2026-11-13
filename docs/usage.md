@@ -313,6 +313,7 @@ empack --workdir my-pack pending show OPERATION_ID --json
 empack --workdir my-pack --dry-run pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
 empack --workdir my-pack pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
 empack --workdir my-pack pending resume OPERATION_ID --downloads-dir /path/to/Downloads --open-downloads
+empack --workdir my-pack pending resume BUILD_OPERATION_ID --downloads-dir /path/to/Downloads --wait-downloads 60
 empack --workdir imported-pack pending resume OPERATION_ID --file EXACT_KEY=/path/to/file --exclude-auxiliary --java 21
 empack --workdir my-pack pending discard OPERATION_ID
 ```

@@ -745,6 +745,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             id: operation.id.clone(),
             files: vec![],
             downloads_dir: Some("nonexistent-downloads".into()),
+            wait_downloads: None,
             open_downloads: true,
             import_options: Box::new(crate::application::cli::PendingImportOptions {
                 java: Some(21),
@@ -765,6 +766,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             id: operation.id.clone(),
             files: vec![],
             downloads_dir: Some("nonexistent-downloads".into()),
+            wait_downloads: Some(60),
             open_downloads: true,
             import_options: Default::default(),
         },
@@ -798,6 +800,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             id: operation.id[..12].into(),
             files: explicit.associate_downloads.clone(),
             downloads_dir: None,
+            wait_downloads: None,
             open_downloads: false,
         },
     )

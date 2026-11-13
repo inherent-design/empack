@@ -188,11 +188,42 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     assert_eq!(snapshot(project.dir()).files, before);
     assert!(saved(&state).is_file());
     assert_eq!(snapshot(&downloads).files, original_downloads);
+    let listed = command(&project, &state)
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success();
+    let listed: serde_json::Value = serde_json::from_slice(&listed.get_output().stdout).unwrap();
+    let id = listed["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|op| op["kind"] == "build")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    command(&project, &state)
+        .args([
+            "pending",
+            "resume",
+            id,
+            "--wait-downloads",
+            "1",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Download wait expired"));
+    assert_eq!(snapshot(project.dir()).files, before);
+    assert_eq!(snapshot(&downloads).files, original_downloads);
+    assert!(saved(&state).is_file());
     fs::write(downloads.join("renamed.bin"), b"payload").unwrap();
     command(&project, &state)
         .args([
-            "build",
-            "--continue",
+            "pending",
+            "resume",
+            id,
             "--wait-downloads",
             "5",
             "--downloads-dir",

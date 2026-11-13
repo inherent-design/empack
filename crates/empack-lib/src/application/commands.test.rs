@@ -1131,6 +1131,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
                 id,
                 files: vec!["mod=a.jar".into()],
                 downloads_dir: None,
+                wait_downloads: None,
                 open_downloads: false,
             },
         },

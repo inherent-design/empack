@@ -1295,9 +1295,38 @@ async fn shared_pending_import_preserves_interpretation_and_replacement_choices(
         id: view.operations[0].id.clone(),
         files: vec!["declared:0=selected.bin".into()],
         downloads_dir: None,
+        wait_downloads: None,
         open_downloads: false,
     };
     let before = crate::test_support::file_bytes(root.path());
+    let mut wait = command(options.clone());
+    let PendingCommand::Resume {
+        wait_downloads,
+        downloads_dir,
+        open_downloads,
+        ..
+    } = &mut wait
+    else {
+        unreachable!()
+    };
+    *wait_downloads = Some(1);
+    *downloads_dir = Some("nonexistent-downloads".into());
+    *open_downloads = true;
+    let error = crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        wait,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Usage
+    );
+    assert!(
+        format!("{error:#}").contains("available for saved builds"),
+        "{error:#}"
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     let mut without_replacement = options.clone();
     without_replacement.replace_project = false;
     let error = crate::application::engine_host::pending::dispatch(
