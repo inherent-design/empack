@@ -70,7 +70,7 @@ def coverage(root=ROOT, environment=None):
     instrumented = instrumented_environment(settings, environment)
     home = Path(tempfile.mkdtemp(prefix="worker-home-", dir=output))
     instrumented = suite_environment(home, instrumented, ())
-    invoke(["cargo", "run", "--locked", "-p", "empack", "--features", "telemetry", "--", "version"],
+    invoke(["cargo", "run", "--locked", "-p", "empack", "--features", "telemetry", "--", "--version"],
            "product", instrumented)
     _, inventory = invoke(["cargo", "nextest", "list", "--locked", "--workspace", "--features", FEATURES,
                            "--message-format", "json"], "discovery", instrumented, capture=True)
