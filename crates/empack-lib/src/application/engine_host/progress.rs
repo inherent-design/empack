@@ -107,7 +107,7 @@ impl ProgressDisplay {
                     if *versions == 0 {
                         String::new()
                     } else {
-                        format!(" ({versions} versions read)")
+                        format!(" ({})", counted(*versions, "version read", "versions read"))
                     }
                 ),
             ),

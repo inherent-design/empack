@@ -290,8 +290,12 @@ impl MigrationDelta {
                         value.title, value.role, value.kind, value.dependency_evidence
                     ));
                     lines.push(format!(
-                        "    {} files; full assertions and sources available with --json",
-                        value.files.len()
+                        "    {}; full assertions and sources available with --json",
+                        crate::application::engine_host::counted(
+                            value.files.len(),
+                            "file",
+                            "files"
+                        )
                     ));
                     for placement in &value.placements {
                         lines.push(format!(

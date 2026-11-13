@@ -125,7 +125,7 @@ async fn clean_selected(
                     "Content cache: {}", cache.as_ref().context("Missing selected cache directory")?.display()
                 ));
                 session.display().status().info(&format!(
-                    "Remove {} cached files (up to {} bytes)", view.objects.len(), view.bytes
+                    "Remove {} (up to {} bytes)", counted(view.objects.len(), "cached file", "cached files"), view.bytes
                 ));
                 if !view.objects.is_empty() {
                     plans.push(("Content cache cleanup", prepared));
@@ -326,13 +326,18 @@ async fn apply_cleanup(
 fn describe_receipt(receipt: &ExecutionReceipt) -> Result<String> {
     match receipt {
         ExecutionReceipt::Clean(receipt) => Ok(format!(
-            "Removed {} artifact files ({} bytes); recovery data retained",
-            receipt.publication.changed_files, receipt.removed_bytes
+            "Removed {} ({} bytes); recovery data retained",
+            counted(
+                receipt.publication.changed_files,
+                "artifact file",
+                "artifact files"
+            ),
+            receipt.removed_bytes
         )),
         ExecutionReceipt::CacheClean(receipt) => {
             let mut summary = format!(
-                "Removed {} cached files ({} bytes)",
-                receipt.objects.removed.len(),
+                "Removed {} ({} bytes)",
+                counted(receipt.objects.removed.len(), "cached file", "cached files"),
                 receipt
                     .objects
                     .removed
@@ -341,7 +346,10 @@ fn describe_receipt(receipt: &ExecutionReceipt) -> Result<String> {
                     .sum::<u128>()
             );
             if !receipt.objects.retained.is_empty() {
-                summary.push_str(&format!("; kept {} files", receipt.objects.retained.len()));
+                summary.push_str(&format!(
+                    "; kept {}",
+                    counted(receipt.objects.retained.len(), "file", "files")
+                ));
             }
             Ok(summary)
         }

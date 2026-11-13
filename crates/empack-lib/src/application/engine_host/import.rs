@@ -360,8 +360,8 @@ pub(super) async fn import_with_services(
                 anyhow::bail!("Unexpected import receipt")
             };
             Ok(format!(
-                "Imported {} files",
-                receipt.publication.changed_files
+                "Imported {}",
+                counted(receipt.publication.changed_files, "file", "files")
             ))
         })
         .await?;

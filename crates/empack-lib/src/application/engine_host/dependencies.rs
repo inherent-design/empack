@@ -863,12 +863,12 @@ pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest
     let result = async {
         for (key, dependency) in request.group.dependencies() {
             session.display().status().info(&format!(
-                "Record existing {}: {} ({}, {}, {} files)",
+                "Record existing {}: {} ({}, {}, {})",
                 key.as_str(),
                 dependency.title,
                 crate::application::labels::content(dependency.kind),
                 identity_label(&dependency.identity),
-                dependency.files.as_slice().len()
+                counted(dependency.files.as_slice().len(), "file", "files")
             ));
         }
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
@@ -903,14 +903,17 @@ async fn publish_adoption(
             anyhow::bail!("Unexpected adoption receipt");
         };
         Ok(format!(
-            "Recorded {} existing {} ({} file changes)",
-            receipt.bindings.len(),
-            if receipt.bindings.len() == 1 {
-                "dependency"
-            } else {
-                "dependencies"
-            },
-            receipt.publication.changed_files
+            "Recorded {} ({})",
+            counted(
+                receipt.bindings.len(),
+                "existing dependency",
+                "existing dependencies"
+            ),
+            counted(
+                receipt.publication.changed_files,
+                "file change",
+                "file changes"
+            )
         ))
     })
     .await
@@ -972,10 +975,10 @@ pub(super) async fn synchronize_with_outcome(
     let label = synchronization_label(&request);
     synchronize_reported(session, request, false, |result| {
         if let Ok(view) = result {
-            session
-                .display()
-                .status()
-                .info(&format!("{label}: {} dependencies", view.selected.len()));
+            session.display().status().info(&format!(
+                "{label}: {}",
+                counted(view.selected.len(), "dependency", "dependencies")
+            ));
             if !view.references.is_empty() {
                 session.display().status().info(&format!(
                     "File references: {} (contents are checked when acquired)",
@@ -1042,9 +1045,17 @@ pub(super) async fn synchronize_reported(
                 anyhow::bail!("Unexpected synchronization receipt");
             };
             Ok(format!(
-                "{operation_label}: {} dependencies ({} file changes)",
-                receipt.project.lock().dependencies.len(),
-                receipt.publication.changed_files
+                "{operation_label}: {} ({})",
+                counted(
+                    receipt.project.lock().dependencies.len(),
+                    "dependency",
+                    "dependencies"
+                ),
+                counted(
+                    receipt.publication.changed_files,
+                    "file change",
+                    "file changes"
+                )
             ))
         })
         .await?;

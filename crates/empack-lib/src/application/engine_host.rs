@@ -20,6 +20,10 @@ use std::{
     time::Duration,
 };
 
+fn counted(count: usize, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 fn absolute(invocation: &Path, selected: &Path) -> PathBuf {
     if selected.is_absolute() {
         selected.to_path_buf()
@@ -303,13 +307,13 @@ async fn recover_with_engine(
         .recovery()
         .context("Missing recovery preview")?;
     session.display().status().info(&format!(
-        "{}: {} file changes",
+        "{}: {}",
         match view.action {
             RecoveryAction::Finish if status.restoring => "Finish restoring previous files",
             RecoveryAction::Finish => "Finish saved changes",
             RecoveryAction::Restore => "Restore previous files",
         },
-        view.files.changes().len()
+        counted(view.files.changes().len(), "file change", "file changes")
     ));
     show_changes(session, &view.files)?;
     apply(session, engine, prepared, "Recovery", |receipt| {
@@ -317,14 +321,18 @@ async fn recover_with_engine(
             anyhow::bail!("Unexpected recovery receipt");
         };
         Ok(format!(
-            "{} ({} file changes)",
+            "{} ({})",
             match receipt.publication.disposition {
                 crate::engine::publication::PublicationDisposition::Published =>
                     "Finished saved changes",
                 crate::engine::publication::PublicationDisposition::Restored =>
                     "Restored previous state",
             },
-            receipt.publication.changed_files
+            counted(
+                receipt.publication.changed_files,
+                "file change",
+                "file changes"
+            )
         ))
     })
     .await

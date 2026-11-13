@@ -1,4 +1,5 @@
 //! Human dependency changes use receipt counts, not the number of provider requests.
+use super::super::counted;
 use empack_core::removal::RemovalMode;
 
 pub(super) fn independence_unverified(dependencies: &[String], details: bool) -> String {
@@ -13,7 +14,10 @@ pub(super) fn independence_unverified(dependencies: &[String], details: bool) ->
         .collect::<Vec<_>>()
         .join(", ");
     if shown < dependencies.len() {
-        names.push_str(&format!(" and {} others", dependencies.len() - shown));
+        names.push_str(&format!(
+            " and {}",
+            counted(dependencies.len() - shown, "other", "others")
+        ));
     }
     format!(
         "Cannot apply these changes separately: dependency information is incomplete for {names}."
@@ -22,23 +26,14 @@ pub(super) fn independence_unverified(dependencies: &[String], details: bool) ->
 
 pub(super) fn update_plan(selected: usize, changed: usize) -> String {
     format!(
-        "Update plan: {selected} {}\n    Change  {changed}\n    Keep    {}",
-        if selected == 1 {
-            "dependency"
-        } else {
-            "dependencies"
-        },
+        "Update plan: {}\n    Change  {changed}\n    Keep    {}",
+        counted(selected, "dependency", "dependencies"),
         selected - changed
     )
 }
 
 pub(super) fn checked(checked: usize) -> String {
-    let noun = if checked == 1 {
-        "dependency"
-    } else {
-        "dependencies"
-    };
-    format!("Checked {checked} {noun}")
+    format!("Checked {}", counted(checked, "dependency", "dependencies"))
 }
 
 pub(super) fn update_details(checked: usize, changed: usize, pins: usize) -> String {
@@ -50,24 +45,22 @@ pub(super) fn update_details(checked: usize, changed: usize, pins: usize) -> Str
         lines.push("Author settings were kept.".into());
     } else {
         lines.push(format!(
-            "Updated {pins} {}; other author settings were kept.",
-            if pins == 1 { "pin" } else { "pins" }
+            "Updated {}; other author settings were kept.",
+            counted(pins, "pin", "pins")
         ));
     }
     lines.join("\n")
 }
 
 pub(super) fn removal(mode: RemovalMode, count: usize) -> String {
-    let noun = if count == 1 {
-        "dependency"
-    } else {
-        "dependencies"
-    };
     match mode {
-        RemovalMode::ForgetRoots => {
-            format!("Removed {count} direct {noun} from empack.yml; installed files were kept")
+        RemovalMode::ForgetRoots => format!(
+            "Removed {} from empack.yml; installed files were kept",
+            counted(count, "direct dependency", "direct dependencies")
+        ),
+        RemovalMode::RemoveContent => {
+            format!("Removed {}", counted(count, "dependency", "dependencies"))
         }
-        RemovalMode::RemoveContent => format!("Removed {count} {noun}"),
     }
 }
 

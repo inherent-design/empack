@@ -477,9 +477,9 @@ async fn finish_once(
             ));
         }
         let count = receipt.artifacts.len();
-        let mut summary = format!("Built {count} {}", if count == 1 { "distribution" } else { "distributions" });
+        let mut summary = format!("Built {}", counted(count, "distribution", "distributions"));
         if !receipt.removed_artifacts.is_empty() {
-            summary.push_str(&format!("; removed {} obsolete artifacts", receipt.removed_artifacts.len()));
+            summary.push_str(&format!("; removed {}", counted(receipt.removed_artifacts.len(), "obsolete artifact", "obsolete artifacts")));
         }
         Ok(summary)
     })
