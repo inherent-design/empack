@@ -5,7 +5,7 @@ use super::{
     native::{self, ObjectIdentity},
     publication::open_private_directory,
     resources::ResourceRequest,
-    runtime::{RetainedOutput, WorkScope},
+    runtime::{RetainedOutput, WorkProgress, WorkScope},
 };
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
@@ -192,6 +192,7 @@ pub async fn execute(
     if plan.is_empty() {
         return Ok(Vec::new());
     }
+    scope.report_progress(WorkProgress::CleaningCache);
     let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
         // Ownership stays inside the worker even if its caller stops observing the result.
         let RetainedCleanupPlan {

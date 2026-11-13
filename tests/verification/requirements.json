@@ -1799,7 +1799,8 @@
           "assertions": [
             "Item updates coalesce to the latest pending observation, a flush requires no new item and phase changes remain immediate",
             "Pausing clears the temporary region before a choice; progress can resume and final drop clears it",
-            "Plain output records each phase sparsely without per-item spam; quiet emits no provisional progress"
+            "Plain output records each phase sparsely without per-item spam; quiet emits no provisional progress",
+            "The display immediately replaces acquisition text when observing local reading, cache writes, server runtime and installer work, archive assembly/verification, instance staging, saving changes, recovery or cleanup; phase labels assert no completed count or receipt"
           ]
         },
         {

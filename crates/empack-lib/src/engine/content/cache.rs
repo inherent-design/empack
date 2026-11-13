@@ -5,7 +5,7 @@ use super::{
 };
 use crate::engine::{
     resources::ResourceRequest,
-    runtime::{RetainedOutput, WorkScope},
+    runtime::{RetainedOutput, WorkProgress, WorkScope},
 };
 use anyhow::{Result, ensure};
 use empack_core::{digest::IntegrityEvidence, model::ExpectedContent};
@@ -57,6 +57,7 @@ impl ContentCache {
         if files.is_empty() {
             return Ok(());
         }
+        scope.report_progress(WorkProgress::SavingCachedContent);
         let cache = self.clone();
         let work = scope.spawn_blocking(
             ResourceRequest {

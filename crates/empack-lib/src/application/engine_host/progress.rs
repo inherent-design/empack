@@ -45,6 +45,33 @@ impl ProgressDisplay {
             return;
         }
         let (phase, message) = match &observation {
+            WorkProgress::ReadingLocalContent => {
+                ("local-content", "Reading local content".to_owned())
+            }
+            WorkProgress::SavingCachedContent => {
+                ("save-cache", "Saving verified content in cache".to_owned())
+            }
+            WorkProgress::PreparingServerRuntime => {
+                ("server-runtime", "Preparing server runtime".to_owned())
+            }
+            WorkProgress::RunningServerInstaller => {
+                ("server-installer", "Running server installer".to_owned())
+            }
+            WorkProgress::BuildingArchives => {
+                ("archives", "Creating and verifying archives".to_owned())
+            }
+            WorkProgress::StagingInstanceFiles => {
+                ("instance-files", "Preparing instance files".to_owned())
+            }
+            WorkProgress::PublishingChanges => {
+                ("publication", "Saving verified changes".to_owned())
+            }
+            WorkProgress::RecoveringChanges => {
+                ("recovery", "Recovering interrupted changes".to_owned())
+            }
+            WorkProgress::CleaningCache => {
+                ("clean-cache", "Removing selected cached files".to_owned())
+            }
             WorkProgress::CheckingProjectFile { path, index, total } => (
                 "project-files",
                 if *total == 0 {
@@ -54,9 +81,7 @@ impl ProgressDisplay {
                 },
             ),
             WorkProgress::CheckingJava => ("java", "Checking selected Java".to_owned()),
-            WorkProgress::CheckingContentCache => {
-                ("cache", "Checking exact content cache".to_owned())
-            }
+            WorkProgress::CheckingContentCache => ("cache", "Checking cached content".to_owned()),
             WorkProgress::Downloading {
                 received_bytes,
                 total_bytes,
@@ -69,9 +94,7 @@ impl ProgressDisplay {
                     None => format!("Downloading content: {received_bytes} bytes received"),
                 },
             ),
-            WorkProgress::VerifyingContent => {
-                ("verification", "Verifying downloaded content".to_owned())
-            }
+            WorkProgress::VerifyingContent => ("verification", "Verifying content".to_owned()),
             WorkProgress::CheckingDependency {
                 key,
                 index,
@@ -274,6 +297,41 @@ mod tests {
         let (mut shared, recorded) = self::display(true, false);
         for (observation, expected) in [
             (WorkProgress::CheckingJava, "Checking selected Java"),
+            (
+                WorkProgress::CheckingContentCache,
+                "Checking cached content",
+            ),
+            (WorkProgress::ReadingLocalContent, "Reading local content"),
+            (
+                WorkProgress::SavingCachedContent,
+                "Saving verified content in cache",
+            ),
+            (
+                WorkProgress::PreparingServerRuntime,
+                "Preparing server runtime",
+            ),
+            (
+                WorkProgress::RunningServerInstaller,
+                "Running server installer",
+            ),
+            (
+                WorkProgress::BuildingArchives,
+                "Creating and verifying archives",
+            ),
+            (
+                WorkProgress::StagingInstanceFiles,
+                "Preparing instance files",
+            ),
+            (WorkProgress::PublishingChanges, "Saving verified changes"),
+            (
+                WorkProgress::RecoveringChanges,
+                "Recovering interrupted changes",
+            ),
+            (
+                WorkProgress::CleaningCache,
+                "Removing selected cached files",
+            ),
+            (WorkProgress::VerifyingContent, "Verifying content"),
             (
                 WorkProgress::CheckingDependency {
                     key: "example".into(),

@@ -251,12 +251,15 @@ async fn execute(
     }
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
+    let progress = scope.progress_reporter();
     let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
+        progress(WorkProgress::StagingInstanceFiles);
         let _reservation = reservation;
         let instance =
             prepared
                 .instance
                 .stage(&prepared.content, &BTreeMap::new(), None, &cancel)?;
+        progress(WorkProgress::PublishingChanges);
         let (publication, record) =
             instance.publish(&Publisher::open(&config.state_root)?, &cancel)?;
         Ok::<_, anyhow::Error>(InstanceReceipt {

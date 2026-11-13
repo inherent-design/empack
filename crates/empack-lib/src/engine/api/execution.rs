@@ -115,7 +115,9 @@ async fn execute(
     } else {
         config.resources.acquired
     };
+    let progress = scope.progress_reporter();
     let local = scope.spawn_blocking(additional, retained, move |cancel| {
+        progress(WorkProgress::ReadingLocalContent);
         workspace
             .root()
             .revalidate(workspace.observations(), &cancel)?;
@@ -188,6 +190,7 @@ async fn execute(
         .iter()
         .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server)
     {
+        scope.report_progress(WorkProgress::PreparingServerRuntime);
         Some(prepare_runtime(&transport, scope, view.runtime.clone(), evidence, &config).await?)
     } else {
         None
@@ -201,7 +204,9 @@ async fn execute(
                 .map_or(0, |cleanup| cleanup.removed_bytes),
         )
         .context("Build cleanup recovery storage overflow")?;
+    let progress = scope.progress_reporter();
     let work = scope.spawn_blocking(assembly, config.resources.receipt, move |cancel| {
+        progress(WorkProgress::BuildingArchives);
         // These owners remain charged through assembly and publication, even if the handle drops.
         let _owners = (prepared_permit, acquired_permit);
         let mut requests = Vec::new();
@@ -293,6 +298,7 @@ async fn execute(
             &cancel,
         )?;
         cancel.check()?;
+        progress(WorkProgress::PublishingChanges);
         // This is the first point with durable host-state and project publication authority.
         let publisher = Publisher::open(&config.state_root)?;
         let (publication, artifacts) = prepared.publish_with_evidence(&publisher, &cancel)?;

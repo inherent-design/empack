@@ -62,6 +62,15 @@ pub enum OperationOutcome<T> {
 /// Provisional work observations. They carry no locator, credential or completion proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkProgress {
+    ReadingLocalContent,
+    SavingCachedContent,
+    PreparingServerRuntime,
+    RunningServerInstaller,
+    BuildingArchives,
+    StagingInstanceFiles,
+    PublishingChanges,
+    RecoveringChanges,
+    CleaningCache,
     CheckingContentCache,
     CheckingJava,
     Downloading {

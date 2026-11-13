@@ -215,6 +215,7 @@ pub(super) async fn run(
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancellation = scope.cancellation();
     let result: Result<_> = async {
+        let progress = scope.progress_reporter();
         let work = scope.spawn_blocking(
             config.resources.assembly,
             config.resources.receipt,
@@ -225,6 +226,7 @@ pub(super) async fn run(
                     publisher.bound_root_key(&prepared.root)? == prepared.view.record.root,
                     "Subscription root association changed after preparation"
                 );
+                progress(WorkProgress::PublishingChanges);
                 let publication = publisher.publish(&prepared.root, prepared.change, &cancel)?;
                 Ok::<_, anyhow::Error>(SubscriptionReceipt {
                     plan: prepared.view.plan,

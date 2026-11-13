@@ -110,9 +110,11 @@ pub(super) async fn run(
         // Retain before-images for crash recovery. Do not claim these bytes were globally reclaimed.
         let mut resources = config.resources.assembly;
         resources.scratch_bytes = resources.scratch_bytes.max(prepared.view.removed_bytes);
+        let progress = scope.progress_reporter();
         let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
             cancel.check()?;
             let (prepared, _reservation) = prepared.into_parts();
+            progress(WorkProgress::PublishingChanges);
             let publication = Publisher::open(&config.state_root)?.publish(
                 &prepared.root,
                 prepared.verified,

@@ -20,7 +20,7 @@ use super::{
     resources::{ResourceGovernor, ResourceRequest},
     runtime::{
         OperationHandle, OperationId, OperationOutcome, OperationRuntime, RetainedOutput,
-        RuntimeError,
+        RuntimeError, WorkProgress,
     },
     server_runtime::installer::InstallerExecution,
     snapshot::{Observation, SnapshotLimits},
