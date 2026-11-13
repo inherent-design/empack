@@ -59,7 +59,7 @@ empack update sodium --release-policy stable-only
 empack update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
 empack update sodium iris --select
 empack update sodium iris --apply
-empack migrate --minecraft 1.21.2 --loader fabric --plan
+empack --dry-run migrate --minecraft 1.21.2 --loader fabric
 empack --yes migrate --minecraft 1.21.2 --loader fabric
 ```
 
@@ -75,7 +75,7 @@ Use `update KEY… --select` to choose observed versions for named provider depe
 
 Version choices follow your Minecraft, loader, pins and release preferences. They do not establish that the whole pack works together. Empack checks required dependencies and reports known mod conflicts; update preparation checks the proposed files separately. See [assessment semantics](design/assessment.md) for the scope and limits of these checks.
 
-A migration plan leaves the author files unchanged. Applying the same command without `--plan` resolves again and requires approval of the native changes. Valid locked selections stay selected. Use `--loader-version` for an exact loader and repeat `--accept-version` for explicitly accepted alternative game versions; the candidate replaces the previous alternative list. Replacing a project requires `--replace KEY=modrinth:CANONICAL_ID` or `KEY=curseforge:NUMERIC_ID` and deliberately resets that root to compatible version policy. It does not convert configurations, worlds or private files.
+A migration preview checks the candidate and native file changes while preserving the author files. Use `--dry-run --json` for a structured preview, including native blockers. Applying without `--dry-run` resolves again and requires approval of the native changes. Referenced payloads are verified when acquired; a metadata preview does not establish that those bytes are available or runnable. Valid locked selections stay selected. Use `--loader-version` for an exact loader and repeat `--accept-version` for explicitly accepted alternative game versions; the candidate replaces the previous alternative list. Replacing a project requires `--replace KEY=modrinth:CANONICAL_ID` or `KEY=curseforge:NUMERIC_ID` and deliberately resets that root to compatible version policy. It does not convert configurations, worlds or private files.
 
 Add `--materialize` to acquire referenced bytes. Missing manual content can be saved and resumed with `pending resume ID --file KEY=PATH`. A changed author workspace invalidates the saved candidate. See the [assessment contract](design/assessment.md) for ranking, evidence limits and publication rules.
 

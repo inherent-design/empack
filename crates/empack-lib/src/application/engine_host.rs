@@ -336,6 +336,16 @@ pub enum ApplicationMode {
     Preview,
     Apply,
 }
+impl ApplicationMode {
+    /// Explicit action verbs execute by default; only the shared dry-run setting previews.
+    pub(super) fn for_action(config: &AppConfig) -> Self {
+        if config.dry_run {
+            Self::Preview
+        } else {
+            Self::Apply
+        }
+    }
+}
 
 /// Callers display their exact preview before this shared approval and owned execution boundary.
 async fn apply(
@@ -590,6 +600,7 @@ pub(super) mod tests;
 
 pub(super) mod checking;
 pub(super) mod doctor;
+mod file_report;
 mod initialize;
 mod java;
 mod progress;

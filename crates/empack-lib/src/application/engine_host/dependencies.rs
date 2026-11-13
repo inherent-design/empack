@@ -1000,7 +1000,27 @@ pub(super) async fn synchronize_with_outcome(
     session: &dyn Session,
     request: SyncRequest,
 ) -> Result<bool> {
-    let operation_label = match &request {
+    let label = synchronization_label(&request);
+    synchronize_reported(session, request, false, |result| {
+        if let Ok(view) = result {
+            session
+                .display()
+                .status()
+                .info(&format!("{label}: {} dependencies", view.selected.len()));
+            if !view.references.is_empty() {
+                session.display().status().info(&format!(
+                    "File references: {} (contents are checked when acquired)",
+                    view.references.len()
+                ));
+            }
+            show_changes(session, &view.files)?;
+        }
+        Ok(())
+    })
+    .await
+}
+fn synchronization_label(request: &SyncRequest) -> &'static str {
+    match request {
         SyncRequest::Migration { .. } => "Runtime migration",
         SyncRequest::SelectionIntent { pinned: true, .. } => {
             "Pin current selections (removes per-dependency automatic preferences)"
@@ -1009,28 +1029,43 @@ pub(super) async fn synchronize_with_outcome(
             "Remove pins and retain current selections"
         }
         _ => "Synchronization",
-    };
+    }
+}
+/// Prepare once, report the real native result, then approve and execute that exact operation.
+/// A structured preview has no confirmation/footer text mixed into stdout.
+pub(super) async fn synchronize_reported(
+    session: &dyn Session,
+    request: SyncRequest,
+    json: bool,
+    present: impl FnOnce(Result<&crate::engine::api::SyncPreview, &anyhow::Error>) -> Result<()>,
+) -> Result<bool> {
+    ensure!(
+        !json || session.config().app_config().dry_run,
+        "Structured synchronization reports require --dry-run"
+    );
+    let operation_label = synchronization_label(&request);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
+        let prepared = match cancellable(session, engine.prepare(project, request))
+            .await
+            .and_then(ready)
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if let Err(report_error) = present(Err(&error)) {
+                    return Err(error.context(report_error));
+                }
+                return Err(error);
+            }
+        };
         let view = prepared
             .view()
             .sync()
             .context("Missing synchronization preview")?;
-        session.display().status().info(&format!(
-            "{operation_label}: {} dependencies",
-            view.selected.len()
-        ));
-        if !view.references.is_empty() {
-            session.display().status().info(&format!(
-                "File references: {} (contents are checked when acquired)",
-                view.references.len()
-            ));
-        }
-        show_changes(session, &view.files)?;
-        if !approve(session, operation_label)? {
+        present(Ok(view))?;
+        if json || !approve(session, operation_label)? {
             return Ok(false);
         }
         execute_approved(session, &engine, prepared, operation_label, |receipt| {

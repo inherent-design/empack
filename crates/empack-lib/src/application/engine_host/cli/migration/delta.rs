@@ -209,7 +209,7 @@ impl MigrationDelta {
             .chain(proposed.lock().dependencies.keys())
             .collect();
         Self {
-            schema: 2,
+            schema: 3,
             current_runtime: RuntimeState::from_lock(prior),
             proposed_runtime: RuntimeState::from_lock(proposed.lock()),
             dependencies: keys
@@ -253,7 +253,7 @@ impl MigrationDelta {
                     }
                 })
                 .collect(),
-            limitations: "Provider declarations are evidence, not proof of gameplay compatibility. Manual sources require author verification. Unknown dependency coverage cannot prove a retained entry is no longer required. Retained placements still ship; nothing is deleted automatically. This does not port private files, configuration or worlds, validate a full Java compatibility range, or authorize publication. Native conflicts are checked during preparation.",
+            limitations: "Provider declarations are evidence, not proof of gameplay compatibility. Manual sources require author verification. Unknown dependency coverage cannot prove a retained entry is no longer required. Retained placements still ship; nothing is deleted automatically. This does not port private files, configuration or worlds, validate a full Java compatibility range, or authorize publication. Native conflicts are checked before this report marks the project changes ready; referenced payload bytes are verified when acquired.",
         }
     }
     pub fn text_lines(&self) -> Vec<String> {

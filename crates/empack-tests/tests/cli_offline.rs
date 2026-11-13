@@ -674,7 +674,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
             "1.21.1",
             "--loader",
             "vanilla",
-            "--plan",
+            "--dry-run",
             "--json",
         ])
         .assert()
@@ -683,7 +683,10 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
+    assert_eq!(report["proposal"], "unchanged");
+    assert_eq!(report["native_publication_performed"], false);
+    assert_eq!(report["file_changes"], serde_json::json!([]));
     assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.1");
     assert_eq!(report["proposed_runtime"]["loader"], "vanilla");
     assert_eq!(report["current_runtime"], report["proposed_runtime"]);

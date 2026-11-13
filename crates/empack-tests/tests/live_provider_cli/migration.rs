@@ -125,7 +125,7 @@ pub(super) fn journey() {
         "--materialize",
     ];
     let mut plan = args.to_vec();
-    plan.extend(["--plan", "--json"]);
+    plan.extend(["--dry-run", "--json"]);
     let output = run(&project, &plan);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["schema"], 2);
@@ -274,7 +274,7 @@ pub(super) fn journey() {
     let mut replace = args.to_vec();
     replace.extend(["--replace", "history=modrinth:gvQqBUqZ"]);
     let mut preview = replace.clone();
-    preview.extend(["--plan", "--json"]);
+    preview.extend(["--dry-run", "--json"]);
     let output = run(&project, &preview);
     let replacement: Value = serde_json::from_slice(&output.stdout).unwrap();
     let changed = replacement["dependencies"]

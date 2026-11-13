@@ -5493,13 +5493,13 @@
       "id": "UX-033",
       "family": "Dependencies and resolution",
       "title": "Runtime migration with full retained inventory",
-      "public_surface": "migrate --plan/--json; application; --replace; --materialize",
+      "public_surface": "migrate [--dry-run [--json]]; application; --replace; --materialize",
       "api_ids": [
         "CAT",
         "DEP",
         "PUB"
       ],
-      "required_assertions": "Plan/application share candidate; whole active lock assessed incl no-longer-required libraries; local sources explicit; incompatible retained content requires decision.",
+      "required_assertions": "Preview/application share semantic candidate and native preparation; whole active lock checked including retained libraries; local sources explicit; incompatible retained content requires a decision. Structured preview is one schema-3 report with native readiness/blockers, file changes/attributes and deferred references; no pending/native publication in dry-run.",
       "required_work": "Client/server and populated A\u2192B runtime fixture, profile drift, changed filenames; verify published outputs and report before/after.",
       "evidence_tiers": [
         "U",
@@ -5528,7 +5528,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Captured JSON from plan, dry-run and application agrees for automatic root, exact pin, client-only mod, retained library and local source",
+            "Structured dry-run and human dry-run preserve source/state; their proposed selections agree with the actual approved application for automatic root, exact pin, client-only mod, retained library and local source",
             "Runtime and filename change preserve primary-role placement, comments, bindings and local bytes; incomplete local dependency evidence remains explicit",
             "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges"
           ]
@@ -5549,7 +5549,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Plan, dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
+            "Structured preview, human dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
           ]
         },
         {
@@ -5636,7 +5636,7 @@
           ],
           "assertions": [
             "The actual CLI refuses malformed, duplicate, missing-root, local-root and redundant canonical provider replacements before acquisition; a redundant request cannot reset an exact pin",
-            "Invalid loader arguments, JSON without plan, missing locks and stale evidence preserve every author file under plan, preview and approved invocation"
+            "Invalid loader arguments, JSON without a true dry-run mode (including an explicitly false environment flag), removed --plan, missing locks and stale evidence preserve author files under preview and approved invocation"
           ]
         },
         {
@@ -5659,6 +5659,27 @@
             "Stable placements, local configuration, profiles, comments, prior artifacts and unselected content survive; complete client/server native inventories and byte digests match the applied candidate",
             "A stale authored Prism component profile refuses delivery without changing author files or old outputs; deliberately removing it produces current components and the expected files",
             "A deliberate provider replacement resets only the selected pin, preserves all unselected records and file bytes, rebuilds the expected native outputs and converges across two syncs; no startup or gameplay claim"
+          ]
+        },
+        {
+          "id": "UX-033.native-readiness-before-reporting",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::migration_native_conflicts_are_reported_before_readiness_and_preserve_all_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A valid provider/runtime candidate with a checksum-invalid existing destination fails human preview, structured preview and approved application through the same original typed native error",
+            "Structured failure retains the current/proposed runtime, blocked result and diagnostic without inventing a file plan; all author/lock/native/prior state bytes remain unchanged",
+            "Default sync/pin/unpin preparation still uses the shared native owner; JSON previews cannot mix ordinary materialization or confirmation prose into stdout"
           ]
         }
       ],

@@ -735,7 +735,6 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             vec!["--loader-version", "0.16.14"],
             "Vanilla has no loader version",
         ),
-        (vec!["--json"], "--plan"),
     ] {
         for mode in ["--dry-run", "--yes"] {
             let before = snapshot(root).files;
@@ -749,6 +748,22 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             assert_eq!(snapshot(root).files, before, "{extra:?}/{mode}");
         }
     }
+    for extra in ["--json", "--plan"] {
+        let before = snapshot(root).files;
+        command().args(args).arg(extra).assert().code(2);
+        assert_eq!(snapshot(root).files, before);
+    }
+    let before = snapshot(root).files;
+    // An explicitly false environment setting can satisfy Clap's presence rule;
+    // validate the actual mode too, before consulting the project or providers.
+    command()
+        .env("EMPACK_DRY_RUN", "false")
+        .args(args)
+        .arg("--json")
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains("requires --dry-run"));
+    assert_eq!(snapshot(root).files, before);
     for invalid in ["missing", "stale"] {
         fixture(root);
         if invalid == "missing" {
@@ -761,7 +776,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             .unwrap();
         }
         let before = snapshot(root).files;
-        for mode in ["--plan", "--dry-run", "--yes"] {
+        for mode in ["--dry-run", "--yes"] {
             let result = command().args(args).arg(mode).output().unwrap();
             assert!(!result.status.success());
             let message = String::from_utf8_lossy(&result.stderr);

@@ -57,7 +57,7 @@ Provider game/loader declarations do not prove a mod's minimum loader requiremen
 `update` checks dependency versions, not loader upgrades. Review the official loader catalog and preview an explicit target before applying it:
 
 ```sh
-empack migrate --minecraft 1.21.1 --loader neoforge --loader-version VERSION --plan
+empack --dry-run migrate --minecraft 1.21.1 --loader neoforge --loader-version VERSION
 ```
 
 Use the project's actual game and loader, and retain any deliberate alternative-game policy. Test runtime changes in an isolated copy with a disposable world. A zero Java exit status alone is not a successful server startup; check readiness and fatal loading errors. Archive verification and startup are separate checks from gameplay.

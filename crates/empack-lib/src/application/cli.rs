@@ -43,11 +43,8 @@ pub struct MigrationArgs {
     /// Replace a provider root: KEY=modrinth:PROJECT_ID or KEY=curseforge:PROJECT_ID
     #[arg(long = "replace", value_name = "KEY=PROVIDER:ID")]
     pub replacements: Vec<String>,
-    /// Resolve and show the candidate without publishing or saving pending work
-    #[arg(long)]
-    pub plan: bool,
-    /// Print a structured candidate report (requires --plan)
-    #[arg(long, requires = "plan")]
+    /// Print a structured native preview (requires --dry-run)
+    #[arg(long, requires = "dry_run")]
     pub json: bool,
     /// Acquire referenced content; missing files can be resumed through pending
     #[arg(long)]

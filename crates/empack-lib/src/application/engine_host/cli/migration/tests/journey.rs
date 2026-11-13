@@ -297,17 +297,23 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
     assert!(!project_dir.join("pack/mods/RootMid1.jar").exists());
     let before = snapshot(&project_dir);
     let mut plans = Vec::new();
-    // Preview, dry-run and execution independently resolve the same frozen inputs.
-    for (plan, dry) in [(true, false), (false, true), (false, false)] {
+    // Structured preview, human preview and execution resolve the same frozen inputs.
+    for (structured, dry) in [(true, true), (false, true), (false, false)] {
         let (host, messages) = session(root.path(), dry).record_messages();
-        let mut options = args(plan);
-        options.json = true;
+        let mut options = args();
+        options.json = structured;
         let result = synchronization::synchronize_mode(
             &host,
             true,
             services(&server),
             RuntimeCatalog::for_loopback_tests(&server.url()),
-            Some(MigrationOptions::parse(options).unwrap()),
+            Some(
+                MigrationOptions::parse(
+                    options,
+                    ApplicationMode::for_action(host.config().app_config()),
+                )
+                .unwrap(),
+            ),
         )
         .await;
         if !retained_compatible {
@@ -327,21 +333,35 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
             .filter_map(|message| serde_json::from_str(message).ok())
             .filter(|value: &serde_json::Value| value.get("proposed_runtime").is_some())
             .collect();
-        assert_eq!(
-            reports.len(),
-            1,
-            "one displayed migration report per invocation"
-        );
-        plans.push(reports[0].clone());
-        if plan || dry {
+        assert_eq!(reports.len(), usize::from(structured), "{reports:?}");
+        if structured {
+            assert_eq!(reports[0]["proposal"], "ready");
+            assert!(!reports[0]["file_changes"].as_array().unwrap().is_empty());
+            assert_eq!(reports[0]["materialization_requested"], true);
+            assert_eq!(reports[0]["native_publication_performed"], false);
+            plans.push(reports[0].clone());
+        }
+        if dry {
             assert_eq!(snapshot(&project_dir), before);
         }
     }
     if !retained_compatible {
         return;
     }
-    assert_eq!(plans[0], plans[1]);
-    assert_eq!(plans[0], plans[2]);
+    assert_eq!(plans.len(), 1);
+    let applied = project(root.path());
+    let semantic = serde_json::to_value(delta::MigrationDelta::between(
+        old.intent(),
+        old.lock(),
+        &applied,
+    ))
+    .unwrap();
+    for (key, value) in semantic.as_object().unwrap() {
+        assert_eq!(
+            &plans[0][key], value,
+            "preview and actual applied selection disagree: {key}"
+        );
+    }
     let report = &plans[0];
     assert_eq!(report["current_runtime"]["minecraft"], "1.21.1");
     assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.2");

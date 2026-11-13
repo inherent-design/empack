@@ -70,6 +70,7 @@ async fn resume_with_services_selected(
         services,
         materialization::SyncInputs {
             migration: migrating,
+            migration_output: None,
             context,
             resumed: Some(resumed),
             files,
@@ -583,19 +584,16 @@ pub(super) async fn synchronize_mode(
     )
     .await?;
     let (resolved, acquired) = resolved;
-    if let Some(options) = &migration {
-        options.present(
-            session,
+    let mut inputs = materialization::SyncInputs::initial(context.clone());
+    inputs.migration = migrating;
+    inputs.migration_output = migration.as_ref().map(|options| {
+        options.report(
             original,
             captured.1.as_ref().expect("migration requires a lock"),
             &resolved,
-        )?;
-        if options.plan {
-            return Ok(());
-        }
-    }
-    let mut inputs = materialization::SyncInputs::initial(context.clone());
-    inputs.migration = migrating;
+            materialize,
+        )
+    });
     inputs.resolved = acquired;
     publish(
         session,

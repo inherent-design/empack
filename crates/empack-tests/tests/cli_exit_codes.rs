@@ -79,7 +79,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         &["build", "--explain", "--json"],
         &[
             "migrate",
-            "--plan",
+            "--dry-run",
             "--json",
             "--minecraft",
             "1.21.1",
