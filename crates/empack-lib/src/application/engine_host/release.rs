@@ -1,9 +1,9 @@
 //! Publisher keys are host inputs, never project data or distribution members.
 use super::*;
 use crate::{
-    application::cli::ReleaseCommand,
+    application::cli::{ReleaseChannelCommand, ReleaseCommand},
     engine::{
-        api::{OperationPreview, PublishChannelRequest, Request, StageReleaseRequest},
+        api::{CreateChannelRequest, OperationPreview, Request, StageReleaseRequest},
         release,
     },
 };
@@ -78,7 +78,9 @@ pub(in crate::application) async fn dispatch(
     let (source, keys) = match &command {
         ReleaseCommand::Init { .. } => unreachable!(),
         ReleaseCommand::Stage { source, keys } => (absolute(&invocation, source), keys.clone()),
-        ReleaseCommand::PublishChannel { keys, .. } => (root.clone(), keys.clone()),
+        ReleaseCommand::Channel {
+            command: ReleaseChannelCommand::Create { keys, .. },
+        } => (root.clone(), keys.clone()),
     };
     let files = keys
         .into_iter()
@@ -112,14 +114,11 @@ pub(in crate::application) async fn dispatch(
                 keys: (*keys).clone(),
             }
             .into(),
-            ReleaseCommand::PublishChannel {
-                release,
-                channel,
-                base_url,
-                sequence,
-                previous_keys,
-                ..
-            } => PublishChannelRequest {
+            ReleaseCommand::Channel {
+                command: ReleaseChannelCommand::Create {
+                    release, channel, base_url, sequence, previous_keys, ..
+                }
+            } => CreateChannelRequest {
                 release,
                 channel,
                 base_url,
@@ -151,7 +150,7 @@ pub(in crate::application) async fn dispatch(
             session.display().status().info(&format!(
                 "Verify the hosted release and assets before creating the new {channel} channel file"
             ));
-            "Channel publication"
+            "Channel file creation"
         } else {
             "Immutable release"
         };

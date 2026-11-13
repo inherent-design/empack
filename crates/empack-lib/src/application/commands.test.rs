@@ -680,6 +680,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
             let error = execute_command_with_session(
                 Commands::Instance {
                     command: InstanceCommand::Update {
+                        channel_file: None,
                         apply: true,
                         conflicts: Default::default(),
                         release: Some("missing-release.json".into()),
@@ -882,6 +883,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
+            channel_file: None,
             apply: true,
             conflicts: Default::default(),
             release: Some("signed-release.json".into()),

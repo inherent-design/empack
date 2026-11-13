@@ -10369,8 +10369,8 @@
     {
       "id": "UX-056",
       "family": "Publisher and trust",
-      "title": "Publish hosted channel only after verification",
-      "public_surface": "release publish-channel",
+      "title": "Create a signed channel file after hosted verification",
+      "public_surface": "release channel create",
       "api_ids": [
         "REL",
         "IO",
@@ -11646,6 +11646,26 @@
           "assertions": [
             "A saved authenticated offer requiring manual content reports missing input in preview, including --yes and --apply with dry-run, without saving history or pending work",
             "Explicit application saves the exact waiting operation; pending resume with the exact file installs that release, clears waiting work and permits a subsequent unchanged preview"
+          ]
+        },
+        {
+          "id": "UX-064.explicit-local-channel-update",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::local_channel_update_preserves_preview_and_requires_authenticated_offer"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An explicitly selected local channel offer previews without approval, durable history, release fetch or hosted-channel request, including --yes and dry-run",
+            "Wrong signatures and mixed local release/channel sources refuse without effects; explicit application saves the authenticated offer and fetches its exact remote release while preserving enrolled URL"
           ]
         }
       ],
@@ -16120,7 +16140,7 @@
           "id": "UX-087.api-examples-compile",
           "boundary": "U",
           "test_ids": [
-            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 770)",
+            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 769)",
             "doctest::crates/empack-lib/src/lib.rs - (line 18)"
           ],
           "required_platforms": [
@@ -16147,7 +16167,7 @@
           "boundary": "U",
           "test_ids": [
             "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 24)",
-            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 67)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 71)",
             "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 99)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::pairs (line 41)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::table (line 26)",
@@ -17641,7 +17661,7 @@
     "REL": {
       "owner_now": "engine::release + api::release_publication/subscription",
       "owner_09": "shared release meaning/signature verification + native signing custody and publication",
-      "route": "StageReleaseRequest / PublishChannelRequest / SubscriptionRequest; ReleaseDocument; authenticated release/channel envelopes; stored sequence floors; PublisherSetup",
+      "route": "StageReleaseRequest / CreateChannelRequest / SubscriptionRequest; ReleaseDocument; authenticated release/channel envelopes; stored sequence floors; PublisherSetup",
       "sources": [
         "S11",
         "S18",

@@ -467,8 +467,25 @@ pub enum ReleaseCommand {
         #[arg(long)]
         key_file: PathBuf,
     },
-    /// Verify hosted immutable content, then publish a signed channel pointer
-    PublishChannel {
+    /// Create signed channel files for staged releases
+    Channel {
+        #[command(subcommand)]
+        command: ReleaseChannelCommand,
+    },
+    /// Stage signed immutable release files under `dist/releases/<release-id>/`
+    Stage {
+        /// Extracted native export containing release.json and its selected assets
+        source: PathBuf,
+        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum ReleaseChannelCommand {
+    /// Verify hosted immutable content, then create a local signed channel file
+    Create {
         /// Exact release ID printed by release stage
         release: String,
         /// Channel name used by subscribers
@@ -486,14 +503,6 @@ pub enum ReleaseCommand {
         /// Previously enrolled public key, used only to authenticate the old pointer
         #[arg(long = "previous-key")]
         previous_keys: Vec<String>,
-    },
-    /// Stage signed immutable release files under `dist/releases/<release-id>/`
-    Stage {
-        /// Extracted native export containing release.json and its selected assets
-        source: PathBuf,
-        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
-        #[arg(long = "key-file", required = true)]
-        keys: Vec<PathBuf>,
     },
 }
 
@@ -529,6 +538,9 @@ pub enum InstanceCommand {
         /// Accept the verified offer and apply the prepared installation after approval
         #[arg(long)]
         apply: bool,
+        /// Read a signed channel offer from this file instead of fetching the enrolled URL
+        #[arg(long, value_name = "FILE", conflicts_with = "release")]
+        channel_file: Option<PathBuf>,
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
         /// Local signed release envelope using the saved offer; omit to check the current channel
@@ -1248,6 +1260,22 @@ mod tests {
         assert!(
             Cli::try_parse_from(["empack", "release", "init", "--key-file", "private/key"]).is_ok()
         );
+        for arguments in [
+            vec!["empack", "release", "publish-channel"],
+            vec!["empack", "release", "channel"],
+            vec!["empack", "release", "channel", "create"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+        assert!(matches!(Cli::try_parse_from([
+            "empack", "release", "channel", "create", "release-id", "--channel", "stable",
+            "--base-url", "https://packs.example.org/", "--sequence", "2", "--key-file", "private/key",
+            "--previous-key", "old-public-key",
+        ]).unwrap().command,
+            Some(Commands::Release { command: ReleaseCommand::Channel { command: ReleaseChannelCommand::Create {
+                release, channel, base_url, sequence: 2, keys, previous_keys,
+            } } }) if release == "release-id" && channel == "stable" && base_url == "https://packs.example.org/" && keys == vec![PathBuf::from("private/key")] && previous_keys == vec!["old-public-key"]
+        ));
         assert!(matches!(
             Cli::try_parse_from(["empack", "instance", "check-updates"])
                 .unwrap()
@@ -1258,6 +1286,22 @@ mod tests {
         ));
         assert!(Cli::try_parse_from(["empack", "instance", "observe-channel"]).is_err());
         assert!(Cli::try_parse_from(["empack", "instance", "update", "--check"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "update",
+                "local-release.json",
+                "--channel-file",
+                "offer.json"
+            ])
+            .is_err()
+        );
+        assert!(
+            matches!(Cli::try_parse_from(["empack", "instance", "update", "--channel-file", "offer.json"]).unwrap().command,
+            Some(Commands::Instance { command: InstanceCommand::Update { apply: false, channel_file: Some(path), .. } }) if path.as_path() == std::path::Path::new("offer.json"))
+        );
+
         for (flags, expected) in [
             (vec![], false),
             (vec!["--yes"], false),
@@ -1282,7 +1326,7 @@ mod tests {
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
-            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release channel create RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
         ] {
             Cli::try_parse_from(command.split_whitespace())
                 .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));

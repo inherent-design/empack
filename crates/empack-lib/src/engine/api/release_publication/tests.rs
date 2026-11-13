@@ -331,7 +331,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
             .join(format!("dist/releases/{}/release.json", release.id())),
     )
     .unwrap();
-    let channel = |sequence| PublishChannelRequest {
+    let channel = |sequence| CreateChannelRequest {
         release: release.id().into(),
         channel: "stable".into(),
         base_url: "https://publisher.test/".into(),

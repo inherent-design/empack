@@ -116,6 +116,7 @@ fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> 
 
 fn update_request(apply: bool) -> InstanceCommand {
     InstanceCommand::Update {
+        channel_file: None,
         apply,
         conflicts: Default::default(),
         release: None,
@@ -781,6 +782,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         .create_async()
         .await;
     let update = || InstanceCommand::Update {
+        channel_file: None,
         apply: true,
         conflicts: Default::default(),
         release: None,
@@ -1052,4 +1054,124 @@ async fn update_preview_requires_manual_inputs_without_saving() {
         .operations
         .is_empty()
     );
+}
+
+#[tokio::test]
+async fn local_channel_update_preserves_preview_and_requires_authenticated_offer() {
+    let root = tempfile::tempdir().unwrap();
+    let key = fixture(root.path()).await;
+    let offered = release("local offer B");
+    let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+    fs::write(
+        root.path().join("local-channel.json"),
+        channel(&offered, &key, envelope.len() as u64),
+    )
+    .unwrap();
+    let wrong = SigningKey::from_bytes(&[44; 32]);
+    fs::write(
+        root.path().join("wrong-channel.json"),
+        channel(&offered, &wrong, envelope.len() as u64),
+    )
+    .unwrap();
+    let local_update = |apply, path: &str| InstanceCommand::Update {
+        apply,
+        channel_file: Some(path.into()),
+        release: None,
+        conflicts: Default::default(),
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    };
+    let mut server = mockito::Server::new_async().await;
+    let pointer = server
+        .mock("GET", "/channel.json")
+        .expect(0)
+        .create_async()
+        .await;
+    let no_release = server
+        .mock("GET", "/release.json")
+        .expect(0)
+        .create_async()
+        .await;
+    let before = crate::test_support::file_bytes(root.path());
+    for (apply, yes, dry) in [
+        (false, false, false),
+        (false, true, false),
+        (true, true, true),
+    ] {
+        let interactive = MockInteractiveProvider::new().with_confirm(true);
+        let prompts = interactive.confirm_calls.clone();
+        let host = session(root.path(), yes, dry).with_interactive(interactive);
+        super::super::install_with_transport(
+            &host,
+            local_update(apply, "local-channel.json"),
+            transport(&server.url()),
+        )
+        .await
+        .unwrap();
+        assert!(prompts.lock().unwrap().is_empty());
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    }
+    let error = super::super::install_with_transport(
+        &session(root.path(), true, false),
+        local_update(true, "wrong-channel.json"),
+        transport(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("No enrolled publisher signed"),
+        "{error:#}"
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    let mut mixed = local_update(true, "local-channel.json");
+    if let InstanceCommand::Update { release, .. } = &mut mixed {
+        *release = Some("unused-release.json".into());
+    }
+    let error = super::super::install_with_transport(
+        &session(root.path(), true, false),
+        mixed,
+        transport(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Usage
+    );
+    assert!(format!("{error:#}").contains("not both"));
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    no_release.assert_async().await;
+    no_release.remove_async().await;
+    let release_route = server
+        .mock("GET", "/release.json")
+        .with_body(envelope)
+        .expect(1)
+        .create_async()
+        .await;
+    super::super::install_with_transport(
+        &session(root.path(), true, false),
+        local_update(true, "local-channel.json"),
+        transport(&server.url()),
+    )
+    .await
+    .unwrap();
+    release_route.assert_async().await;
+    pointer.assert_async().await;
+    let installed = inspect(
+        &session(root.path(), true, false),
+        root.path().join("project"),
+        None,
+        root.path().join("state"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed.0.release, offered.id());
+    let saved = crate::engine::api::SubscriptionRecord::decode(
+        &fs::read(root.path().join("project/.empack/subscription.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved.url, "https://publisher.test/channel.json");
+    assert_eq!(saved.floor.unwrap().sequence, 1);
 }

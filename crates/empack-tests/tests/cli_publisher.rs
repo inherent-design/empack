@@ -195,7 +195,8 @@ impl Publisher {
             .timeout(Duration::from_secs(90))
             .args([
                 "release",
-                "publish-channel",
+                "channel",
+                "create",
                 self.release(label)["id"].as_str().unwrap(),
                 "--channel",
                 "stable",
@@ -426,10 +427,20 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .assert()
         .success();
     assert!(!game.exists(), "enrollment and observation cannot install");
+    // No channel is hosted at this immutable fixture URL. The default fresh
+    // check must fail, rather than silently using the locally recorded offer.
+    let before_missing_channel = snapshot(player.dir());
+    command()
+        .args(["--yes", "instance", "update", "--apply"])
+        .assert()
+        .code(4)
+        .stderr(contains("Download was not found"));
+    assert_eq!(snapshot(player.dir()), before_missing_channel);
     // Only the signed channel is supplied locally. No local release or assets
     // argument may substitute for fetching the immutable HTTPS fixture.
     command()
-        .args(["--yes", "instance", "update", "--apply"])
+        .args(["--yes", "instance", "update", "--apply", "--channel-file"])
+        .arg(&channel)
         .assert()
         .success();
     let assert_installed = |label: &str| {
@@ -524,7 +535,8 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .success();
     for _ in 0..2 {
         command()
-            .args(["--yes", "instance", "update", "--apply"])
+            .args(["--yes", "instance", "update", "--apply", "--channel-file"])
+            .arg(&channel)
             .assert()
             .success();
         assert_installed("b");

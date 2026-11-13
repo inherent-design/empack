@@ -1,4 +1,4 @@
-//! A channel pointer becomes visible only after exact immutable hosted inputs verify.
+//! A local channel file is published only after exact immutable hosted inputs verify.
 use super::*;
 use crate::engine::{
     acquisition::DownloadRequest,
@@ -8,7 +8,8 @@ use ed25519_dalek::VerifyingKey;
 use empack_core::model::{ExpectedContent, NonEmpty};
 use std::time::Duration;
 
-pub struct PublishChannelRequest {
+/// Verify hosted immutable inputs and prepare a signed local channel file; no upload.
+pub struct CreateChannelRequest {
     pub release: String,
     pub channel: String,
     /// HTTPS directory serving this output root's dist/ directory.
@@ -43,12 +44,12 @@ fn url(base: &reqwest::Url, relative: &str) -> Result<String> {
 }
 pub(in crate::engine::api) async fn prepare(
     target: ProjectTarget,
-    request: PublishChannelRequest,
+    request: CreateChannelRequest,
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedReleasePublication>> {
     let ProjectTarget::Existing(target) = target else {
-        anyhow::bail!("Channel publication requires an existing output root")
+        anyhow::bail!("Channel file creation requires an existing publisher directory")
     };
     ensure!(target.is_absolute(), "Publisher root must be absolute");
     let limits = config.snapshot;
@@ -62,7 +63,7 @@ pub(in crate::engine::api) async fn prepare(
 }
 fn prepare_local(
     target: PathBuf,
-    request: PublishChannelRequest,
+    request: CreateChannelRequest,
     state: PathBuf,
     limits: crate::engine::snapshot::SnapshotLimits,
     cancel: &crate::application::process_runtime::Cancellation,
@@ -86,7 +87,7 @@ fn prepare_local(
         2 * release::MAX_RELEASE_BYTES as u64 + 16384,
         cancel,
     )?
-    .context("Stage the immutable release before publishing a channel")?;
+    .context("Stage the immutable release before creating a channel file")?;
     // Discover pack identity only after an enrolled local key authenticates the envelope.
     // The staged manifest accompanies an explicit local release selection; obtain the pack
     // from a verified signature through the publisher inspection helper.

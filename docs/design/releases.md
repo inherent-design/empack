@@ -82,6 +82,8 @@ The native archive contains `release.json` and its bundled immutable assets. The
 
 With `instance update --apply`, the host explains and approves observation before executing its normal recoverable publication. It then fetches and prepares the exact selected release and separately approves its content application. A declined observation stops before release acquisition; a declined or failed content application retains the saved observation. A global dry run prevents both effects. Existing validated records supply side and layout; explicit conflicts fail before acquisition. First installation displays its client/game default unless overridden.
 
+`instance update --channel-file FILE` reads an explicit local signed channel offer through the same bounded reader and native observation preparation used by `check-updates`. It retains current enrollment, signature and sequence checks and the same preview/application effects. The selected offer still supplies the exact remote release URL and asset locations. It cannot be combined with a local release envelope. An unavailable hosted channel never silently selects this mode or falls back to the recorded offer.
+
 `instance update [ENVELOPE]` is an explicit local release source against the retained authenticated offer, without a fresh channel request. It previews by default and requires `--apply` to install. Selection verifies the envelope signature, payload identity, size, pack and minimum engine version. Remote acquisition checks the selected durable floor before and after fetching the release. The selected proof binds the native instance root and exact subscription bytes; it cannot survive key rotation or a newer channel observation. Preparation captures that subscription as part of the publication read set. A valid signature from another trust context cannot bypass enrolled keys. Explicit snapshots remain separately selected by their expected payload digest.
 
 Remote metadata requests use no provider credentials, cookies or automatic response decompression. Every redirect remains within the initial HTTPS origin; response status, declared size, running bytes and total elapsed time are checked. Received metadata retains its resource reservation through signature verification. Fetching a release uses the already published channel observation and its exact envelope size bound. It cannot advance a sequence floor or select a newer release by itself.
@@ -96,17 +98,17 @@ Immutable remote asset paths resolve against the authenticated release envelope'
 
 Approved staging publishes `dist/releases/<release-id>/release.json` as the signed envelope, with its selected assets at their declared relative paths. Repeating the same publication is harmless. Existing immutable files must match exactly; changing signatures requires a newly identified release rather than overwriting an envelope already served to clients. Input changes after preparation invalidate the operation. Unknown neighboring files are not acquired or deleted.
 
-Staging does not change a channel. The hosting layer serves `dist/` over HTTPS; channel publication verifies the hosted release before exposing a new pointer.
+Staging does not change a channel. The hosting layer serves `dist/` over HTTPS; channel creation verifies the hosted release before writing a signed local pointer.
 
-## Channel publication
+## Channel file creation
 
-`release publish-channel RELEASE_ID --channel NAME --base-url HTTPS_DIRECTORY` selects an already staged signed release. The caller supplies `--sequence` and one or more external `--key-file` inputs. The base URL serves the publisher's `dist/` directory and has no query or credentials.
+`release channel create RELEASE_ID --channel NAME --base-url HTTPS_DIRECTORY` selects an already staged signed release. The caller supplies `--sequence` and one or more external `--key-file` inputs. The base URL serves the publisher's `dist/` directory and has no query or credentials.
 
 Preparation authenticates the staged envelope, checks local immutable assets and captures the existing channel pointer. A previous pointer must authenticate under the supplied signing keys or explicit `--previous-key` public keys. Its sequence remains authoritative until superseded; calendar age does not invalidate the offer. A new pointer advances the sequence. Repeating identical channel metadata at its existing sequence is allowed; changing metadata at that sequence is rejected.
 
 After network approval, execution fetches the exact signed envelope and every unique bundled asset from their HTTPS locations. Shared assets combine their source assertions for one transfer. Missing, altered or unverifiable hosted bytes prevent publication. The complete local read set is checked again before recoverable publication of `dist/channels/<name>.json`.
 
-For deployment by file transfer, upload immutable release files first, run channel publication against the live HTTPS directory, then upload the resulting channel file last. The command prepares local hosting output; it does not upload files or manage a hosting account. A verification failure leaves the old pointer in place.
+For deployment by file transfer, upload immutable release files first, run channel creation against the live HTTPS directory, then upload the resulting channel file last. The command prepares local hosting output; it does not upload files or manage a hosting account. A verification failure leaves the old pointer in place.
 
 ## Server entry points
 

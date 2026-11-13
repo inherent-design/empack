@@ -23,7 +23,7 @@
       "mode": "run"
     },
     {
-      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 67)",
+      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 71)",
       "ignored": false,
       "boundary": "U",
       "requirements": [
@@ -63,7 +63,7 @@
       "mode": "run"
     },
     {
-      "id": "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 770)",
+      "id": "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 769)",
       "ignored": false,
       "boundary": "U",
       "requirements": [

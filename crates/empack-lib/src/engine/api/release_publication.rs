@@ -22,7 +22,7 @@ use empack_core::{
 };
 use std::collections::BTreeSet;
 mod channel;
-pub use channel::PublishChannelRequest;
+pub use channel::CreateChannelRequest;
 pub(super) use channel::prepare as prepare_channel;
 
 /// Selected local export and independently supplied keys. Keys never enter the receipt or archive.

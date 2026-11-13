@@ -48,7 +48,7 @@ Only assets selected by the release descriptor are staged; adjacent source files
 After the immutable release is available through HTTPS, prepare its channel pointer:
 
 ```sh
-empack --workdir ./publisher --yes release publish-channel RELEASE_ID \
+empack --workdir ./publisher --yes release channel create RELEASE_ID \
   --channel stable --base-url https://packs.example.org/ \
   --sequence 1 \
   --key-file ~/.config/empack-publisher/publisher.key
@@ -58,6 +58,6 @@ This verifies the hosted envelope and assets before writing `publisher/dist/chan
 
 Subscribers enroll the hosted `channels/stable.json` URL, then run `instance update` to check the latest offer without applying it. Use `instance update --apply` to save the verified offer and install its release through separate approvals. Existing instances infer their validated side and layout; explicit conflicts fail before release acquisition. First installations default to client/game and display that selection; choose `--side server` for a new server. See [usage](usage.md#native-release-example) for installation and enrollment commands and [release contracts](design/releases.md) for channel identity, key rotation and replay protection.
 
-A preview saves neither the offer nor game content. A new offer remains an offer-only preview until accepted; an already saved offer permits a full installation preview. `--yes` accepts prompts only when application was explicitly requested. Saving the offer retains its anti-replay floor even if subsequent installation fails or is declined. `instance check-updates` performs only that explicit save; a local signed release passed to `instance update` uses the already saved offer without a channel request. Channel transport failure is an error, never a claim of being up to date.
+A preview saves neither the offer nor game content. A new offer remains an offer-only preview until accepted; an already saved offer permits a full installation preview. `--yes` accepts prompts only when application was explicitly requested. Saving the offer retains its anti-replay floor even if subsequent installation fails or is declined. For a channel file supplied separately from its hosted release, `instance update --channel-file FILE --apply` verifies and saves that explicit offer before fetching the exact remote release and assets. It does not replace the enrolled URL. `instance check-updates` performs only the explicit observation save; a local signed release passed to `instance update` uses the already saved offer without a channel request. Channel transport failure is an error, never a claim of being up to date.
 
 Channels have no calendar expiry. An unchanged offer remains usable without renewing metadata or publishing blank updates. Advance the sequence only when changing the offer; republishing the exact same signed pointer is harmless. To offer an older release deliberately, publish a higher sequence selecting it.

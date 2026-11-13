@@ -43,6 +43,10 @@ async fn install_with_transport(
         ApplicationMode::Apply
     };
     let subscribed = matches!(command, InstanceCommand::Update { .. });
+    let channel_file = match &command {
+        InstanceCommand::Update { channel_file, .. } => channel_file.clone(),
+        _ => None,
+    };
     let (release, sha256, side, layout, choices, files, conflicts) = match command {
         InstanceCommand::Install {
             conflicts,
@@ -73,6 +77,7 @@ async fn install_with_transport(
         ),
         InstanceCommand::Update {
             apply: _,
+            channel_file: _,
             conflicts,
             release,
             side,
@@ -111,6 +116,12 @@ async fn install_with_transport(
         session.display().status().info(&text::first(side, layout));
     }
     let selected = release.map(|path| absolute(&invocation, &path));
+    ensure!(
+        selected.is_none() || channel_file.is_none(),
+        crate::application::cli::CommandInputRequired(
+            "Select a local release or --channel-file, not both"
+        )
+    );
     let assets = selected
         .as_ref()
         .and_then(|path| path.parent())
@@ -143,8 +154,15 @@ async fn install_with_transport(
         .collect::<Result<Vec<_>>>()?;
     let conflicts = conflict_resolutions(conflicts, &invocation)?;
     let selected_offer = if subscribed && selected.is_none() {
-        let Some(floor) =
-            select_update_offer(session, &invocation, &root, transport.clone(), mode).await?
+        let Some(floor) = select_update_offer(
+            session,
+            &invocation,
+            &root,
+            channel_file,
+            transport.clone(),
+            mode,
+        )
+        .await?
         else {
             return Ok(());
         };
@@ -616,10 +634,11 @@ async fn select_update_offer(
     session: &dyn Session,
     invocation: &Path,
     root: &Path,
+    channel_file: Option<PathBuf>,
     transport: crate::engine::acquisition::HttpAcquisition,
     mode: ApplicationMode,
 ) -> Result<Option<crate::engine::release::trust::SequenceFloor>> {
-    let request = observation_request(session, invocation, root, None, transport).await?;
+    let request = observation_request(session, invocation, root, channel_file, transport).await?;
     let engine = engine(session.config().app_config(), invocation)?;
     let result = async {
         let Preparation::Ready(prepared) =
