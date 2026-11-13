@@ -213,16 +213,8 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Build(args) => Box::pin(engine_host::cli::build(session, &args)).await,
         Commands::Clean { targets } => Box::pin(engine_host::clean(session, &targets)).await,
-        Commands::Sync {
-            materialize,
-            continue_sync,
-            files,
-        } => {
-            if continue_sync {
-                Box::pin(engine_host::cli::resume_synchronization(session, files)).await
-            } else {
-                Box::pin(engine_host::cli::synchronize(session, materialize)).await
-            }
+        Commands::Sync { materialize } => {
+            Box::pin(engine_host::cli::synchronize(session, materialize)).await
         }
     }
 }

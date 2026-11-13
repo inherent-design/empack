@@ -258,7 +258,7 @@ pub(super) async fn publish(
                 )
                 .await?;
                 anyhow::bail!(
-                    "Synchronization was not published: {count} references require supplied content; continuation was saved; use sync --continue --file DEPENDENCY/SLOT=PATH"
+                    "Synchronization was not published: {count} references require supplied content; continuation was saved; use pending list, then pending show ID and pending resume ID --file DEPENDENCY/SLOT=PATH"
                 );
             }
             SyncRequest::AcquiredReferences {

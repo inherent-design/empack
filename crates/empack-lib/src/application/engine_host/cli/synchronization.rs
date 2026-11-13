@@ -29,34 +29,24 @@ pub async fn synchronize(session: &dyn Session, materialize: bool) -> Result<()>
     .await
 }
 
-pub async fn resume(session: &dyn Session, files: Vec<String>) -> Result<()> {
-    resume_with_services(session, files, dependencies::configured_services(session)?).await
-}
-pub(super) async fn resume_with_services(
-    session: &dyn Session,
-    files: Vec<String>,
-    services: dependencies::AdditionServices,
-) -> Result<()> {
-    resume_with_services_selected(session, files, services, None).await
-}
 pub(in crate::application::engine_host) async fn resume_selected(
     session: &dyn Session,
     files: Vec<String>,
     expected: String,
 ) -> Result<()> {
-    resume_with_services_selected(
+    resume_with_services(
         session,
         files,
         dependencies::configured_services(session)?,
-        Some(expected),
+        &expected,
     )
     .await
 }
-async fn resume_with_services_selected(
+async fn resume_with_services(
     session: &dyn Session,
     files: Vec<String>,
     services: dependencies::AdditionServices,
-    expected: Option<String>,
+    expected: &str,
 ) -> Result<()> {
     let resumed = load_selected(session, expected, services.files.transfer).await?;
     let context = resumed.context.clone();
@@ -87,7 +77,7 @@ pub(in crate::application::engine_host) async fn retained_input_keys(
 ) -> Result<BTreeSet<String>> {
     let resumed = load_selected(
         session,
-        Some(expected.to_owned()),
+        expected,
         dependencies::configured_services(session)?.files.transfer,
     )
     .await?;
@@ -99,7 +89,7 @@ pub(in crate::application::engine_host) async fn retained_input_keys(
 }
 async fn load_selected(
     session: &dyn Session,
-    expected: Option<String>,
+    expected: &str,
     transfer: crate::engine::acquisition::TransferLimits,
 ) -> Result<crate::engine::synchronization::suspension::ResumedSync> {
     let (invocation, project) = project_path(session)?;
@@ -133,9 +123,7 @@ async fn load_selected(
     })
     .await?;
     ensure!(
-        expected
-            .as_ref()
-            .is_none_or(|id| id == &resumed.saved.identity()),
+        expected == resumed.saved.identity(),
         "Selected pending synchronization changed; inspect its new identity"
     );
     Ok(resumed)

@@ -6467,7 +6467,7 @@
           "test_ids": [
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
             "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state",
-            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup"
+            "empack-tests::journey_pending::journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup"
           ],
           "required_platforms": [
             "linux",
@@ -6482,7 +6482,7 @@
             "A separate executable retains the first verified input while the second is missing without publishing a partial project",
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
             "Repeated synchronization converges; changed author bytes prevent stale resume",
-            "Both public pending resume and sync --continue complete from retained verified input after executable restart and cache cleanup"
+            "Full and unique-prefix pending IDs complete from retained verified input after executable restart and cache cleanup"
           ]
         },
         {
@@ -14671,7 +14671,7 @@
           "boundary": "X",
           "test_ids": [
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
-            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending::journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup",
             "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
           ],
           "required_platforms": [

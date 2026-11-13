@@ -160,13 +160,7 @@ async fn direct_content_matrix_preserves_selected_kind_destination_and_sync() ->
         );
         let before = project.snapshot();
         for _ in 0..2 {
-            project
-                .run(Commands::Sync {
-                    materialize: false,
-                    continue_sync: false,
-                    files: vec![],
-                })
-                .await?;
+            project.run(Commands::Sync { materialize: false }).await?;
         }
         assert_eq!(project.snapshot(), before);
     }
@@ -184,11 +178,7 @@ async fn preview_matrix_never_mutates_project_or_runs_backend() -> Result<()> {
     let commands = [
         add(&["fixture.jar"], None),
         remove(&["fixture"], false, false),
-        Commands::Sync {
-            materialize: false,
-            continue_sync: false,
-            files: vec![],
-        },
+        Commands::Sync { materialize: false },
         build("modrinth"),
         Commands::Clean {
             targets: vec!["builds".into()],
@@ -230,13 +220,7 @@ async fn removal_batches_demote_without_erasing_and_require_unknown_acknowledgme
     project.run(remove(&["first"], true, false)).await?;
     assert_eq!(project.roots(), 1);
     assert!(project.path().join("pack/mods/first.jar").exists());
-    project
-        .run(Commands::Sync {
-            materialize: false,
-            continue_sync: false,
-            files: vec![],
-        })
-        .await?;
+    project.run(Commands::Sync { materialize: false }).await?;
     assert!(project.path().join("pack/mods/first.jar").exists());
     let before = project.snapshot();
     assert!(project.run(remove(&["first"], false, false)).await.is_err());
@@ -386,13 +370,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert_ne!(fs::read(project.path().join("empack.lock"))?, old_lock);
     let updated = project.snapshot();
     for _ in 0..2 {
-        project
-            .run(Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![],
-            })
-            .await?;
+        project.run(Commands::Sync { materialize: false }).await?;
     }
     assert_eq!(project.snapshot(), updated);
     project.run(remove(&["fixture"], true, false)).await?;

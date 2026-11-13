@@ -1259,10 +1259,38 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             .collect::<Vec<_>>()
     };
     assert_eq!(records().len(), 1);
+    let saved_id = || {
+        crate::engine::pending::inspect(
+            &root.path().join("state"),
+            &root.path().join("project"),
+            &Default::default(),
+        )
+        .unwrap()
+        .operations
+        .into_iter()
+        .find(|operation| operation.kind == crate::engine::pending::PendingKind::Sync)
+        .unwrap()
+        .id
+    };
     let before = snapshot(root.path());
-    resume_with_services(&session(root.path(), true), vec![], services(&server.url()))
-        .await
-        .unwrap();
+    let error = resume_with_services(
+        &session(root.path(), false),
+        vec![],
+        services(&server.url()),
+        &"0".repeat(64),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("Selected pending synchronization changed"));
+    assert_eq!(snapshot(root.path()), before);
+    resume_with_services(
+        &session(root.path(), true),
+        vec![],
+        services(&server.url()),
+        &saved_id(),
+    )
+    .await
+    .unwrap();
     assert_eq!(snapshot(root.path()), before);
     for selected in ["unknown/primary=one.jar", "one/primary=one.jar"] {
         let before = snapshot(root.path());
@@ -1272,9 +1300,14 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             vec![selected.into(), selected.into()]
         };
         assert!(
-            resume_with_services(&session(root.path(), false), files, services(&server.url()))
-                .await
-                .is_err()
+            resume_with_services(
+                &session(root.path(), false),
+                files,
+                services(&server.url()),
+                &saved_id()
+            )
+            .await
+            .is_err()
         );
         assert_eq!(snapshot(root.path()), before);
     }
@@ -1288,7 +1321,8 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             resume_with_services(
                 &session(root.path(), false),
                 vec!["one/primary=linked.jar".into()],
-                services(&server.url())
+                services(&server.url()),
+                &saved_id(),
             )
             .await
             .is_err()
@@ -1302,6 +1336,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         &session(root.path(), false),
         vec!["one/primary=one.jar".into()],
         services(&server.url()),
+        &saved_id(),
     )
     .await;
     assert!(format!("{:#}", partial.unwrap_err()).contains("continuation was saved"));
@@ -1316,7 +1351,8 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         resume_with_services(
             &session(root.path(), false),
             vec!["two/primary=two.jar".into()],
-            services(&server.url())
+            services(&server.url()),
+            &saved_id(),
         )
         .await
         .is_err()

@@ -348,15 +348,15 @@ fn journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup() {
 }
 
 #[test]
-fn journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup() {
+fn journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup() {
     sync_restart_and_cleanup(true);
 }
 
-fn sync_restart_and_cleanup(legacy: bool) {
+fn sync_restart_and_cleanup(prefix: bool) {
     sync_roundtrip(
         empack_tests::fixtures::restricted::pair("pending-sync"),
         tempfile::tempdir().unwrap(),
-        legacy,
+        prefix,
         |_, _, _| {},
     );
 }
@@ -364,7 +364,7 @@ fn sync_restart_and_cleanup(legacy: bool) {
 fn sync_roundtrip(
     project: TestProject,
     host: tempfile::TempDir,
-    legacy: bool,
+    prefix: bool,
     after_partial: impl FnOnce(&TestProject, &Path, &Value),
 ) {
     let state = host.path().join("state");
@@ -483,18 +483,17 @@ fn sync_roundtrip(
         second["key"].as_str().unwrap(),
         second_path.display()
     );
-    let next: Vec<_> = partial["next"]
+    let mut next: Vec<_> = partial["next"]
         .as_array()
         .unwrap()
         .iter()
         .map(|part| part.as_str().unwrap())
         .collect();
-    let mut resume = command(&project, &state);
-    if legacy {
-        resume.args(["sync", "--continue"]);
-    } else {
-        resume.args(next);
+    if prefix {
+        next[2] = &next[2][..12];
     }
+    let mut resume = command(&project, &state);
+    resume.args(next);
     resume.args(["--file", &association]).assert().success();
     assert_eq!(
         report(&project, &state, &["pending", "list", "--json"])["operations"],
@@ -576,11 +575,12 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             .assert()
             .failure()
             .stderr(predicates::str::contains("stale"));
-        // The existing sync continuation command remains supported; no private record is injected.
+        // Preview also rejects stale captured work without rewriting the record.
         command(&project, &state)
-            .args(["sync", "--continue", "--dry-run"])
+            .args(["--dry-run", "pending", "resume", id])
             .assert()
-            .failure();
+            .failure()
+            .stderr(predicates::str::contains("stale"));
         approval::preserve_without_approval(
             project.dir(),
             project.dir(),
@@ -968,13 +968,13 @@ fn journey_pending_build_survives_native_remount_with_public_keys() {
 #[ignore = "opt-in native APFS images; no GUI, Java or normal projects"]
 fn journey_pending_sync_survives_native_remount_with_retained_inputs() {
     let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         let project = empack_tests::fixtures::restricted::pair_on(
             TestProject::new_in(volume.root()),
             "pending-sync",
         );
         let host = tempfile::tempdir_in(volume.root()).unwrap();
-        sync_roundtrip(project, host, legacy, |project, state, operation| {
+        sync_roundtrip(project, host, prefix, |project, state, operation| {
             remount_pending(&volume, project, state, "sync", operation);
         });
     }

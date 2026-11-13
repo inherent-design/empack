@@ -374,7 +374,7 @@ pub fn inspect_workspace(
         (
             super::continuation_store::Kind::Synchronization,
             "sync",
-            &["sync", "--continue"][..],
+            &["pending", "list"][..],
         ),
         (
             super::continuation_store::Kind::Instance,
