@@ -815,6 +815,25 @@
             "Immutable release staging uses the shared refusal/interruption matrix while preserving signing inputs, publisher work, prior releases and selected host state",
             "An explicitly approved identical selection produces the verified descriptor/signature/assets without creating a channel"
           ]
+        },
+        {
+          "id": "UX-003.prompt-stream-eligibility",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::streams::cli_prompt_uses_input_and_stderr_instead_of_result_stdout"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Terminal stdin and stderr permit a deliberate approval choice while result stdout is redirected; declining preserves the whole workspace and reports no application",
+            "Redirected prompt stderr refuses noninteractive execution before publication even with terminal stdin/stdout; the diagnostic directs the user to explicit approval or preview"
+          ]
         }
       ],
       "owner_now": [
@@ -1736,6 +1755,48 @@
             "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
             "Changed runtime ownership evidence survives confirmed cancellation and is reported; refused launch or unacknowledged recovery preserves the instance, and explicit acknowledgement permits a later launch",
             "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
+          ]
+        },
+        {
+          "id": "UX-008.mixed-stream-display",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::streams::cli_output_capabilities_follow_each_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual executable independently styles terminal stdout/stderr and leaves each redirected destination unstyled under automatic color",
+            "Explicit always/never color policy works for both stream arrangements; multilingual result values and the warning remain present and the requested project is published"
+          ],
+          "remaining_group_evidence": "Real Unix PTYs and output redirection; this does not establish ConPTY split handles, Java or graphical consumer behavior."
+        },
+        {
+          "id": "UX-008.shared-progress-observations",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::engine_host::progress::tests::progress_preserves_latest_update_and_immediate_phase_changes",
+            "empack-lib::application::engine_host::progress::tests::progress_plain_output_is_phase_only_and_quiet_has_no_progress"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Item updates coalesce to the latest pending observation, a flush requires no new item and phase changes remain immediate",
+            "Pausing clears the temporary region before a choice; progress can resume and final drop clears it",
+            "Plain output records each phase sparsely without per-item spam; quiet emits no provisional progress"
           ]
         }
       ],

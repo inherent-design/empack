@@ -424,10 +424,10 @@ impl LiveInteractiveProvider {
         }
     }
 
-    /// Check if we're in a TTY environment suitable for interactive prompts
+    /// Prompts read stdin and render on stderr; result stdout can be redirected.
     fn is_tty() -> bool {
         use std::io::IsTerminal;
-        std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+        std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
     }
 
     #[cfg(any(not(unix), test))]
@@ -562,9 +562,11 @@ impl CommandSession {
     pub fn new(app_config: AppConfig) -> Self {
         let terminal_capabilities = TerminalCapabilities::detect_from_config(app_config.color)
             .unwrap_or_else(|_| TerminalCapabilities::minimal());
+        let stdout_capabilities = TerminalCapabilities::detect_stdout_from_config(app_config.color)
+            .unwrap_or_else(|_| TerminalCapabilities::minimal());
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone())
-            .with_capabilities(terminal_capabilities.clone());
+            .with_stream_capabilities(stdout_capabilities, terminal_capabilities.clone());
         let cancellation = super::process_runtime::Cancellation::default();
         Self {
             multi_progress,

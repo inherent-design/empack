@@ -222,7 +222,7 @@ fn test_live_display_provider_delegation() {
     let caps = create_test_capabilities();
     let display = Display::new(caps);
 
-    let provider = LiveDisplayProvider::new().with_capabilities(display.capabilities().clone());
+    let provider = LiveDisplayProvider::new().with_stream_capabilities(display.capabilities().clone(), display.capabilities().clone());
     let default_provider = LiveDisplayProvider::default();
     let shared = Arc::new(MultiProgress::new());
     let arc_provider = LiveDisplayProvider::new_with_arc(shared);

@@ -25,38 +25,55 @@ impl TerminalCapabilities {
         }
     }
 
-    /// Detect terminal capabilities from environment, respecting the color intent.
+    /// Detect stderr capabilities from environment, respecting the color intent.
     ///
     /// Delegates to the `console` crate for color and dimension detection.
     /// Unicode support is inferred from locale environment variables.
     pub fn detect_from_config(
         color_intent: TerminalCapsDetectIntent,
     ) -> Result<Self, TerminalError> {
-        let is_tty = std::io::stderr().is_terminal();
+        Self::detect(
+            color_intent,
+            std::io::stderr().is_terminal(),
+            console::colors_enabled_stderr(),
+            console::Term::stderr(),
+        )
+    }
 
-        let color = detect_color(color_intent, is_tty);
-        let unicode = detect_unicode(is_tty)?;
-        let (_, cols) = console::Term::stderr().size();
+    /// Detect result-output capabilities independently of stderr and prompt input.
+    pub fn detect_stdout_from_config(
+        color_intent: TerminalCapsDetectIntent,
+    ) -> Result<Self, TerminalError> {
+        Self::detect(
+            color_intent,
+            std::io::stdout().is_terminal(),
+            console::colors_enabled(),
+            console::Term::stdout(),
+        )
+    }
 
+    fn detect(
+        color_intent: TerminalCapsDetectIntent,
+        is_tty: bool,
+        colors_enabled: bool,
+        terminal: console::Term,
+    ) -> Result<Self, TerminalError> {
         Ok(Self {
-            color,
-            unicode,
+            color: detect_color(color_intent, colors_enabled),
+            unicode: detect_unicode(is_tty)?,
             is_tty,
-            cols,
+            cols: terminal.size().1,
         })
     }
 }
 
 /// Detect color capability level using `console` crate and COLORTERM env var.
-fn detect_color(intent: TerminalCapsDetectIntent, is_tty: bool) -> TerminalColorCaps {
+fn detect_color(intent: TerminalCapsDetectIntent, colors_enabled: bool) -> TerminalColorCaps {
     match intent {
         TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
         TerminalCapsDetectIntent::Always => truecolor_or_256(),
         TerminalCapsDetectIntent::Auto => {
-            if !is_tty && !console::colors_enabled_stderr() {
-                return TerminalColorCaps::None;
-            }
-            if console::colors_enabled_stderr() {
+            if colors_enabled {
                 truecolor_or_256()
             } else {
                 TerminalColorCaps::None

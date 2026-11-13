@@ -34,16 +34,26 @@ async fn main() -> std::process::ExitCode {
         );
         return EmpackExitCode::Usage.as_process_exit_code();
     }
-    let caps = empack_lib::TerminalCapabilities::detect_from_config(config.app_config.color)
-        .unwrap_or_else(|_| empack_lib::TerminalCapabilities::minimal());
-    let mut logger_config = config.app_config.to_logger_config(&caps);
-    if config
+    let log_output = if config
         .command
         .as_ref()
         .is_some_and(|command| command.emits_json())
     {
-        logger_config.output = empack_lib::primitives::LogOutput::Stderr;
+        empack_lib::primitives::LogOutput::Stderr
+    } else {
+        config.app_config.log_output
+    };
+    let caps = match log_output {
+        empack_lib::primitives::LogOutput::Stderr => {
+            empack_lib::TerminalCapabilities::detect_from_config(config.app_config.color)
+        }
+        empack_lib::primitives::LogOutput::Stdout => {
+            empack_lib::TerminalCapabilities::detect_stdout_from_config(config.app_config.color)
+        }
     }
+    .unwrap_or_else(|_| empack_lib::TerminalCapabilities::minimal());
+    let mut logger_config = config.app_config.to_logger_config(&caps);
+    logger_config.output = log_output;
     if let Err(error) = empack_lib::Logger::init(logger_config) {
         eprintln!(
             "empack: logger init failed: {}",

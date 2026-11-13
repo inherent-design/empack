@@ -308,7 +308,7 @@ impl MockCommandSession {
         Self {
             display_provider: Box::new(
                 LiveDisplayProvider::new_with_arc(multi_progress.clone())
-                    .with_capabilities(capabilities.clone()),
+                    .with_stream_capabilities(capabilities.clone(), capabilities.clone()),
             ),
             multi_progress,
             terminal_capabilities: capabilities,

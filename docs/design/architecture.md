@@ -36,7 +36,9 @@ Presentation labels and escaped text must not become dependency keys, choice key
 
 A pinned dependency retains its authored exact version. A kept dependency has no selected change under the requested policy; that is not proof that no other version exists. Skipped work was not checked, while an incomplete result retains useful checks alongside unresolved failures. A managed file is verified against the release; a seed initializes a file and then preserves the recipient's copy. Explain ownership changes before offering a resolution.
 
-Keep progress on stderr when stdout carries JSON, preserve the report schema and all typed causes, and render the completed outcome even after cancellation. Escape external terminal controls without altering inherited game streams. Copyable hints use the existing shell argument renderer and only offer flags that the actual command can accept. A preview identifies the selected directory before approval; viewing, saving an update offer, installing files and publishing are separate effects.
+Results use stdout; progress and diagnostics use stderr. Detect color and width for each destination independently, respecting explicit color settings. Prompts require terminal input and terminal stderr; redirecting result stdout does not disable a deliberate choice. Permanent messages suspend active progress while printing. Keep JSON stdout parseable, preserve the report schema and all typed causes, and render the completed outcome even after cancellation.
+
+Escape external terminal controls without altering inherited game streams. Copyable hints use the existing shell argument renderer and only offer flags that the actual command can accept. A preview identifies the selected directory before approval; viewing, saving an update offer, installing files and publishing are separate effects.
 
 ## Two managed roots
 
