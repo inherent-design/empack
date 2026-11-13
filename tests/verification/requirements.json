@@ -5533,7 +5533,8 @@
           "assertions": [
             "Structured dry-run and human dry-run preserve source/state; their proposed selections agree with the actual approved application for automatic root, exact pin, client-only mod, retained library and local source",
             "Runtime and filename change preserve primary-role placement, comments, bindings and local bytes; incomplete local dependency evidence remains explicit",
-            "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges"
+            "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges",
+            "A provider title containing line breaks and terminal controls is rejected at lock admission without project/state changes; ordinary Unicode titles survive the subsequent human and JSON migration lifecycle"
           ]
         },
         {

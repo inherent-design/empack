@@ -44,6 +44,8 @@ bindings:
         environment: {client: required, server: required}
 "#;
 const SETTINGS: &[u8] = b"# Local policy, not provider content.\nenabled = true\n";
+const PROVIDER_TITLE: &str = "Renderer Ω 日本";
+const INVALID_PROVIDER_TITLE: &str = "Renderer Ω 日本\n+ FAKE COMPLETION\t\u{202e}\u{1b}[2J";
 
 fn jar(version: &str) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -140,10 +142,18 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
     }
     let updated_root_catalog = catalogs["Root0001"].clone();
     let mut initial_root_catalog = None;
+    let mut invalid_title = None;
     for (id, versions) in catalogs {
-        server.mock("GET", format!("/project/{id}").as_str())
-            .with_body(json!({"id":id,"slug":id.to_lowercase(),"title":id,"project_type":"mod","loaders":["fabric"]}).to_string())
-            .create_async().await;
+        if id == "Root0001" {
+            invalid_title = Some(server.mock("GET", "/project/Root0001")
+                .with_body(json!({"id":id,"slug":id.to_lowercase(),"title":INVALID_PROVIDER_TITLE,"project_type":"mod","loaders":["fabric"]}).to_string())
+                .expect(3).create_async().await);
+        }
+        if id != "Root0001" {
+            server.mock("GET", format!("/project/{id}").as_str())
+                .with_body(json!({"id":id,"slug":id.to_lowercase(),"title":id,"project_type":"mod","loaders":["fabric"]}).to_string())
+                .create_async().await;
+        }
         let initial: Vec<_> = versions
             .into_iter()
             .filter(|version| version["id"] != "RootMid1")
@@ -158,6 +168,33 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
             initial_root_catalog = Some(catalog);
         }
     }
+    // Lock admission rejects active layout/control syntax before it can become a
+    // persisted dependency title or a migration report. Refusal leaves all inputs intact.
+    let before = snapshot(root.path());
+    let error = synchronization::synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    let diagnostic = format!("{error:#}");
+    assert!(
+        diagnostic.contains("Locked dependency 'root'"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("without control characters"),
+        "{diagnostic}"
+    );
+    assert_eq!(snapshot(root.path()), before);
+    let invalid_title = invalid_title.unwrap();
+    invalid_title.assert_async().await;
+    invalid_title.remove_async().await;
+    server.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"root0001","title":PROVIDER_TITLE,"project_type":"mod","loaders":["fabric"]}).to_string())
+        .create_async().await;
     synchronization::synchronize_with_services(
         &session(root.path(), false),
         true,
@@ -301,7 +338,7 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
     let mut plans = Vec::new();
     // Structured preview, human preview and execution resolve the same frozen inputs.
     for (structured, dry) in [(true, true), (false, true), (false, false)] {
-        let (host, messages) = session(root.path(), dry).record_messages();
+        let (host, messages) = session(root.path(), dry).record_status_messages();
         let mut options = args();
         options.json = structured;
         let result = synchronization::synchronize_mode(
@@ -328,6 +365,29 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
             continue;
         }
         result.unwrap();
+        if !structured {
+            let messages = messages.lock().unwrap();
+            let rows: Vec<_> = messages
+                .iter()
+                .filter(|message| {
+                    message.starts_with("  before:") || message.starts_with("  after:")
+                })
+                .collect();
+            assert_eq!(rows.len(), 10, "{messages:?}");
+            for row in &rows {
+                assert!(
+                    row.chars().all(|ch| !ch.is_control() && ch != '\u{202e}'),
+                    "Provider text must not create report rows or terminal controls: {row:?}"
+                );
+            }
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.contains(PROVIDER_TITLE))
+                    .count(),
+                2,
+                "Ordinary Unicode titles must survive human reports: {rows:?}"
+            );
+        }
         let reports: Vec<serde_json::Value> = messages
             .lock()
             .unwrap()
@@ -372,6 +432,8 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
     let row = |key: &str| rows.iter().find(|r| r["key"] == key).unwrap();
     assert_eq!(row("root")["before"]["selection"]["selection"], "RootMid1");
     assert_eq!(row("root")["after"]["selection"]["selection"], "RootNew1");
+    assert_eq!(row("root")["before"]["title"], PROVIDER_TITLE);
+    assert_eq!(row("root")["after"]["title"], PROVIDER_TITLE);
     assert_eq!(
         row("root")["after"]["placements"][0]["destination"],
         "mods/stable-root.jar"
