@@ -262,6 +262,32 @@ fn cli_update_requires_apply_even_with_yes() {
             installed
         );
     }
+    for dry in ["false", "true"] {
+        command(&project)
+            .env("EMPACK_DRY_RUN", dry)
+            .args(["update", "fixture", "--yes"])
+            .assert()
+            .success();
+        assert_eq!(
+            snapshot(&project),
+            before,
+            "An update without --apply must remain a preview: {dry}"
+        );
+    }
+    for (dry, explicit) in [("true", false), ("false", true)] {
+        let mut cmd = command(&project);
+        cmd.env("EMPACK_DRY_RUN", dry);
+        if explicit {
+            cmd.arg("--dry-run");
+        }
+        cmd.args(["update", "--all", "--apply", "--yes"])
+            .assert()
+            .code(2)
+            .stderr(predicates::str::contains(
+                "--apply cannot be combined with --dry-run",
+            ));
+        assert_eq!(snapshot(&project), before);
+    }
     let output = command(&project)
         .args(["update", "--all", "--json", "--quiet", "--yes"])
         .assert()
@@ -320,15 +346,23 @@ fn cli_update_requires_apply_even_with_yes() {
         command(&project).args(args).assert().code(2);
         assert_eq!(snapshot(&project), before);
     }
-    command(&project)
-        .args(["update", "--all", "--apply", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
-        fs::read(project.dir().join("fixture.jar")).unwrap()
-    );
-    assert_ne!(snapshot(&project), before);
+    for dry in [None, Some("false")] {
+        if dry.is_some() {
+            jar_version(&project, "fixture.jar", "3");
+        }
+        let mut cmd = command(&project);
+        if let Some(dry) = dry {
+            cmd.env("EMPACK_DRY_RUN", dry);
+        }
+        cmd.args(["update", "--all", "--apply", "--yes"])
+            .assert()
+            .success();
+        assert_eq!(
+            fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+            fs::read(project.dir().join("fixture.jar")).unwrap()
+        );
+        assert_ne!(snapshot(&project), before);
+    }
 }
 
 #[test]

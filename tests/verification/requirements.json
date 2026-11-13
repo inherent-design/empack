@@ -4581,7 +4581,8 @@
           "assertions": [
             "The actual binary keeps source, installed, lock and state bytes unchanged for selected/all previews even with --yes; --apply updates selected bytes.",
             "Missing scope, names combined with --all and --apply combined with --dry-run return usage status before any changes.",
-            "The actual binary emits clean schema1 ready/blocked JSON with planned SHA256 and portable attributes; --quiet hides progress and invalid JSON application/details modes refuse locally without effects."
+            "The actual binary emits clean schema1 ready/blocked JSON with planned SHA256 and portable attributes; --quiet hides progress and invalid JSON application/details modes refuse locally without effects.",
+            "A false EMPACK_DRY_RUN value permits explicit application; a true value or explicit --dry-run refuses --apply before work; --yes alone still cannot apply in either environment"
           ]
         }
       ],

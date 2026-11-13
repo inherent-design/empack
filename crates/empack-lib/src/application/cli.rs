@@ -208,7 +208,7 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub all: bool,
     /// Apply the reviewed update; without this flag only prepare a preview
-    #[arg(long, conflicts_with = "dry_run")]
+    #[arg(long)]
     pub apply: bool,
     /// Print the prepared proposal as JSON; application is a separate invocation
     #[arg(long, conflicts_with_all = ["apply", "details"])]
@@ -1818,7 +1818,6 @@ mod consumer_cli_tests {
         for arguments in [
             vec!["empack", "update"],
             vec!["empack", "update", "--all", "sodium"],
-            vec!["empack", "update", "--all", "--apply", "--dry-run"],
             vec!["empack", "update", "--all", "--select"],
             vec![
                 "empack",
@@ -1832,6 +1831,15 @@ mod consumer_cli_tests {
         ] {
             assert!(Cli::try_parse_from(arguments).is_err());
         }
+        // Environment-backed flags must be checked by value in the command handler.
+        // Clap presence conflicts would also reject EMPACK_DRY_RUN=false.
+        let both =
+            Cli::try_parse_from(["empack", "update", "--all", "--apply", "--dry-run"]).unwrap();
+        assert!(both.config.dry_run);
+        assert!(matches!(
+            both.command,
+            Some(Commands::Update(UpdateArgs { apply: true, .. }))
+        ));
         let cli = Cli::try_parse_from(["empack", "update", "--all", "--yes"]).unwrap();
         let Some(Commands::Update(options)) = cli.command else {
             panic!("expected update");
