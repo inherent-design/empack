@@ -9,8 +9,10 @@ use empack_core::{
     removal::{RemovalEvidencePolicy, RemovalMode},
 };
 
-/// Execute CLI commands through session-owned native engine hosts
-pub async fn execute_command(config: CliConfig) -> Result<()> {
+/// Validate configuration and execute CLI input through a new command session.
+/// The caller owns logging, signal handling and presentation of the terminal result.
+pub async fn execute_command(mut config: CliConfig) -> Result<()> {
+    config.app_config.validate()?;
     let session = CommandSession::new(config.app_config);
     execute_invocation(config.command, &session).await
 }

@@ -1,10 +1,7 @@
 use crate::primitives::ConfigError;
 use std::ffi::OsString;
-use std::sync::OnceLock;
 
 use super::{cli::CliConfig, config::AppConfig, env::EnvironmentConfig};
-
-static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
 pub(crate) fn load_dotenv_files() -> Result<(), ConfigError> {
     use dotenvy::from_filename;
@@ -59,20 +56,6 @@ impl AppConfig {
         config.validate()?;
 
         Ok(config)
-    }
-
-    /// Initialize global configuration (call once in main)
-    pub fn init_global(config: AppConfig) -> Result<(), ConfigError> {
-        GLOBAL_CONFIG
-            .set(config)
-            .map_err(|_| ConfigError::AlreadyInitialized)
-    }
-
-    /// Get global configuration reference
-    pub fn global() -> &'static AppConfig {
-        GLOBAL_CONFIG
-            .get()
-            .expect("Global config not initialized - call AppConfig::init_global() first")
     }
 }
 

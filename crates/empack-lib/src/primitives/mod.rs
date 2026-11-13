@@ -125,9 +125,6 @@ pub enum ConfigError {
         source: EnvFileProblem,
     },
 
-    #[error("Global configuration already initialized")]
-    AlreadyInitialized,
-
     #[error("Invalid working directory: {path}")]
     InvalidWorkDir { path: String },
 
