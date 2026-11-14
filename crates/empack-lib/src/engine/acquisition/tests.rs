@@ -175,6 +175,39 @@ async fn verified_bytes_keep_reservations_until_the_last_reader_retires() {
 }
 
 #[tokio::test]
+async fn acquisition_progress_observes_bytes_without_claiming_completion_or_hiding_cancellation() {
+    let mut server =
+        StalledHttp::new(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npay");
+    let (runtime, governor) = runtime();
+    let request = request(vec![server.url.clone()], 16);
+    let mut handle = runtime
+        .start(move |mut scope| async move { Ok(transport().acquire(&mut scope, request).await) })
+        .unwrap();
+    server.started().await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while handle.progress()
+            != Some(WorkProgress::Downloading {
+                received_bytes: 3,
+                total_bytes: Some(7),
+            })
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(handle.status().terminal.is_none());
+    handle.cancel();
+    let outcome = handle.wait().await;
+    assert!(!matches!(&*outcome, OperationOutcome::Completed(Ok(_))));
+    server.assert_closed();
+    drop(outcome);
+    runtime.release_completed(handle.id());
+    runtime.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
 async fn headers_digests_status_and_policy_cannot_be_mistaken_for_verified_content() {
     let mut server = mockito::Server::new_async().await;
     for (path, status, body) in [

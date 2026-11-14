@@ -64,8 +64,6 @@ fn clear_cli_env() {
         std::env::remove_var("EMPACK_WORKDIR");
         std::env::remove_var("EMPACK_CPU_JOBS");
         std::env::remove_var("EMPACK_NET_TIMEOUT");
-        std::env::remove_var("EMPACK_ID_MODRINTH");
-        std::env::remove_var("EMPACK_KEY_MODRINTH");
         std::env::remove_var("EMPACK_KEY_CURSEFORGE");
         std::env::remove_var("EMPACK_LOG_LEVEL");
         std::env::remove_var("EMPACK_LOG_FORMAT");

@@ -272,7 +272,7 @@ async fn save(
                 store::bind_for(&binding_state, Kind::Instance, &data.target, &cancel)?;
             let base = data.instance.base(&cancel)?;
             let record = Record {
-                schema: 2,
+                schema: 3,
                 binding,
                 base,
                 recipe: data.resume.clone(),

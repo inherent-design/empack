@@ -23,6 +23,11 @@ impl AdditionGroup {
         &self.lock.dependencies
     }
 
+    /// Completeness of declared required relationships for each exact selection.
+    pub fn coverage(&self) -> &BTreeMap<DependencyKey, Coverage> {
+        &self.lock.coverage
+    }
+
     /// Extract dependency intent and exact evidence from a coherent resolved request.
     /// Every proposed installation needs an explicit root or a known required path from one.
     pub fn from_resolved(project: &ResolvedProject) -> Result<Self, AdditionError> {
@@ -81,6 +86,8 @@ pub enum AdditionError {
     MissingReplacementRoot(DependencyKey),
     /// An update selected an identity that is not installed.
     UpdateMissing(DependencyKey),
+    /// Only explicitly requested author roots can acquire a new exact provider pin.
+    InvalidUpdatePin(DependencyKey),
     /// The proposed closure includes an unjustified selection.
     UnrequestedSelection(DependencyKey),
     /// Dependency resolution used another runtime or accepted game-version policy.
@@ -103,6 +110,11 @@ impl fmt::Display for AdditionError {
             Self::UpdateMissing(key) => {
                 write!(f, "Cannot update an uninstalled identity: {}", key.as_str())
             }
+            Self::InvalidUpdatePin(key) => write!(
+                f,
+                "Exact update pin must match a requested provider author root and its resolved selection: {}",
+                key.as_str()
+            ),
             Self::Replacement(error) => error.fmt(f),
             Self::MissingReplacementRoot(key) => write!(
                 f,
@@ -406,6 +418,15 @@ impl AdditionPlan {
         current: &ResolvedProject,
         group: &AdditionGroup,
     ) -> Result<Self, AdditionError> {
+        Self::prepare_update_with_pins(current, group, &BTreeMap::new())
+    }
+    /// Change only explicitly named author pins; all other authored fields and pins survive.
+    /// The resolved group still proves identity, runtime and retained-dependent compatibility.
+    pub fn prepare_update_with_pins(
+        current: &ResolvedProject,
+        group: &AdditionGroup,
+        pins: &BTreeMap<DependencyKey, crate::identity::PinSelector>,
+    ) -> Result<Self, AdditionError> {
         let mut plan = Self::prepare(current, group)?;
         for key in group.roots.keys() {
             let bound = &plan.bindings[key];
@@ -414,6 +435,23 @@ impl AdditionPlan {
             }
         }
         plan.intent = current.intent().clone();
+        for (key, pin) in pins {
+            if !plan.existing_roots.contains(key)
+                || !plan.intent.roots.contains_key(key)
+                || plan.lock.dependencies[key]
+                    .selected
+                    .as_ref()
+                    .map(|value| &value.selection)
+                    != Some(pin)
+            {
+                return Err(AdditionError::InvalidUpdatePin(key.clone()));
+            }
+            plan.intent
+                .roots
+                .get_mut(key)
+                .unwrap()
+                .set_provider_pin(pin.clone());
+        }
         ResolvedProject::validate(
             plan.intent.clone(),
             plan.lock.clone(),

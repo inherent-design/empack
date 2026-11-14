@@ -18,6 +18,7 @@ fn test_live_display_provider_surface_methods() {
     status.list(&["one", "two"]);
     status.complete("loading");
     status.tool_check("cargo", true, "1.0");
+    status.tool_check("missing tool", false, "");
     status.section("section");
     status.step(1, 2, "step");
 

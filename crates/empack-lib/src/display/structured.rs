@@ -3,7 +3,7 @@
 //! Provides table and list formatting that adapts to terminal capabilities.
 
 use super::styling::StyleManager;
-use crate::terminal::TerminalCapabilities;
+use crate::terminal::{TerminalCapabilities, display_line};
 use std::cmp;
 
 /// Structured display manager for tables and lists
@@ -53,8 +53,8 @@ impl<'a> StructuredDisplay<'a> {
         for (key, value) in pairs {
             println!(
                 "{:width$} | {}",
-                self.styling.style_subtle(key),
-                value,
+                self.styling.style_subtle(&display_line(key)),
+                display_line(value),
                 width = max_key_len
             );
         }
@@ -63,7 +63,7 @@ impl<'a> StructuredDisplay<'a> {
     /// Create a bulleted list
     pub fn list(&self, items: &[&str]) {
         for item in items {
-            println!("{} {}", self.styling.bullet(), item);
+            println!("{} {}", self.styling.bullet(), display_line(item));
         }
     }
 
@@ -73,7 +73,7 @@ impl<'a> StructuredDisplay<'a> {
             println!(
                 "{}. {}",
                 self.styling.style_subtle(&(i + 1).to_string()),
-                item
+                display_line(item)
             );
         }
     }
@@ -101,14 +101,17 @@ impl<'a> TableDisplay<'a> {
 
     /// Set table headers
     pub fn header(mut self, headers: &[&str]) -> Self {
-        self.headers = headers.iter().map(|s| s.to_string()).collect();
+        self.headers = headers
+            .iter()
+            .map(|s| display_line(s).into_owned())
+            .collect();
         self
     }
 
     /// Add a table row
     pub fn row(mut self, cells: &[&str]) -> Self {
         self.rows
-            .push(cells.iter().map(|s| s.to_string()).collect());
+            .push(cells.iter().map(|s| display_line(s).into_owned()).collect());
         self
     }
 
@@ -180,7 +183,11 @@ impl<'a> TableDisplay<'a> {
             if i < widths.len() {
                 let width = widths[i];
                 let truncated = if cell.len() > width {
-                    format!("{}...", &cell[..width.saturating_sub(3)])
+                    format!(
+                        "{}{}",
+                        &cell[..cell.floor_char_boundary(width.saturating_sub(3))],
+                        ".".repeat(width.min(3))
+                    )
                 } else {
                     cell.clone()
                 };

@@ -13,7 +13,8 @@ from .candidate_execution import inspect_execution
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_payload, git
 from .release_inputs import release_version, stamped_sources
-from .requirements import case_results, release_deferrals
+from .requirements import (case_results, release_deferrals, release_manual_scope,
+                           release_variant_required)
 
 NATIVE = {f"UX-{number:03}" for number in range(1, 89)}
 PORTABLE = {f"PORT-{number:03}" for number in range(1, 22)}
@@ -43,12 +44,19 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # silently changing the denominator or relying on a caller's exclusions.
     applicable = applicable_requirements(version, document)
     deferred = release_deferrals(document, version)
+    manual = release_manual_scope(document, version)
     acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence, schema_evidence=schema_evidence, acceptance_evidence=acceptance_evidence)
     blockers = []
     for row in acceptance["requirements"]:
+        definitions = {case["id"]: case for case in by_id[row["id"]]["cases"]}
         for case in row["cases"]:
-            case["required_for_release"] = case["id"] not in deferred
-        required = [case["status"] for case in row["cases"] if case["required_for_release"]]
+            for variant in case["variants"]:
+                variant["required_for_release"] = release_variant_required(
+                    definitions[case["id"]], variant, deferred, manual)
+            required = [variant["status"] for variant in case["variants"] if variant["required_for_release"]]
+            case["required_for_release"] = bool(required)
+            case["release_status"] = aggregate_outcomes(required) if required else "DEFERRED"
+        required = [case["release_status"] for case in row["cases"] if case["required_for_release"]]
         if row["case_bindings_status"] != "complete":
             required.append("NOT_RUN")
         row["release_status"] = aggregate_outcomes(required) if required else "DEFERRED"
@@ -81,6 +89,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     return {"status": status, "qualification": status == "PASS", "acceptance": acceptance,
             "applicable_requirements": sorted(applicable), "blockers": blockers,
             "deferred_environment_cases": sorted(deferred),
+            "manual_acceptance_scope": manual,
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
@@ -154,18 +163,44 @@ def check_qualification(path, digest, revision, version, archive_digest, *, docu
         document = json.loads((Path(__file__).resolve().parents[2] / "tests/verification/requirements.json").read_text())
     applicable = applicable_requirements(version, document)
     deferred = release_deferrals(document, version)
+    manual = release_manual_scope(document, version)
+    definitions = {row["id"]: {case["id"]: case for case in row["cases"]}
+                   for row in document["requirements"]}
     acceptance = record.get("acceptance", {})
     rows = acceptance.get("requirements", [])
+
+    def valid_case(row, case):
+        definition = definitions[row["id"]].get(case["id"])
+        if definition is None:
+            return False
+        variants = case["variants"]
+        targets = definition.get("required_targets")
+        expected = {(host, features, graph) for host in targets or definition["required_platforms"]
+                    for features in definition["required_product_features"]
+                    for graph in definition.get("required_test_features", [None])}
+        observed = {(v.get("target") if targets else v["platform"], v["features"], v.get("test_features"))
+                    for v in variants}
+        if (len(variants) != len(expected) or observed != expected
+                or any(v["platform"] not in definition["required_platforms"] for v in variants)
+                or case["status"] != aggregate_outcomes(v["status"] for v in variants)):
+            return False
+        required = [v["status"] for v in variants if release_variant_required(definition, v, deferred, manual)]
+        return (all(v.get("required_for_release") == release_variant_required(definition, v, deferred, manual)
+                    for v in variants)
+                and case.get("required_for_release") == bool(required)
+                and case.get("release_status") == (aggregate_outcomes(required) if required else "DEFERRED")
+                and (row["id"] not in applicable or not required or all(status == "PASS" for status in required)))
+
     if (acceptance.get("source_revision") != revision
             or record.get("applicable_requirements") != sorted(applicable)
             or record.get("deferred_environment_cases") != sorted(deferred)
+            or record.get("manual_acceptance_scope") != manual
             or len(rows) != len(NATIVE | PORTABLE)
             or {row["id"] for row in rows} != NATIVE | PORTABLE
             or any(row.get("applicable") != (row["id"] in applicable)
                    or row["id"] in applicable and (row.get("release_status") != "PASS" or row["case_bindings_status"] != "complete")
-                   or any(case.get("required_for_release") != (case["id"] not in deferred)
-                          or case["id"] not in deferred and row["id"] in applicable and case["status"] != "PASS"
-                          for case in row["cases"])
+                   or {case["id"] for case in row["cases"]} != set(definitions[row["id"]])
+                   or any(not valid_case(row, case) for case in row["cases"])
                    for row in rows)):
         raise ValueError("Candidate qualification lost required observations or applicability")
     return record

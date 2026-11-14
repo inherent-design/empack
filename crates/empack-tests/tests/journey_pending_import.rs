@@ -103,28 +103,40 @@ impl ImportFixture {
             .arg(&self.target)
             .assert()
             .failure()
-            .stderr(predicates::str::contains(
-                "content obligations need explicit input",
-            ))
+            .stderr(predicates::str::contains("Import needs"))
             .get_output()
             .clone();
         assert_eq!(snapshot(self.project.dir()).files, before);
         assert!(!self.target.exists());
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("Directory: {:?}", self.target)),
+            "{output:?}"
+        );
+        let guidance = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(guidance.contains("pending resume ID --file="), "{guidance}");
+        assert!(guidance.contains("--workdir"), "{guidance}");
+        assert!(guidance.contains("--state-dir"), "{guidance}");
+        assert!(
+            guidance.contains(&self.target.display().to_string()),
+            "{guidance}"
+        );
+        assert!(
+            guidance.contains(&self.state.display().to_string()),
+            "{guidance}"
+        );
+        assert!(!guidance.contains("--import-file"), "{guidance}");
         import_selectors(&output)
     }
-    fn resume(&self, operation: &Value, legacy: bool, association: &str) -> assert_cmd::Command {
+    fn resume(&self, operation: &Value, prefix: bool, association: &str) -> assert_cmd::Command {
         let mut command = self.command();
-        if legacy {
-            command.args(["init", "--continue", "--import-file", association]);
-        } else {
-            command.args([
-                "pending",
-                "resume",
-                operation["id"].as_str().unwrap(),
-                "--file",
-                association,
-            ]);
-        }
+        let id = operation["id"].as_str().unwrap();
+        let id = if prefix { &id[..12] } else { id };
+        command.args(["pending", "resume", id, "--file", association]);
         command.arg("--import-local-files");
         command
     }
@@ -150,7 +162,7 @@ fn import_roundtrip(
         operation["diagnostic"]
             .as_str()
             .unwrap()
-            .contains("original exact selectors")
+            .contains("original file keys with --file")
     );
     let id = operation["id"].as_str().unwrap();
     let supplied = fixture.project.dir().join("renamed download.bin");
@@ -191,9 +203,53 @@ fn import_roundtrip(
     fixture
         .command()
         .args(next)
-        .args(["--file", &association, "--import-local-files"])
+        .args([
+            "--file",
+            &association,
+            "--import-local-files",
+            "--exclude-auxiliary",
+            "--java",
+            "21",
+            "--mc-version",
+            "1.21.1",
+            "--modloader",
+            "none",
+            "--datapack-folder",
+            "datapacks",
+            "--world-folder",
+            "saves",
+            "--game-versions",
+            "1.21.2",
+            "--pack-name",
+            "pending-import",
+            "--pack-version",
+            "1.0.0",
+            "--author",
+            "Tester Ω 日本",
+        ])
         .assert()
         .success();
+    let document = empack_lib::testing::read_authoring(&fixture.target.join("empack.yml")).unwrap();
+    let authoring = document.intent();
+    assert_eq!(authoring.metadata.authors, ["Tester Ω 日本"]);
+    assert_eq!(authoring.runtime.java_major, 21);
+    assert_eq!(
+        authoring.layout[&empack_core::model::ContentKind::DataPack].as_str(),
+        "datapacks"
+    );
+    assert_eq!(
+        authoring.layout[&empack_core::model::ContentKind::World].as_str(),
+        "saves"
+    );
+    assert_eq!(
+        authoring
+            .runtime
+            .acceptable_versions
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+        ["1.21.2"]
+    );
     after_import(&fixture);
     assert_eq!(fixture.list()["operations"], json!([]));
     assert!(!fixture.archive.exists());
@@ -480,13 +536,14 @@ fn import_selectors(output: &std::process::Output) -> Vec<String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(text.contains("Import continuation was saved"), "{text}");
+    assert!(text.contains("Import was saved"), "{text}");
     let selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {
-            let (_, displayed) = line.split_once("Import input ")?;
-            let quoted = displayed.strip_suffix(": UnsupportedTransport")?;
-            Some(serde_json::from_str(quoted).unwrap())
+            let (_, displayed) = line.split_once("Missing import file ")?;
+            let value = serde_json::Deserializer::from_str(displayed);
+            let key: String = value.into_iter::<String>().next()?.ok()?;
+            Some(key)
         })
         .collect();
     assert!(!selectors.is_empty(), "{text}");
@@ -495,7 +552,7 @@ fn import_selectors(output: &std::process::Output) -> Vec<String> {
 
 #[test]
 fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume_commands() {
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         let fixture = ImportFixture::with_files(json!([
             {"path":"resourcepacks/first.zip","downloads":["http://example.invalid/first"],"fileSize":5,
              "hashes":{"sha512":"7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd"}},
@@ -522,7 +579,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         let output = fixture
             .resume(
                 &operation,
-                legacy,
+                prefix,
                 &format!("{}={}", selectors[0], first.display()),
             )
             .assert()
@@ -545,7 +602,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         fs::write(&backing, b"WRONG").unwrap();
         let corrupted = snapshot(&fixture.state).files;
         fixture
-            .resume(&partial, legacy, &association)
+            .resume(&partial, prefix, &association)
             .assert()
             .failure()
             .stderr(predicates::str::contains("sha512 digest mismatch"));
@@ -556,7 +613,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
 
         fs::remove_file(&backing).unwrap();
         let output = fixture
-            .resume(&partial, legacy, &association)
+            .resume(&partial, prefix, &association)
             .assert()
             .failure()
             .get_output()
@@ -589,7 +646,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         fixture
             .resume(
                 &missing,
-                legacy,
+                prefix,
                 &format!("{}={}", selectors[0], first.display()),
             )
             .assert()

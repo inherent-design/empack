@@ -9,7 +9,7 @@ use crate::engine::{
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf, process::Command};
 
-fn input(key: &str, next: bool) -> &'static [u8] {
+pub(super) fn input(key: &str, next: bool) -> &'static [u8] {
     match key {
         "mod" if next => b"B",
         "mod" => b"A",
@@ -19,7 +19,7 @@ fn input(key: &str, next: bool) -> &'static [u8] {
     }
 }
 
-fn release(next: bool) -> DecodedRelease {
+pub(super) fn release(next: bool) -> DecodedRelease {
     let files = [
         (
             "mod",

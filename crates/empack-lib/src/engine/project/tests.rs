@@ -145,12 +145,15 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         .revalidate(captured.observations(), &cancel)
         .unwrap();
     fs::write(project.join("pack/new.txt"), b"new").unwrap();
-    assert!(
-        captured
-            .root()
-            .revalidate(captured.observations(), &cancel)
-            .is_err()
-    );
+    let error = captured
+        .root()
+        .revalidate(captured.observations(), &cancel)
+        .unwrap_err();
+    let diagnostic = error
+        .downcast_ref::<crate::engine::diagnostics::Diagnostic>()
+        .unwrap();
+    assert!(diagnostic.object.as_deref().unwrap().starts_with("pack"));
+    assert!(format!("{error:#}").contains(diagnostic.object.as_deref().unwrap()));
     fs::remove_file(project.join("pack/new.txt")).unwrap();
     fs::write(project.join("pack/.packwizignore"), b"ignored/\n*.txt\n").unwrap();
     assert!(

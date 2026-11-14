@@ -1,4 +1,4 @@
-//! Shared presentation over existing continuation records; never execution authority.
+//! Read-only facts from existing continuation records; never execution authority.
 use super::{
     continuation_store::{self as store, Kind},
     documents::DocumentCodec,
@@ -104,59 +104,6 @@ impl PendingReport {
             "Pending ID is ambiguous; supply more characters"
         );
         Ok(matching[0])
-    }
-    pub fn text(&self) -> String {
-        let mut lines = vec![format!("Pending inputs in {}", self.root.display())];
-        for op in &self.operations {
-            lines.push(format!("{} {:?}: {}", &op.id[..12], op.kind, op.state));
-            if let Some(message) = &op.diagnostic {
-                lines.push(message.clone());
-            }
-            for input in &op.inputs {
-                lines.push(format!(
-                    "  {}: {}; filename {}; bytes {}; {}; digests {}",
-                    input.key,
-                    input.name.as_deref().unwrap_or("unknown name"),
-                    input.filename.as_deref().unwrap_or("unknown"),
-                    input.bytes.map_or("unknown".into(), |n| n.to_string()),
-                    input.verification,
-                    if input.digests.is_empty() {
-                        "unknown".into()
-                    } else {
-                        input
-                            .digests
-                            .iter()
-                            .map(|(kind, value)| format!("{kind}:{value}"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    }
-                ));
-                lines.push(format!(
-                    "    provider {}; permitted page {}; candidate {}",
-                    input.provider_selection.as_ref().map_or_else(
-                        || "unknown".into(),
-                        |selected| format!(
-                            "{}:{}@{}",
-                            selected.provider, selected.project, selected.selection
-                        )
-                    ),
-                    input
-                        .download_page
-                        .as_deref()
-                        .unwrap_or("unknown (resolve explicitly with --open-downloads)"),
-                    input
-                        .supplied_candidate
-                        .as_ref()
-                        .map_or("unknown".into(), |p| p.display().to_string())
-                ));
-            }
-            lines.push(format!("Next in this root: empack {}", op.next.join(" ")));
-        }
-        if self.operations.is_empty() {
-            lines.push("No saved pending operations".into());
-        }
-        lines.push("Metadata only; continuation revalidates recipes, trust and supplied bytes before fresh approval.".into());
-        lines.join("\n")
     }
 }
 fn empty(id: String, kind: PendingKind, root: &Path) -> PendingOperation {
@@ -292,7 +239,7 @@ fn details(
     if !current {
         op.state = "stale".into();
         op.diagnostic = Some(
-            "Saved target identity or documents changed; continuation will reject this record"
+            "The project directory or author files changed. This saved work cannot be resumed."
                 .into(),
         );
         return Ok(());
@@ -320,14 +267,14 @@ fn details(
                 })
                 .collect::<Result<BTreeSet<_>>>()?;
             locked_inputs(op, &project, &retained);
-            op.diagnostic = Some("Exact unresolved build requirements are recomputed from the saved output recipes during continuation; listed lock inputs may not all be needed".into());
+            op.diagnostic = Some("Required files are checked when you continue; not every recorded file is needed for this build.".into());
         }
         PendingKind::Sync => {
             if record["migration"]
                 .as_bool()
                 .context("Missing synchronization mode")?
             {
-                op.diagnostic = Some("Runtime migration: continuation applies the retained candidate intent only after checking the original author documents and obtaining new approval".into());
+                op.diagnostic = Some("Minecraft or loader settings changed. Continuing checks the original author files and asks for approval before applying the saved settings.".into());
             }
             let intent = DocumentCodec.decode_intent(
                 record["intent"]
@@ -428,7 +375,7 @@ fn details(
                     .push(("retained-sha256".into(), super::release::hex(&hash)));
                 op.inputs.push(row);
             }
-            op.diagnostic = Some("Saved imports retain the archive and supplied associations, not missing dependency metadata; normal continuation reparses source/provider facts. Use the original exact selectors with --file; unknown facts are not completion evidence".into());
+            op.diagnostic = Some("The import archive and files you supplied are saved. Download details are checked again when you continue. Use the original file keys with --file.".into());
         }
     }
     ensure!(

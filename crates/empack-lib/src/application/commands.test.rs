@@ -43,7 +43,6 @@ fn init() -> Commands {
 fn add(name: &str) -> Commands {
     Commands::Add {
         mods: vec![name.into()],
-        force: false,
         platform: None,
         project_type: None,
         version_id: None,
@@ -56,7 +55,6 @@ fn add(name: &str) -> Commands {
 fn remove(name: &str) -> Commands {
     Commands::Remove {
         mods: vec![name.into()],
-        deps: false,
         forget: false,
         acknowledge_unknown: false,
     }
@@ -144,16 +142,9 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
     );
     let before = snapshot(&root.path().join("project"));
     for _ in 0..2 {
-        execute_command_with_session(
-            Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![],
-            },
-            &selected,
-        )
-        .await
-        .unwrap();
+        execute_command_with_session(Commands::Sync { materialize: false }, &selected)
+            .await
+            .unwrap();
     }
     assert_eq!(snapshot(&root.path().join("project")), before);
     fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
@@ -194,16 +185,9 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
         .unwrap();
     assert!(resolved(root.path()).intent().roots.is_empty());
     assert!(!root.path().join("project/pack/mods/fixture.jar").exists());
-    execute_command_with_session(
-        Commands::Sync {
-            materialize: false,
-            continue_sync: false,
-            files: vec![],
-        },
-        &selected,
-    )
-    .await
-    .unwrap();
+    execute_command_with_session(Commands::Sync { materialize: false }, &selected)
+        .await
+        .unwrap();
     execute_command_with_session(
         Commands::Clean {
             targets: vec!["builds".into()],
@@ -248,24 +232,22 @@ async fn dispatcher_preview_decline_and_invalid_input_preserve_whole_project() {
     let mut invalid = match add("fixture.jar") {
         Commands::Add {
             mods,
-            force,
             platform,
             project_type,
             version_id,
             file_id,
             ..
-        } => (mods, force, platform, project_type, version_id, file_id),
+        } => (mods, platform, project_type, version_id, file_id),
         _ => unreachable!(),
     };
     invalid.0.push("missing.jar".into());
     execute_command_with_session(
         Commands::Add {
             mods: invalid.0,
-            force: invalid.1,
-            platform: invalid.2,
-            project_type: invalid.3,
-            version_id: invalid.4,
-            file_id: invalid.5,
+            platform: invalid.1,
+            project_type: invalid.2,
+            version_id: invalid.3,
+            file_id: invalid.4,
             file_plan: None,
             download_as_local: false,
             continue_independent: false,
@@ -304,12 +286,12 @@ async fn inspection_commands_need_no_project_or_backend_bootstrap() {
     let root = tempfile::tempdir().unwrap();
     let selected = session(root.path(), true, false);
     let before = snapshot(root.path());
-    execute_command_with_session(Commands::Requirements, &selected)
-        .await
-        .unwrap();
-    execute_command_with_session(Commands::Version, &selected)
-        .await
-        .unwrap();
+    execute_command_with_session(
+        Commands::Doctor(crate::application::cli::DoctorArgs::default()),
+        &selected,
+    )
+    .await
+    .unwrap();
     assert_eq!(snapshot(root.path()), before);
 }
 
@@ -410,6 +392,21 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     .await
     .unwrap();
     assert_eq!(before, snapshot(root.path()));
+    for json in [false, true] {
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Check(crate::application::cli::InstanceCheckArgs {
+                    json,
+                    quiet: true,
+                    ..Default::default()
+                }),
+            },
+            &session(root.path(), true, false),
+        )
+        .await
+        .unwrap();
+        assert_eq!(before, snapshot(root.path()));
+    }
     fs::remove_file(root.path().join("project/.minecraft/mods/test.jar")).unwrap();
     let repair = Commands::Instance {
         command: InstanceCommand::Repair {
@@ -683,7 +680,8 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
             let error = execute_command_with_session(
                 Commands::Instance {
                     command: InstanceCommand::Update {
-                        check: true,
+                        channel_file: None,
+                        apply: true,
                         conflicts: Default::default(),
                         release: Some("missing-release.json".into()),
                         side: explicit_side,
@@ -737,7 +735,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         },
     ));
     let prepare = Commands::Instance {
-        command: InstanceCommand::Prepare {
+        command: InstanceCommand::Ensure {
             require_subscription: false,
             conflicts: Default::default(),
             release: descriptor,
@@ -885,7 +883,8 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
-            check: false,
+            channel_file: None,
+            apply: true,
             conflicts: Default::default(),
             release: Some("signed-release.json".into()),
             side: Some("client".into()),
@@ -919,7 +918,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     let before_check = snapshot(&root.path().join("project"));
     execute_command_with_session(
         Commands::Instance {
-            command: InstanceCommand::ObserveChannel {
+            command: InstanceCommand::CheckUpdates {
                 envelope: Some("channel.json".into()),
             },
         },
@@ -930,7 +929,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     assert_eq!(before_check, snapshot(&root.path().join("project")));
     execute_command_with_session(
         Commands::Instance {
-            command: InstanceCommand::ObserveChannel {
+            command: InstanceCommand::CheckUpdates {
                 envelope: Some("channel.json".into()),
             },
         },
@@ -1096,16 +1095,6 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     assert!(format!("{error:#}").contains("manual inputs remain pending"));
     fs::remove_file(root.path().join("release.json")).unwrap();
     fs::write(root.path().join("a.jar"), b"A").unwrap();
-    let continuation = Commands::Instance {
-        command: InstanceCommand::Continue {
-            files: vec!["mod=a.jar".into()],
-        },
-    };
-    let before = snapshot(root.path());
-    execute_command_with_session(continuation.clone(), &session(root.path(), true, true))
-        .await
-        .unwrap();
-    assert_eq!(snapshot(root.path()), before);
     let pending = crate::engine::pending::inspect(
         &root.path().join("state"),
         &root.path().join("project"),
@@ -1113,33 +1102,32 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     )
     .unwrap();
     let id = pending.operations[0].id.clone();
-    execute_command_with_session(
-        Commands::Pending {
-            command: crate::application::cli::PendingCommand::Resume {
-                import_options: Default::default(),
-                id,
-                files: vec!["mod=a.jar".into()],
-                downloads_dir: None,
-                open_downloads: false,
-            },
+    let continuation = || Commands::Pending {
+        command: crate::application::cli::PendingCommand::Resume {
+            id: id.clone(),
+            files: vec!["mod=a.jar".into()],
+            downloads_dir: None,
+            wait_downloads: None,
+            open_downloads: false,
+            import_options: Default::default(),
         },
-        &session(root.path(), true, false),
-    )
-    .await
-    .unwrap();
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(continuation(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(continuation(), &session(root.path(), true, false))
+        .await
+        .unwrap();
     assert_eq!(
         fs::read(root.path().join("project/game/mods/a.jar")).unwrap(),
         b"A"
     );
     assert!(
-        execute_command_with_session(
-            Commands::Instance {
-                command: InstanceCommand::Continue { files: vec![] }
-            },
-            &session(root.path(), true, false)
-        )
-        .await
-        .is_err()
+        execute_command_with_session(continuation(), &session(root.path(), true, false))
+            .await
+            .is_err()
     );
 }
 
@@ -1228,16 +1216,9 @@ async fn adding_a_project_file_retains_source_ownership_and_refuses_unaccepted_d
     fs::write(vendor.join("fixture.jar"), &changed).unwrap();
     let before = snapshot(root.path());
     assert!(
-        execute_command_with_session(
-            Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![]
-            },
-            &selected
-        )
-        .await
-        .is_err()
+        execute_command_with_session(Commands::Sync { materialize: false }, &selected)
+            .await
+            .is_err()
     );
     assert_eq!(snapshot(root.path()), before);
     execute_command_with_session(

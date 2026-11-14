@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,26 @@ def fixture(root, leak=""):
         (root / name / "src" / ("main.rs" if name == "empack" else "lib.rs")).write_text(
             'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }' if name == "empack" else "")
     subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, check=True, capture_output=True)
+    # This fixture proves Cargo/input binding only. It deliberately contains no
+    # runnable JAR and does not claim Java or recipient qualification.
+    (root / "bootstrap/src/main").mkdir(parents=True)
+    for name in ("pom.xml", "mise.toml"):
+        (root / "bootstrap" / name).write_text("synthetic compiler input")
+    fixture_bootstrap(root)
+    (root / "empack-lib/build.rs").write_text(
+        'fn main() { println!("cargo:rustc-env=EMPACK_BOOTSTRAP_SHA256=' +
+        sha256(root / "bootstrap/target/empack-bootstrap.jar") + '"); }')
+
+
+def fixture_bootstrap(root):
+    import tomllib
+    from verification.bootstrap import sources
+    target = root / "bootstrap/target"
+    target.mkdir(exist_ok=True)
+    (target / "empack-bootstrap.jar").write_bytes(b"synthetic bootstrap producer input")
+    (target / "empack-bootstrap.json").write_text(json.dumps({
+        "schema": 1, "version": tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["package"]["version"],
+        "sources": sources(root), "jar_sha256": sha256(target / "empack-bootstrap.jar")}))
 
 
 def build(root, name="attempt", features="default"):
@@ -45,12 +66,12 @@ def build(root, name="attempt", features="default"):
     args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,
                            product_features=features, product_profile="dev", suites=["cli"])
     with patch("verify.ROOT", root):
-        return product(args, attempt, dict(os.environ), "fixture-host")
+        return product(args, attempt, dict(os.environ, CARGO_TARGET_DIR=str(root / "target")), "fixture-host")
 
 
 def commit_source(root):
     (root / "rust-toolchain.toml").write_bytes((Path(__file__).parents[2] / "rust-toolchain.toml").read_bytes())
-    (root / ".gitignore").write_text("/target/\n")
+    (root / ".gitignore").write_text("target/\n")
     for arguments in (("init", "-q"), ("config", "user.name", "Compiler fixture"),
                       ("config", "user.email", "fixture@example.invalid"), ("add", "."),
                       ("-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.devnull, "commit", "-qm", "fixture")):
@@ -138,14 +159,33 @@ class CompilerOutputEvidence(unittest.TestCase):
 class ProductBuild(unittest.TestCase):
     def test_fixed_release_builder_retains_actual_default_and_telemetry_units(self):
         from verification.product_build import compile_product, inspect_compilation
+        from verification.bootstrap import stage
         target, channel = native_compiler()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "source"
+            root.mkdir()
             fixture(root)
+            producer = Path(directory) / "producer"
+            producer_target = producer / "bootstrap/target"
+            producer_target.parent.mkdir(parents=True)
+            shutil.move(root / "bootstrap/target", producer_target)
+            (producer / "Cargo.toml").write_text('[workspace.package]\nversion="0.0.0-dev"\n')
+            identity = producer_target / "empack-bootstrap.json"
+            original = json.loads(identity.read_text())
+            for field, value in (("version", "9.9.9"), ("sources", {}), ("jar_sha256", "0" * 64)):
+                identity.write_text(json.dumps(dict(original, **{field: value})))
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "Bootstrap inputs changed"):
+                    stage(producer, root)
+                shutil.rmtree(root / "bootstrap/target")
+            identity.write_text(json.dumps(original))
+            self.assertEqual(stage(producer, root), original)
+            self.assertEqual((root / "bootstrap/target/empack-bootstrap.jar").read_bytes(),
+                             (producer_target / "empack-bootstrap.jar").read_bytes())
             commit_source(root)
+            environment = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"))
             for features in ("default", "telemetry"):
                 output = root / ".git" / features
-                record = compile_product(root, target, "cargo", output, dict(os.environ), features)
+                record = compile_product(root, target, "cargo", output, environment, features)
                 result = inspect_compilation(output, target, "cargo", features,
                                              record["source"]["revision"], record["source"]["stamped"], channel)
                 self.assertEqual(result, record)
@@ -154,7 +194,7 @@ class ProductBuild(unittest.TestCase):
                                  ("empack.exe" if os.name == "nt" else "empack")))
                 before = {p.name: p.read_bytes() for p in output.iterdir()}
                 with self.assertRaisesRegex(ValueError, "already contains an attempt"):
-                    compile_product(root, target, "cargo", output, dict(os.environ), features)
+                    compile_product(root, target, "cargo", output, environment, features)
                 self.assertEqual(before, {p.name: p.read_bytes() for p in output.iterdir()})
 
     def test_fixed_release_builder_refuses_transitive_fixture_authority(self):
@@ -167,7 +207,8 @@ class ProductBuild(unittest.TestCase):
                 commit_source(root)
                 output = root / ".git/compiled"
                 with self.assertRaisesRegex(ValueError, "Test-only"):
-                    compile_product(root, target, "cargo", output, dict(os.environ))
+                    compile_product(root, target, "cargo", output,
+                                    dict(os.environ, CARGO_TARGET_DIR=str(root / "target")))
                 self.assertFalse((output / "compile.json").exists())
 
     def test_archive_record_copies_the_actual_stamped_compilation_without_rebuild(self):
@@ -184,6 +225,7 @@ class ProductBuild(unittest.TestCase):
                 stream.write('[workspace.metadata.empack]\nrelease-target = "0.8.4-beta"\n')
             commit_source(root)
             inputs = prepare(root, "0.8.4-beta")
+            fixture_bootstrap(root)
             inputs_path = root / ".git/inputs.json"
             inputs_path.write_text(json.dumps(inputs))
             compiled = root / ".git/compiled"

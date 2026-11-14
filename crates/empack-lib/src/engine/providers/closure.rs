@@ -43,6 +43,8 @@ impl Default for ClosureLimits {
 pub enum ClosureIssueKind {
     IncompleteEvidence(Coverage),
     MissingIdentity,
+    /// Fresh required metadata names a dependency absent from the checked lock.
+    MissingSelection,
     AmbiguousContentKind,
     /// The observed selection conflicts; this is not a proof that no solution exists.
     SelectionConflict {
@@ -78,6 +80,14 @@ impl ProviderClosure {
         self.issues.is_empty()
     }
 }
+/// Resolving a candidate may expand its graph; checking never chooses missing versions.
+pub(super) enum ClosurePolicy<'a> {
+    Resolve {
+        preferred: Option<&'a ResolvedProject>,
+        revalidate_libraries: bool,
+    },
+    RecordedSelections,
+}
 impl ProviderCatalog {
     /// Expand required records under one budget. Cycles are valid; conflicting observed pins
     /// and incomplete evidence remain explicit issues, never silently omitted dependencies.
@@ -102,10 +112,56 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         request: ClosureRequest,
         limits: ClosureLimits,
-        mut budget: transport::RequestBudget,
+        budget: transport::RequestBudget,
         preferred: Option<&ResolvedProject>,
         revalidate_libraries: bool,
     ) -> Result<ProviderClosure> {
+        self.resolve_required_closure_observed(
+            scope,
+            request,
+            limits,
+            budget,
+            ClosurePolicy::Resolve {
+                preferred,
+                revalidate_libraries,
+            },
+            |_| {},
+        )
+        .await
+    }
+    pub(in crate::engine) async fn check_exact_selections(
+        &self,
+        scope: &mut WorkScope,
+        request: ClosureRequest,
+        limits: ClosureLimits,
+        progress: impl Fn(&ProviderProjectId) + Send + Sync,
+    ) -> Result<ProviderClosure> {
+        self.resolve_required_closure_observed(
+            scope,
+            request,
+            limits,
+            transport::RequestBudget::new(limits.selection.catalog)?,
+            ClosurePolicy::RecordedSelections,
+            progress,
+        )
+        .await
+    }
+    pub(super) async fn resolve_required_closure_observed(
+        &self,
+        scope: &mut WorkScope,
+        request: ClosureRequest,
+        limits: ClosureLimits,
+        mut budget: transport::RequestBudget,
+        policy: ClosurePolicy<'_>,
+        progress: impl Fn(&ProviderProjectId) + Send + Sync,
+    ) -> Result<ProviderClosure> {
+        let (preferred, revalidate_libraries) = match &policy {
+            ClosurePolicy::Resolve {
+                preferred,
+                revalidate_libraries,
+            } => (*preferred, *revalidate_libraries),
+            ClosurePolicy::RecordedSelections => (None, false),
+        };
         ensure!(
             limits.projects > 0
                 && limits.edges > 0
@@ -144,6 +200,7 @@ impl ProviderCatalog {
                 CatalogError::Limit
             );
             result._graph.push(graph_reservation(scope, 4096)?);
+            progress(&root.pin.project);
             let (selected, next) = self
                 .resolve_exact_budget(scope, root.pin.clone(), limits.selection.catalog, budget)
                 .await?;
@@ -166,6 +223,7 @@ impl ProviderCatalog {
             budget.check_deadline()?;
             let parent = &result.selections[&queue[cursor]];
             let from = parent.resolution.pin.clone();
+            progress(&from.project);
             let parent_kind = parent.kind;
             let coverage = parent.resolution.coverage;
             edge_count = edge_count
@@ -198,6 +256,9 @@ impl ProviderCatalog {
                         continue;
                     }
                     _ => continue,
+                }
+                if let Some(project) = &dependency.project {
+                    progress(project);
                 }
                 let existing = dependency
                     .project
@@ -233,6 +294,14 @@ impl ProviderCatalog {
                     }
                     existing.resolution.pin.clone()
                 } else {
+                    if matches!(policy, ClosurePolicy::RecordedSelections) {
+                        result.issues.push(ClosureIssue {
+                            from: from.clone(),
+                            dependency: Some(dependency),
+                            kind: ClosureIssueKind::MissingSelection,
+                        });
+                        continue;
+                    }
                     if dependency
                         .project
                         .as_ref()

@@ -105,12 +105,13 @@ fn restricted_inputs(output: &Output) -> Vec<String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(text.contains("Import continuation was saved"), "{text}");
+    assert!(text.contains("Import was saved"), "{text}");
     let mut selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {
-            let (_, quoted) = line.split_once("Import input ")?;
-            serde_json::from_str(quoted.strip_suffix(": RestrictedDownload")?).ok()
+            let (_, displayed) = line.split_once("Missing import file ")?;
+            let value = serde_json::Deserializer::from_str(displayed);
+            value.into_iter::<String>().next()?.ok()
         })
         .collect();
     assert!(!selectors.is_empty(), "{text}");
@@ -208,15 +209,20 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            pending["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &association,
         ],
     );
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("digest mismatch"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("digest mismatch"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!target.exists());
     assert_eq!(source_view(), before);
     assert_eq!(snapshot_excluding(&commands.state, &[]), retained);
@@ -247,10 +253,11 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            pending["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &supplied[0],
         ],
     );
@@ -273,10 +280,11 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         project.dir(),
         &target,
         &[
-            "init",
-            "--continue",
+            "pending",
+            "resume",
+            retained["id"].as_str().unwrap(),
             "--exclude-auxiliary",
-            "--import-file",
+            "--file",
             &supplied[1],
         ],
     );

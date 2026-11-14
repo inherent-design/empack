@@ -21,6 +21,7 @@ pub mod api;
 pub mod archive_source;
 pub mod artifacts;
 pub mod build;
+pub mod checking;
 pub mod content;
 mod continuation_store;
 pub mod dependency_content;
@@ -32,6 +33,7 @@ pub mod import;
 pub mod initialize;
 pub mod instance;
 mod io;
+pub(crate) mod java;
 pub mod layout;
 pub mod mrpack;
 mod native;
@@ -63,7 +65,7 @@ pub(crate) mod runtime_versions;
 pub mod pending;
 
 /// Protocol capabilities of an untagged build, independent of its display version.
-pub(crate) const DEVELOPMENT_VERSION: &str = "0.8.4-beta";
+pub(crate) const DEVELOPMENT_VERSION: &str = "0.8.5-beta";
 pub(crate) fn compatibility_version() -> &'static str {
     if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
         DEVELOPMENT_VERSION

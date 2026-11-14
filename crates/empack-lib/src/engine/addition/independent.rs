@@ -4,6 +4,12 @@ use anyhow::Result;
 use empack_core::{addition::AdditionGroup, files::ManagedPath, model::*};
 use std::collections::BTreeSet;
 
+pub struct BatchPartition {
+    pub components: Vec<Vec<usize>>,
+    /// Missing completeness prevents splitting these requests; not a gameplay diagnosis.
+    pub incomplete_dependencies: BTreeSet<DependencyKey>,
+}
+
 /// Partition resolved requests before execution. Each returned component contains indices
 /// into `groups`, in input order. A failed member blocks its whole component. Connections
 /// include shared identities, labels, required closure in the current project, old and new
@@ -12,7 +18,27 @@ use std::collections::BTreeSet;
 pub fn independent_components(
     current: &ResolvedProject,
     groups: &[AdditionGroup],
-) -> Result<Vec<Vec<usize>>> {
+) -> Result<BatchPartition> {
+    let incomplete_dependencies: BTreeSet<_> = if groups.len() > 1 {
+        current
+            .lock()
+            .coverage
+            .iter()
+            .chain(groups.iter().flat_map(|group| group.coverage().iter()))
+            .filter(|(_, coverage)| **coverage != Coverage::CompleteForSelection)
+            .map(|(key, _)| key.clone())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    // Unknown edges may connect any of the requested changes. Keep one ordinary
+    // candidate rather than treating absence of evidence as an independent subset.
+    if !incomplete_dependencies.is_empty() {
+        return Ok(BatchPartition {
+            components: vec![(0..groups.len()).collect()],
+            incomplete_dependencies,
+        });
+    }
     let footprints: Vec<_> = groups
         .iter()
         .map(|group| Footprint::new(current, group))
@@ -39,7 +65,10 @@ pub fn independent_components(
         component.sort_unstable();
         components.push(component);
     }
-    Ok(components)
+    Ok(BatchPartition {
+        components,
+        incomplete_dependencies,
+    })
 }
 struct Footprint<'a> {
     labels: BTreeSet<&'a DependencyKey>,

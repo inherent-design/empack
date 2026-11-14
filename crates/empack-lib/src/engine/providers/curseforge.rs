@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 use empack_core::{
     digest::DigestSet,
     identity::{CurseForgeFileId, CurseForgeProjectId},
@@ -28,8 +29,16 @@ pub(super) fn project(bytes: &[u8], search: bool) -> Result<CanonicalProject> {
         json::<Envelope<Project>>(bytes)?.data
     };
     ensure!(
-        value.game_id == 432 && !value.name.trim().is_empty() && !value.slug.is_empty(),
-        CatalogError::InvalidRecord
+        value.game_id == 432,
+        record_error("data.gameId", RecordInvariant::CanonicalIdentity)
+    );
+    ensure!(
+        !value.name.trim().is_empty(),
+        record_error("data.name", RecordInvariant::NonEmpty)
+    );
+    ensure!(
+        !value.slug.is_empty(),
+        record_error("data.slug", RecordInvariant::NonEmpty)
     );
     let kind = match value.class_id {
         Some(6) => ContentKind::Mod,
@@ -40,7 +49,10 @@ pub(super) fn project(bytes: &[u8], search: bool) -> Result<CanonicalProject> {
         _ => return Err(CatalogError::UnsupportedKind.into()),
     };
     Ok(CanonicalProject {
-        id: ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&value.id.to_string())?),
+        id: ProviderProjectId::CurseForge(
+            CurseForgeProjectId::parse(&value.id.to_string())
+                .map_err(|_| record_error("data.id", RecordInvariant::CanonicalIdentity))?,
+        ),
         slug: value.slug,
         title: value.name,
         kinds: NonEmpty::new(vec![kind])?,
@@ -80,6 +92,13 @@ pub(super) fn selection(
     pin: &ResolvedPin,
     bytes: &[u8],
 ) -> Result<ProviderResolution> {
+    decode_selection(project, pin, bytes).with_context(|| selection_context(pin))
+}
+fn decode_selection(
+    project: CanonicalProject,
+    pin: &ResolvedPin,
+    bytes: &[u8],
+) -> Result<ProviderResolution> {
     let file = checked_file(pin, bytes)?;
     let selected = provider_file(&file)?;
     let coverage = if file.dependencies.is_some() {
@@ -96,12 +115,22 @@ pub(super) fn selection(
             4 => DependencyRelation::Tool,
             5 => DependencyRelation::Incompatible,
             6 => DependencyRelation::Include,
-            _ => return Err(CatalogError::InvalidRecord.into()),
+            _ => {
+                return Err(record_error(
+                    "data.dependencies[].relationType",
+                    RecordInvariant::RecognizedValue,
+                ));
+            }
         };
         dependencies.push(ProviderDependency {
-            project: Some(ProviderProjectId::CurseForge(CurseForgeProjectId::parse(
-                &dep.mod_id.to_string(),
-            )?)),
+            project: Some(ProviderProjectId::CurseForge(
+                CurseForgeProjectId::parse(&dep.mod_id.to_string()).map_err(|_| {
+                    record_error(
+                        "data.dependencies[].modId",
+                        RecordInvariant::CanonicalIdentity,
+                    )
+                })?,
+            )),
             pin: None,
             filename: None,
             relation,
@@ -109,17 +138,7 @@ pub(super) fn selection(
     }
     // CurseForge mixes game and loader labels in gameVersions. Preserve all source labels,
     // and expose known loader labels separately without inventing compatibility for unknowns.
-    let loaders = file
-        .game_versions
-        .iter()
-        .filter(|value| {
-            matches!(
-                value.as_str(),
-                "Forge" | "Fabric" | "Quilt" | "NeoForge" | "Cauldron" | "LiteLoader"
-            )
-        })
-        .map(|value| value.to_ascii_lowercase())
-        .collect();
+    let loaders = loader_labels(&file.game_versions);
     let environment = project.environment.clone();
     Ok(ProviderResolution {
         kinds: project.kinds.clone(),
@@ -134,17 +153,38 @@ pub(super) fn selection(
     })
 }
 
+/// CurseForge mixes game versions and loader labels; one interpretation serves
+/// metadata filtering and full selected-file normalization.
+pub(super) fn loader_labels(versions: &[String]) -> Vec<String> {
+    versions
+        .iter()
+        .filter(|value| {
+            matches!(
+                value.as_str(),
+                "Forge" | "Fabric" | "Quilt" | "NeoForge" | "Cauldron" | "LiteLoader"
+            )
+        })
+        .map(|value| value.to_ascii_lowercase())
+        .collect()
+}
+
 fn expected_content(assertions: &[Hash], size: u64) -> Result<ExpectedContent> {
     let mut hashes = Vec::new();
     for hash in assertions {
         let algorithm = match hash.algo {
             1 => "sha1",
             2 => "md5",
-            _ => return Err(CatalogError::InvalidRecord.into()),
+            _ => {
+                return Err(record_error(
+                    "data.hashes[].algo",
+                    RecordInvariant::RecognizedValue,
+                ));
+            }
         };
         hashes.push((algorithm, hash.value.as_str()));
     }
-    let digests = DigestSet::parse(hashes).map_err(|_| CatalogError::InvalidRecord)?;
+    let digests = DigestSet::parse(hashes)
+        .map_err(|_| record_error("data.hashes", RecordInvariant::DigestSet))?;
     Ok(ExpectedContent {
         digests: Some(digests),
         size: Some(size),
@@ -171,22 +211,29 @@ pub(super) fn matches_content(bytes: &[u8], size: u64, observed: &DigestSet) -> 
 
 fn checked_file(pin: &ResolvedPin, bytes: &[u8]) -> Result<File> {
     let file: File = json::<Envelope<File>>(bytes)?.data;
+    let owner = CurseForgeProjectId::parse(&file.mod_id.to_string())
+        .map_err(|_| record_error("data.modId", RecordInvariant::CanonicalIdentity))?;
+    let selection = CurseForgeFileId::parse(&file.id.to_string())
+        .map_err(|_| record_error("data.id", RecordInvariant::CanonicalIdentity))?;
+    ensure!(file.game_id == 432, identity_error("data.gameId"));
     ensure!(
-        file.game_id == 432
-            && ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&file.mod_id.to_string())?)
-                == pin.project
-            && PinSelector::CurseForgeFile(CurseForgeFileId::parse(&file.id.to_string())?)
-                == pin.selection,
-        CatalogError::Identity
+        ProviderProjectId::CurseForge(owner) == pin.project,
+        identity_error("data.modId")
+    );
+    ensure!(
+        PinSelector::CurseForgeFile(selection) == pin.selection,
+        identity_error("data.id")
     );
     Ok(file)
 }
 fn provider_file(file: &File) -> Result<ProviderFile> {
-    filename(&file.file_name)?;
+    filename(&file.file_name)
+        .map_err(|_| record_error("data.fileName", RecordInvariant::PortableFilename))?;
     let expected = expected_content(&file.hashes, file.file_length)?;
     let mut alternatives = Vec::new();
     if let Some(url) = &file.download_url {
-        download_locator(url)?;
+        download_locator(url)
+            .map_err(|_| record_error("data.downloadUrl", RecordInvariant::DownloadLocator))?;
         alternatives.push(url.clone());
     }
     Ok(ProviderFile {
@@ -198,5 +245,5 @@ fn provider_file(file: &File) -> Result<ProviderFile> {
     })
 }
 pub(super) fn archive_file(pin: &ResolvedPin, bytes: &[u8]) -> Result<ProviderFile> {
-    provider_file(&checked_file(pin, bytes)?)
+    (|| provider_file(&checked_file(pin, bytes)?))().with_context(|| selection_context(pin))
 }

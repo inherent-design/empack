@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://inherent.design/empack/schemas/empack.schema-6.json",
   "title": "Empack authoring schema 6",
-  "description": "Editor completion and structural validation. Use empack manifest check for composed bindings, path safety, provider ownership and semantic constraints.",
+  "description": "Editor completion and structural validation. Use empack check --documents for composed bindings, path safety, provider ownership and semantic constraints.",
   "type": "object",
   "properties": {
     "schema": {

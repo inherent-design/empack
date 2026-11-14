@@ -518,7 +518,7 @@ fn retained_recovery_coordinates_preserve_the_original_terminal_result() {
     assert!(text.contains("Operation interrupted"), "{text}");
     assert_eq!(
         crate::application::classify_error(&error),
-        crate::application::EmpackExitCode::Interrupted
+        crate::application::EmpackExitCode::General
     );
 }
 
@@ -575,11 +575,7 @@ fn retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_
         }
         assert_eq!(
             crate::application::classify_error(&error),
-            if interrupted {
-                crate::application::EmpackExitCode::Interrupted
-            } else {
-                crate::application::EmpackExitCode::General
-            }
+            crate::application::EmpackExitCode::General
         );
         let text = format!("{:#}", super::super::recovery_guidance::annotate(error));
         assert!(
@@ -619,6 +615,18 @@ fn launch_failure_summary_preserves_runtime_phase_and_cause() {
         assert_eq!(
             format!("{:#}", anyhow::Error::new(error)),
             format!("Instance launch failed: {phase}: fixture failure")
+        );
+        let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+            ExecutionOutcome::FailedBeforePublication(
+                anyhow::Error::new(std::io::Error::other("fixture failure")).context(phase),
+            ),
+        ));
+        let error = retained_failure(outcome, failure_summary("Instance launch", true));
+        assert_eq!(
+            crate::application::diagnostics::message(&error),
+            format!(
+                "Operation failed (while running the operation)\nInstance launch failed\n{phase}\nfixture failure"
+            )
         );
     }
     assert_eq!(

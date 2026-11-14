@@ -17,6 +17,7 @@ from verification.process import run
 from verification.release import TARGETS, git
 from verification.release_inputs import prepare
 from verification.product_build import compile_product
+from verification.bootstrap import stage as stage_bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +57,7 @@ def main():
                            attempt, "clone", environment)
             verify.checked(["git", "checkout", "--detach", revision], attempt, "checkout", environment, cwd=source)
             inputs = prepare(source, args.version)
+            stage_bootstrap(ROOT, source)
             record["inputs"] = inputs
             metadata = dict(GIT_HASH=revision, BUILD_DATE=inputs["build_date"], CARGO_INCREMENTAL="0")
             record["build_environment"] = metadata

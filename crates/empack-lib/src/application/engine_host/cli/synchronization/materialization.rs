@@ -18,6 +18,7 @@ use crate::engine::{
 
 pub(super) struct SyncInputs {
     pub migration: bool,
+    pub migration_output: Option<super::super::migration::MigrationOutput>,
     pub context: SyncInputContext,
     pub resumed: Option<ResumedSync>,
     pub files: Vec<String>,
@@ -27,6 +28,7 @@ impl SyncInputs {
     pub fn initial(context: SyncInputContext) -> Self {
         Self {
             migration: false,
+            migration_output: None,
             context,
             resumed: None,
             files: Vec::new(),
@@ -44,6 +46,10 @@ pub(super) async fn publish(
     mut inputs: SyncInputs,
 ) -> Result<()> {
     let migration = inputs.migration;
+    let structured = inputs
+        .migration_output
+        .as_ref()
+        .is_some_and(|output| output.json);
     let evidence = SourceEvidencePolicy::Compatibility;
     let source_revision = inputs.context.revision();
     let (invocation, _) = project_path(session)?;
@@ -86,12 +92,14 @@ pub(super) async fn publish(
                     }
                     AcquisitionSpec::Local(_) | AcquisitionSpec::Embedded { .. } => continue,
                 };
-                session.display().status().info(&format!(
-                    "Acquire and verify {} / {} ({} placements)",
-                    key.as_str(),
-                    file.slot.as_str(),
-                    file.placements.as_slice().len()
-                ));
+                if !structured {
+                    session.display().status().info(&format!(
+                        "Acquire and verify {} / {} ({} placements)",
+                        key.as_str(),
+                        file.slot.as_str(),
+                        file.placements.as_slice().len()
+                    ));
+                }
                 pending.push(AcquisitionNeed {
                     key: AcquisitionKey::Locked(LockedFileKey {
                         dependency: key.clone(),
@@ -104,7 +112,7 @@ pub(super) async fn publish(
             }
         }
         if session.config().app_config().dry_run || pending.is_empty() {
-            if session.config().app_config().dry_run {
+            if session.config().app_config().dry_run && !structured {
                 session.display().status().info("Materialization preview verifies resolved inputs without publishing project changes");
             }
             if let Some(content) = saved.take() {
@@ -250,7 +258,7 @@ pub(super) async fn publish(
                 )
                 .await?;
                 anyhow::bail!(
-                    "Synchronization was not published: {count} references require supplied content; continuation was saved; use sync --continue --file DEPENDENCY/SLOT=PATH"
+                    "Synchronization was not published: {count} references require supplied content; continuation was saved; use pending list, then pending show ID and pending resume ID --file DEPENDENCY/SLOT=PATH"
                 );
             }
             SyncRequest::AcquiredReferences {
@@ -298,7 +306,14 @@ pub(super) async fn publish(
     } else {
         request
     };
-    let published = dependencies::synchronize_with_outcome(session, request).await?;
+    let published = if let Some(output) = inputs.migration_output.take() {
+        dependencies::synchronize_reported(session, request, output.json, |native| {
+            output.present(session, native)
+        })
+        .await?
+    } else {
+        dependencies::synchronize_with_outcome(session, request).await?
+    };
     if published && let Some(saved) = resumed.take().map(|value| value.saved) {
         scoped(
                 session,

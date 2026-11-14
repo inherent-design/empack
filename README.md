@@ -2,7 +2,7 @@
 
 Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exact dependencies into `empack.lock`, builds launcher and server distributions, and can install and update native pack releases while preserving player-owned files.
 
-This documentation describes the **v0.8.4-beta development target**. It uses author schema 6 and optional integration bindings schema 1. Lock schema 3 and native release schema 2 record the Java policy separately from the author preference. Older author, lock and native release formats are rejected; no schema converter is provided. Preserve existing projects, player data and interrupted-operation records; use the compatible old executable to finish or recover old-format work. Recreate authoring in a new directory or re-import a supported Modrinth or CurseForge archive. Use the documentation at your installed release tag when running a downloaded binary.
+This documentation describes the **v0.8.5-beta development target**. Use the documentation at your installed release tag. Review [supported formats and older projects](docs/troubleshooting.md#older-author-projects) before opening an existing project with this development version.
 
 ## Installation
 
@@ -13,7 +13,7 @@ empack --version
 empack --help
 ```
 
-Choose the beta release explicitly; GitHub's “latest” link may point to a different release. Empack is a native executable and does not require packwiz, its installer JARs, or a system `7z` command. Java is needed for Minecraft and applicable server loader installation. Client launchers manage their own Java and game runtime.
+Choose the beta release explicitly; GitHub's “latest” link may point to a different release. Java is needed for Minecraft and applicable server loader installation. Client launchers manage their own Java and game runtime.
 
 ## Quickstart
 
@@ -25,7 +25,7 @@ empack --workdir my-pack add --platform modrinth sodium
 empack --workdir my-pack build modrinth
 ```
 
-Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism. Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run `empack --workdir my-pack sync`; use `update` when you deliberately want newer compatible dependencies. `outdated` reports provider update evidence; `migrate --minecraft VERSION --loader FAMILY --plan` previews a runtime change. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
+Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism. Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run `empack --workdir my-pack sync`; use `update` when you deliberately want newer compatible dependencies. `update --all` previews dependency changes; add `--apply` to apply the prepared changes. `migrate --minecraft VERSION --loader FAMILY --dry-run` previews a runtime change. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
 
 For an existing pack archive, use `empack init my-pack --from ./pack.mrpack` or a CurseForge manifest ZIP. Preview changes with `--dry-run`. See [usage](docs/usage.md) for imports, optional files, restricted downloads and installed-instance commands.
 

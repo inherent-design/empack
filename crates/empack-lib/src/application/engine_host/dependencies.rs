@@ -9,8 +9,8 @@ use crate::{
         },
         api::{
             AddRequest, AdoptObservedRequest, BatchPolicy, DependencyBatchChange,
-            DependencyBatchItem, DependencyBatchRequest, ExistingDependencyPolicy, RemoveRequest,
-            Request, SyncRequest, UpdateRequest,
+            DependencyBatchIncomplete, DependencyBatchItem, DependencyBatchRequest,
+            ExistingDependencyPolicy, RemoveRequest, Request, SyncRequest, UpdateRequest,
         },
         content::SourceEvidencePolicy,
         project::ProjectReader,
@@ -23,8 +23,10 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::model::NonEmpty;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 mod adoption;
+mod update_report;
+pub(super) use update_report::{UpdateOutput, UpdatePreviewReport};
 mod identification;
 
 /// Resolve every selected provider root and its required closure, then record exact references.
@@ -107,36 +109,6 @@ pub async fn add(
     let services = configured_services(session)?;
     add_with_services(session, inputs, releases, evidence, existing, services).await
 }
-/// Deliberately refresh selected installed identities while preserving authored intent and pins.
-/// Inputs describe the requested selections; an unknown identity cannot become an implicit add.
-pub async fn update(
-    session: &dyn Session,
-    inputs: NonEmpty<AddHostInput>,
-    releases: impl Into<Option<ReleasePolicy>> + Send,
-    evidence: SourceEvidencePolicy,
-) -> Result<()> {
-    let services = configured_services(session)?;
-    update_with_services(session, inputs, releases, evidence, services).await
-}
-pub(super) async fn update_with_services(
-    session: &dyn Session,
-    inputs: NonEmpty<AddHostInput>,
-    releases: impl Into<Option<ReleasePolicy>> + Send,
-    evidence: SourceEvidencePolicy,
-    services: AdditionServices,
-) -> Result<()> {
-    change_with_services(
-        session,
-        inputs,
-        releases,
-        evidence,
-        Change::Update,
-        services,
-        BatchPolicy::AllRequested,
-    )
-    .await
-}
-
 pub(super) async fn adopt_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
@@ -203,10 +175,26 @@ pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServi
         files,
     })
 }
+pub(super) mod selection;
+pub(super) use selection::UpdateSelection;
+
 enum Change {
     Add(ExistingDependencyPolicy),
-    Update,
+    Update {
+        selection: UpdateSelection,
+        pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
+        mode: ApplicationMode,
+        output: UpdateOutput,
+    },
     Adopt,
+}
+
+pub(super) struct UpdateExecution {
+    pub selection: UpdateSelection,
+    pub batch: BatchPolicy,
+    pub pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
+    pub mode: ApplicationMode,
+    pub output: UpdateOutput,
 }
 
 pub(super) async fn add_with_services(
@@ -254,16 +242,21 @@ pub(super) async fn update_batch_with_services(
     releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     services: AdditionServices,
-    policy: BatchPolicy,
+    execution: UpdateExecution,
 ) -> Result<()> {
     change_with_services(
         session,
         inputs,
         releases,
         evidence,
-        Change::Update,
+        Change::Update {
+            selection: execution.selection,
+            pins: execution.pins,
+            mode: execution.mode,
+            output: execution.output,
+        },
         services,
-        policy,
+        execution.batch,
     )
     .await
 }
@@ -272,12 +265,59 @@ async fn change_with_services(
     inputs: NonEmpty<AddHostInput>,
     releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
-    change: Change,
+    mut change: Change,
     services: AdditionServices,
     batch: BatchPolicy,
 ) -> Result<()> {
+    let selecting = matches!(
+        &change,
+        Change::Update {
+            selection: UpdateSelection::Interactive,
+            ..
+        }
+    );
+    if selecting {
+        ensure!(
+            !session.config().app_config().yes && session.interactive().can_choose(),
+            crate::application::cli::CommandInputRequired(
+                "Version selection requires an interactive terminal; use --pin KEY=VERSION_ID without --select"
+            )
+        );
+        ensure!(
+            matches!(
+                &change,
+                Change::Update {
+                    output: UpdateOutput { json: false, .. },
+                    ..
+                }
+            ),
+            crate::application::cli::CommandInputRequired(
+                "--select cannot be combined with --json"
+            )
+        );
+        ensure!(
+            inputs
+                .as_slice()
+                .iter()
+                .all(|input| matches!(input, AddHostInput::Provider(_)))
+                && matches!(&change, Change::Update { pins, .. } if pins.is_empty()),
+            crate::application::cli::CommandInputRequired(
+                "--select requires provider dependencies and cannot be combined with --pin"
+            )
+        );
+    }
     let releases = releases.into();
-    let update = matches!(&change, Change::Update);
+    let update = matches!(&change, Change::Update { .. });
+    let update_mode = match &change {
+        Change::Update { mode, .. } => *mode,
+        _ => ApplicationMode::Apply,
+    };
+    let update_output = match &change {
+        Change::Update { output, .. } => *output,
+        _ => UpdateOutput::default(),
+    };
+    let mut requested = Vec::new();
+    let mut source_kinds = BTreeMap::new();
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -291,7 +331,13 @@ async fn change_with_services(
     let mut identify = Vec::new();
     for input in inputs.into_vec() {
         match input {
-            AddHostInput::Provider(input) => providers.push(input),
+            AddHostInput::Provider(input) => {
+                if let Some(key) = &input.key {
+                    requested.push(key.as_str().to_owned());
+                    source_kinds.insert(key.as_str().to_owned(), "provider");
+                }
+                providers.push(input);
+            }
             AddHostInput::IdentifiedFile {
                 mut source,
                 kind,
@@ -309,6 +355,16 @@ async fn change_with_services(
                 });
             }
             AddHostInput::File(mut input) => {
+                requested.push(input.key.as_str().to_owned());
+                source_kinds.insert(
+                    input.key.as_str().to_owned(),
+                    match &input.source {
+                        DirectFileSource::Local(_) | DirectFileSource::TrackedLocal { .. } => {
+                            "local"
+                        }
+                        _ => "url",
+                    },
+                );
                 if let DirectFileSource::Local(path)
                 | DirectFileSource::ObservedUrl { path, .. }
                 | DirectFileSource::TrackedLocal { path, .. } = &mut input.source
@@ -341,168 +397,400 @@ async fn change_with_services(
     let selected = project.clone();
     let mut limits = ClosureLimits::default();
     limits.selection.catalog.deadline = Duration::from_secs(config.net_timeout);
+    let (report_sender, mut report_receiver) = tokio::sync::oneshot::channel();
+    let (mut selector, questions) = if selecting {
+        let (selector, questions) = selection::channel();
+        (Some(selector), Some(questions))
+    } else {
+        (None, None)
+    };
     let result = async {
-        let (addition, revision) = scoped(session, shared, move |mut scope| async move {
-            let work = scope.spawn_blocking(
-                ResourceRequest {
-                    jobs: 1,
-                    memory_bytes: 64 << 20,
-                    open_files: 16,
-                    ..Default::default()
-                },
-                ResourceRequest {
-                    memory_bytes: 64 << 20,
-                    open_files: 4,
-                    ..Default::default()
-                },
-                move |cancel| {
-                    let workspace = ProjectReader::new(RecoveryReader::new(state)).capture(
-                        &selected, &[], SnapshotLimits::default(), &cancel,
+        let resolution = scoped_with_selections(
+            session,
+            shared,
+            update_output.quiet,
+            questions,
+            move |mut scope| async move {
+                let work =
+                    scope.spawn_blocking(
+                        ResourceRequest {
+                            jobs: 1,
+                            memory_bytes: 64 << 20,
+                            open_files: 16,
+                            ..Default::default()
+                        },
+                        ResourceRequest {
+                            memory_bytes: 64 << 20,
+                            open_files: 4,
+                            ..Default::default()
+                        },
+                        move |cancel| {
+                            let workspace = ProjectReader::new(RecoveryReader::new(state))
+                                .capture(&selected, &[], SnapshotLimits::default(), &cancel)?;
+                            if !tracked_sources.is_empty() {
+                                workspace.root().capture(
+                                    &tracked_sources.into_iter().collect::<Vec<_>>(),
+                                    SnapshotLimits::default(),
+                                    &cancel,
+                                )?;
+                            }
+                            Ok::<_, anyhow::Error>(workspace)
+                        },
                     )?;
-                    if !tracked_sources.is_empty() {
-                        workspace.root().capture(&tracked_sources.into_iter().collect::<Vec<_>>(), SnapshotLimits::default(), &cancel)?;
+                let snapshot = scope.accept(work.wait().await?)?.transpose()?;
+                let revision = snapshot.revision();
+                let current = if adopt && snapshot.prior_lock().is_none() {
+                    adoption_context(snapshot.intent())?
+                } else {
+                    snapshot.require_resolved()?
+                };
+                let mut supplied = identification::resolve(
+                    &mut scope,
+                    identify,
+                    &mut providers,
+                    &services,
+                    evidence,
+                )
+                .await?;
+                let provider = if providers.is_empty() {
+                    None
+                } else {
+                    let resolved = if update {
+                        let analysis = services
+                            .catalog
+                            .analyze_provider_update(
+                                &mut scope,
+                                &current,
+                                NonEmpty::new(providers)?,
+                                crate::engine::providers::UpdateAnalysisOptions {
+                                    releases,
+                                    limits,
+                                    selector: selector.as_mut().map(|value| value as &mut dyn crate::engine::providers::UpdateVersionSelector),
+                                },
+                                |_| {},
+                            )
+                            .await?;
+                        let _ = report_sender.send((analysis.report, analysis.selected_pins));
+                        analysis.proposal
+                    } else {
+                        services
+                            .catalog
+                            .resolve_addition(
+                                &mut scope,
+                                &current,
+                                NonEmpty::new(providers)?,
+                                releases,
+                                limits,
+                            )
+                            .await
                     }
-                    Ok::<_, anyhow::Error>(workspace)
-                },
-            )?;
-            let snapshot = scope.accept(work.wait().await?)?.transpose()?;
-            let revision = snapshot.revision();
-            let current = if adopt && snapshot.prior_lock().is_none() {
-                adoption_context(snapshot.intent())?
-            } else {
-                snapshot.require_resolved()?
-            };
-            let mut supplied = identification::resolve(
-                &mut scope, identify, &mut providers, &services, evidence
-            ).await?;
-            let provider = if providers.is_empty() {
-                None
-            } else {
-                let resolved = services.catalog.resolve_addition(
-                    &mut scope, &current, NonEmpty::new(providers)?, releases, limits
-                ).await.with_context(|| format!(
-                    "Provider resolution failed before publication (shared --net-timeout {} seconds); --continue-independent applies only after resolution. For a deadline failure, retry with a larger explicit --net-timeout",
-                    limits.selection.catalog.deadline.as_secs()
-                ))?;
-                match resolved {
-                    ProviderAdditionOutcome::Ready(addition) => Some(addition),
-                    ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire_with_supplied(&mut scope, &services.transport, evidence, services.files, &mut supplied).await?),
-                    ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!(
-                        "Requested dependencies were not published: required dependency evidence needs a decision: {:?}",
-                        closure.issues
+                    .map_err(|error| {
+                        provider_failure(
+                            error,
+                            limits.selection.catalog.deadline,
+                            batch == BatchPolicy::ContinueIndependent,
+                        )
+                    })?;
+                    match resolved {
+                        ProviderAdditionOutcome::Ready(addition) => Some(addition),
+                        ProviderAdditionOutcome::Archives(draft) => Some(
+                            draft
+                                .acquire_with_supplied(
+                                    &mut scope,
+                                    &services.transport,
+                                    evidence,
+                                    services.files,
+                                    &mut supplied,
+                                )
+                                .await?,
+                        ),
+                        ProviderAdditionOutcome::NeedsInput(closure) => {
+                            return Err(anyhow::Error::new(
+                                crate::engine::providers::UnresolvedDependencies {
+                                    issues: closure.issues,
+                                },
+                            )
+                            .context("Requested dependencies were not saved"));
+                        }
+                    }
+                };
+                let provider_content = match &provider {
+                    Some(provider) if !supplied.is_empty() && !adopt => Some(
+                        identification::content(
+                            &mut scope, provider, supplied, &services, evidence,
+                        )
+                        .await?,
                     ),
-                }
-            };
-            let provider_content = match &provider {
-                Some(provider) if !supplied.is_empty() && !adopt => Some(identification::content(
-                    &mut scope, provider, supplied, &services, evidence
-                ).await?),
-                _ => None,
-            };
-            let files = if files.is_empty() {
-                None
-            } else {
-                Some(FileAddition::acquire(
-                    &mut scope, &current, NonEmpty::new(files)?, &services.transport,
-                    evidence, services.files
-                ).await?)
-            };
-            let addition = ResolvedAdditionBatch::combine_with_content(
-                &mut scope, current, provider, provider_content, files
-            ).await?;
-            Ok((addition, revision))
-        })
-        .await?;
-        for (key, dependency) in addition.group().dependencies() {
-            session.display().status().info(&format!(
-                "Check {}: {} ({})", key.as_str(), dependency.title, identity_label(&dependency.identity)
-            ));
+                    _ => None,
+                };
+                let files = if files.is_empty() {
+                    None
+                } else {
+                    Some(
+                        FileAddition::acquire(
+                            &mut scope,
+                            &current,
+                            NonEmpty::new(files)?,
+                            &services.transport,
+                            evidence,
+                            services.files,
+                        )
+                        .await?,
+                    )
+                };
+                let addition = ResolvedAdditionBatch::combine_with_content(
+                    &mut scope,
+                    current,
+                    provider,
+                    provider_content,
+                    files,
+                )
+                .await?;
+                Ok((addition, revision))
+            },
+        )
+        .await;
+        // Preserve useful independent discoveries before reporting a blocked proposal.
+        // Successful proposals continue to the exact native preview below.
+        let (observations, selected_pins) = report_receiver.try_recv().ok()
+            .map(|(report, pins)| (Some(report), pins)).unwrap_or_default();
+        let repeat_command = selection::repeat_command(&project, &requested, &selected_pins);
+        if let Change::Update { pins, .. } = &mut change {
+            pins.extend(selected_pins);
+        }
+        let mut report = UpdatePreviewReport::new(requested, source_kinds, observations);
+        report.repeat_command = repeat_command;
+        if update && let Err(error) = &resolution {
+            report.failed(error);
+            report.present(session, update_output)?;
+            report.finish(session, update_output);
+        }
+        let (addition, revision) = resolution?;
+        if !update {
+            for (key, dependency) in addition.group().dependencies() {
+                session.display().status().info(&format!(
+                    "Proposed {}: {} ({})",
+                    key.as_str(),
+                    dependency.title,
+                    identity_label(&dependency.identity)
+                ));
+            }
         }
         let request: Request = if batch == BatchPolicy::ContinueIndependent && !adopt {
-            let items = addition.group().root_groups().into_iter().map(|group| {
-                let content = addition.content().iter().filter(|(key, _)| group.dependencies().contains_key(&key.dependency)).map(|(key, value)| (key.clone(), value.clone())).collect();
-                DependencyBatchItem { group, content }
-            }).collect();
+            let items = addition
+                .group()
+                .root_groups()
+                .into_iter()
+                .map(|group| {
+                    let content = addition
+                        .content()
+                        .iter()
+                        .filter(|(key, _)| group.dependencies().contains_key(&key.dependency))
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    DependencyBatchItem { group, content }
+                })
+                .collect();
             DependencyBatchRequest {
-                source_revision: Some(revision), policy: batch, items: NonEmpty::new(items)?,
+                source_revision: Some(revision),
+                policy: batch,
+                items: NonEmpty::new(items)?,
                 change: match change {
                     Change::Add(existing) => DependencyBatchChange::Add(existing),
-                    Change::Update => DependencyBatchChange::Update,
+                    Change::Update { pins, .. } => DependencyBatchChange::Update { pins },
                     Change::Adopt => unreachable!("adoption is not a dependency batch"),
                 },
-            }.into()
+            }
+            .into()
         } else {
             match change {
-            Change::Add(existing) => AddRequest {
-                source_revision: Some(revision), group: addition.group().clone(),
-                content: addition.content().clone(), existing,
-            }.into(),
-            Change::Update => UpdateRequest {
-                source_revision: Some(revision), group: addition.group().clone(),
-                content: addition.content().clone(),
-            }.into(),
-            Change::Adopt => AdoptObservedRequest { group: addition.group().clone() }.into(),
-        }
+                Change::Add(existing) => AddRequest {
+                    source_revision: Some(revision),
+                    group: addition.group().clone(),
+                    content: addition.content().clone(),
+                    existing,
+                }
+                .into(),
+                Change::Update { pins, .. } => UpdateRequest {
+                    pins,
+                    source_revision: Some(revision),
+                    group: addition.group().clone(),
+                    content: addition.content().clone(),
+                }
+                .into(),
+                Change::Adopt => AdoptObservedRequest {
+                    group: addition.group().clone(),
+                }
+                .into(),
+            }
         };
-        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
+        let preparation = cancellable(session, engine.prepare(project, request))
+            .await
+            .and_then(ready);
+        if let Err(error) = &preparation {
+            if update {
+                report.failed(error);
+                report.present(session, update_output)?;
+                report.finish(session, update_output);
+            } else if let Some(batch) = error.downcast_ref::<DependencyBatchIncomplete>() {
+                show_batch(session, Some(&batch.0));
+            }
+        }
+        let prepared = preparation?;
         drop(addition);
-        if adopt { publish_adoption(session, &engine, prepared).await }
-        else if update { publish_update(session, &engine, prepared).await }
-        else { publish_addition(session, &engine, prepared).await }
-
+        if adopt {
+            publish_adoption(session, &engine, prepared).await
+        } else if update {
+            publish_update(
+                session,
+                &engine,
+                prepared,
+                update_mode,
+                update_output,
+                report,
+            )
+            .await
+        } else {
+            publish_addition(session, &engine, prepared).await
+        }
     }
     .await;
     engine.shutdown().await;
     result
 }
+mod text;
+
+pub(super) fn provider_failure(
+    error: anyhow::Error,
+    timeout: Duration,
+    independent: bool,
+) -> anyhow::Error {
+    let deadline = matches!(
+        error.downcast_ref::<crate::engine::providers::CatalogError>(),
+        Some(crate::engine::providers::CatalogError::Deadline)
+    ) || matches!(
+        error.downcast_ref::<crate::engine::acquisition::TransferError>(),
+        Some(crate::engine::acquisition::TransferError::Deadline)
+    );
+    let mut context = if deadline {
+        format!(
+            "Dependency lookup exceeded its {}-second limit; retry with a larger --net-timeout",
+            timeout.as_secs()
+        )
+    } else {
+        "Could not resolve the requested dependencies".into()
+    };
+    if independent {
+        context.push_str("; --continue-independent cannot skip a failed lookup");
+    }
+    error.context(context)
+}
+
 fn identity_label(identity: &empack_core::model::ResolvedIdentity) -> String {
-    use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
+    use empack_core::model::ResolvedIdentity;
     match identity {
-        ResolvedIdentity::Provider(ProviderProjectId::Modrinth(id)) => format!("modrinth:{id}"),
-        ResolvedIdentity::Provider(ProviderProjectId::CurseForge(id)) => format!("curseforge:{id}"),
-        ResolvedIdentity::Url(key) => format!("url:{}", key.as_str()),
+        ResolvedIdentity::Provider(project) => crate::application::labels::project(project),
         ResolvedIdentity::Local(key) => format!("local:{}", key.as_str()),
+        ResolvedIdentity::Url(key) => format!("url:{}", key.as_str()),
     }
 }
 async fn publish_update(
     session: &dyn Session,
     engine: &Engine,
     prepared: PreparedOperation,
+    mode: ApplicationMode,
+    output: UpdateOutput,
+    mut report: UpdatePreviewReport,
 ) -> Result<()> {
     let view = prepared.view().update().context("Missing update preview")?;
+    report.prepared(view)?;
+    report.present(session, output)?;
+    if output.json {
+        if let Some(batch) = &view.batch
+            && !batch.blocked.is_empty()
+        {
+            return Err(DependencyBatchIncomplete(batch.clone()).into());
+        }
+        return Ok(());
+    }
     show_batch(session, view.batch.as_ref());
+    session.display().status().message(&text::update_plan(
+        view.selected.len(),
+        view.changed_selections.len(),
+    ));
     for (requested, canonical) in &view.bindings {
-        if !view.selected.contains(canonical) {
+        if !view.selected.contains(canonical)
+            || (view.selected.len() > 1 && !view.changed_selections.contains(canonical))
+        {
             continue;
         }
+        let label = if requested == canonical {
+            requested.as_str().to_owned()
+        } else {
+            format!("{} -> {}", requested.as_str(), canonical.as_str())
+        };
         session.display().status().info(&format!(
-            "Check {} as {}: {}",
-            requested.as_str(),
-            canonical.as_str(),
+            "{label}: {}",
             if view.changed_selections.contains(canonical) {
-                "selection changed"
+                "will change"
             } else {
-                "selection retained"
+                "no change"
             },
         ));
     }
+    for (key, pin) in &view.author_pin_changes {
+        let version = match pin {
+            empack_core::identity::PinSelector::ModrinthVersion(id) => id.to_string(),
+            empack_core::identity::PinSelector::CurseForgeFile(id) => id.to_string(),
+        };
+        session
+            .display()
+            .status()
+            .info(&format!("Pin {} to {version}", key.as_str()));
+    }
     if !view.references.is_empty() {
         session.display().status().info(&format!(
-            "Record {} exact references; payloads verify when acquired",
+            "File references: {} (contents are checked when acquired)",
             view.references.len(),
         ));
     }
     show_changes(session, &view.files)?;
-    apply(session, engine, prepared, "Update", |receipt| {
-        let ExecutionReceipt::Update(receipt) = receipt else {
-            anyhow::bail!("Unexpected update receipt");
-        };
-        Ok(format!(
-            "Checked {} selected dependencies: {} selections changed, {} retained; preserved authored intent",
-            receipt.selected.len(), receipt.changed_selections.len(), receipt.selected.len() - receipt.changed_selections.len()
-        ))
-    })
-    .await
+    let mut details = None;
+    if mode == ApplicationMode::Preview
+        && let Some(batch) = &view.batch
+        && !batch.blocked.is_empty()
+    {
+        report.finish(session, output);
+        return Err(DependencyBatchIncomplete(batch.clone()).into());
+    }
+    let result = apply_in_mode(
+        session,
+        engine,
+        prepared,
+        "Update",
+        mode,
+        output.quiet,
+        |receipt| {
+            let ExecutionReceipt::Update(receipt) = receipt else {
+                anyhow::bail!("Unexpected update receipt");
+            };
+            details = Some(text::update_details(
+                receipt.selected.len(),
+                receipt.changed_selections.len(),
+                receipt.author_pin_changes.len(),
+            ));
+            Ok(text::checked(receipt.selected.len()))
+        },
+    )
+    .await;
+    // A partial receipt still describes completed work, even when apply returns
+    // an error for the remaining groups. Keep its details separate from the
+    // single-line status adapter, which deliberately escapes newlines.
+    if let Some(details) = details {
+        session.display().status().message(&details);
+    }
+    report.finish(session, output);
+    result
 }
 pub(super) async fn publish_addition(
     session: &dyn Session,
@@ -536,7 +824,7 @@ pub(super) async fn publish_addition(
     }
     if !view.references.is_empty() {
         session.display().status().info(&format!(
-            "Record {} exact content references; payloads are verified when a build requires them",
+            "File references: {} (contents are checked when acquired)",
             view.references.len()
         ));
     }
@@ -546,9 +834,13 @@ pub(super) async fn publish_addition(
             anyhow::bail!("Unexpected addition receipt");
         };
         Ok(format!(
-            "Recorded {} dependency bindings and {} exact references",
+            "Recorded {} {}",
             receipt.bindings.len(),
-            receipt.references.len()
+            if receipt.bindings.len() == 1 {
+                "dependency"
+            } else {
+                "dependencies"
+            }
         ))
     })
     .await
@@ -571,12 +863,12 @@ pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest
     let result = async {
         for (key, dependency) in request.group.dependencies() {
             session.display().status().info(&format!(
-                "Adopt {}: {} ({:?}, {:?}, {} files)",
+                "Record existing {}: {} ({}, {}, {})",
                 key.as_str(),
                 dependency.title,
-                dependency.kind,
-                dependency.identity,
-                dependency.files.as_slice().len()
+                crate::application::labels::content(dependency.kind),
+                identity_label(&dependency.identity),
+                counted(dependency.files.as_slice().len(), "file", "files")
             ));
         }
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
@@ -611,9 +903,17 @@ async fn publish_adoption(
             anyhow::bail!("Unexpected adoption receipt");
         };
         Ok(format!(
-            "Adopted {} verified dependency bindings; {} managed document changes",
-            receipt.bindings.len(),
-            receipt.publication.changed_files
+            "Recorded {} ({})",
+            counted(
+                receipt.bindings.len(),
+                "existing dependency",
+                "existing dependencies"
+            ),
+            counted(
+                receipt.publication.changed_files,
+                "file change",
+                "file changes"
+            )
         ))
     })
     .await
@@ -629,16 +929,20 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
             .view()
             .remove()
             .context("Missing removal preview")?;
-        session
-            .display()
-            .status()
-            .info(&format!("Removal mode: {:?}", view.mode));
+        session.display().status().info(match view.mode {
+            empack_core::removal::RemovalMode::ForgetRoots => {
+                "Remove direct dependencies from empack.yml; keep installed files"
+            }
+            empack_core::removal::RemovalMode::RemoveContent => {
+                "Remove selected dependencies and their managed files"
+            }
+        });
         for selected in &view.selected {
             session.display().status().info(&format!(
-                "Select {}: {} ({:?})",
+                "{}: {} ({})",
                 selected.key.as_str(),
                 selected.title,
-                selected.identity
+                identity_label(&selected.identity)
             ));
         }
         for unknown in &view.incomplete_evidence {
@@ -652,11 +956,7 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
             let ExecutionReceipt::Remove(receipt) = receipt else {
                 anyhow::bail!("Unexpected removal receipt");
             };
-            Ok(format!(
-                "Applied {:?} to {} dependencies",
-                receipt.mode,
-                receipt.selected.len()
-            ))
+            Ok(text::removal(receipt.mode, receipt.selected.len()))
         })
         .await
     }
@@ -672,7 +972,27 @@ pub(super) async fn synchronize_with_outcome(
     session: &dyn Session,
     request: SyncRequest,
 ) -> Result<bool> {
-    let operation_label = match &request {
+    let label = synchronization_label(&request);
+    synchronize_reported(session, request, false, |result| {
+        if let Ok(view) = result {
+            session.display().status().info(&format!(
+                "{label}: {}",
+                counted(view.selected.len(), "dependency", "dependencies")
+            ));
+            if !view.references.is_empty() {
+                session.display().status().info(&format!(
+                    "File references: {} (contents are checked when acquired)",
+                    view.references.len()
+                ));
+            }
+            show_changes(session, &view.files)?;
+        }
+        Ok(())
+    })
+    .await
+}
+fn synchronization_label(request: &SyncRequest) -> &'static str {
+    match request {
         SyncRequest::Migration { .. } => "Runtime migration",
         SyncRequest::SelectionIntent { pinned: true, .. } => {
             "Pin current selections (removes per-dependency automatic preferences)"
@@ -681,23 +1001,43 @@ pub(super) async fn synchronize_with_outcome(
             "Remove pins and retain current selections"
         }
         _ => "Synchronization",
-    };
+    }
+}
+/// Prepare once, report the real native result, then approve and execute that exact operation.
+/// A structured preview has no confirmation/footer text mixed into stdout.
+pub(super) async fn synchronize_reported(
+    session: &dyn Session,
+    request: SyncRequest,
+    json: bool,
+    present: impl FnOnce(Result<&crate::engine::api::SyncPreview, &anyhow::Error>) -> Result<()>,
+) -> Result<bool> {
+    ensure!(
+        !json || session.config().app_config().dry_run,
+        "Structured synchronization reports require --dry-run"
+    );
+    let operation_label = synchronization_label(&request);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
+        let prepared = match cancellable(session, engine.prepare(project, request))
+            .await
+            .and_then(ready)
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if let Err(report_error) = present(Err(&error)) {
+                    return Err(error.context(report_error));
+                }
+                return Err(error);
+            }
+        };
         let view = prepared
             .view()
             .sync()
             .context("Missing synchronization preview")?;
-        session.display().status().info(&format!(
-            "{operation_label}: {} recorded selections ({} deferred references)",
-            view.selected.len(),
-            view.references.len()
-        ));
-        show_changes(session, &view.files)?;
-        if !approve(session, operation_label)? {
+        present(Ok(view))?;
+        if json || !approve(session, operation_label)? {
             return Ok(false);
         }
         execute_approved(session, &engine, prepared, operation_label, |receipt| {
@@ -705,9 +1045,17 @@ pub(super) async fn synchronize_with_outcome(
                 anyhow::bail!("Unexpected synchronization receipt");
             };
             Ok(format!(
-                "{operation_label}: {} recorded dependencies; {} managed file changes",
-                receipt.project.lock().dependencies.len(),
-                receipt.publication.changed_files
+                "{operation_label}: {} ({})",
+                counted(
+                    receipt.project.lock().dependencies.len(),
+                    "dependency",
+                    "dependencies"
+                ),
+                counted(
+                    receipt.publication.changed_files,
+                    "file change",
+                    "file changes"
+                )
             ))
         })
         .await?;
@@ -725,6 +1073,17 @@ fn show_batch(session: &dyn Session, report: Option<&crate::engine::api::Depende
     let Some(report) = report else {
         return;
     };
+    if !report.independence_unverified.is_empty() {
+        let keys = report
+            .independence_unverified
+            .iter()
+            .map(|key| key.as_str().to_owned())
+            .collect::<Vec<_>>();
+        session
+            .display()
+            .status()
+            .warning(&text::independence_unverified(&keys, false));
+    }
     let labels = |indices: &[usize]| {
         indices
             .iter()
@@ -737,11 +1096,11 @@ fn show_batch(session: &dyn Session, report: Option<&crate::engine::api::Depende
         session
             .display()
             .status()
-            .info(&format!("Ready independent group: {}", labels(group)));
+            .info(&format!("Ready dependency group: {}", labels(group)));
     }
     for group in &report.blocked {
         session.display().status().warning(&format!(
-            "Preserve blocked group {}: {}",
+            "Keeping blocked dependency group {}: {}",
             labels(&group.requests),
             group.cause
         ));

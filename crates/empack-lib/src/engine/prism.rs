@@ -101,6 +101,73 @@ pub(super) fn verify_profile(bytes: &[u8], runtime: &RuntimeResolution) -> Resul
     Ok(())
 }
 
+/// Read-only launcher input. Cached labels/requirements are not selection
+/// authority; ordered components and all other settings remain bound.
+pub(super) struct ProfileIdentity {
+    runtime: RuntimeResolution,
+    meaning: Value,
+}
+impl ProfileIdentity {
+    pub(super) fn capture(bytes: &[u8], runtime: RuntimeResolution) -> Result<Self> {
+        verify_profile(bytes, &runtime)?;
+        let mut meaning: Value = serde_json::from_slice(bytes)?;
+        for component in meaning["components"]
+            .as_array_mut()
+            .context("Missing Prism components")?
+        {
+            let settings = component
+                .as_object_mut()
+                .context("Invalid Prism component")?;
+            for key in [
+                "cachedName",
+                "cachedVersion",
+                "cachedRequires",
+                "cachedConflicts",
+                "cachedVolatile",
+            ] {
+                settings.remove(key);
+            }
+            // Prism omits false flags when saving. Their effective defaults are
+            // false; do not generalize this to unknown settings or component order.
+            for key in ["important", "disabled", "dependencyOnly"] {
+                if let Some(value) = settings.get(key) {
+                    ensure!(value.is_boolean(), "Invalid Prism component flag: {key}");
+                    if value == false {
+                        settings.remove(key);
+                    }
+                }
+            }
+        }
+        Ok(Self { runtime, meaning })
+    }
+
+    pub(super) fn verify(&self, bytes: &[u8]) -> Result<()> {
+        let checked = (|| {
+            let current = Self::capture(bytes, self.runtime.clone())?;
+            ensure!(
+                current.meaning == self.meaning,
+                "Prism component settings changed"
+            );
+            Ok(())
+        })();
+        checked.map_err(|error: anyhow::Error| {
+            let mut diagnostic = super::diagnostics::Diagnostic::new(
+                super::diagnostics::DiagnosticCode::StaleSnapshot,
+                super::diagnostics::DiagnosticPhase::Verification,
+            );
+            diagnostic.object = Some("mmc-pack.json".into());
+            error
+                .context(diagnostic)
+                .context("Prism runtime profile changed since preparation")
+        })
+    }
+
+    pub(super) fn fingerprint(&self) -> Result<[u8; 32]> {
+        use sha2::{Digest, Sha256};
+        Ok(Sha256::digest(serde_json::to_vec(&self.meaning)?).into())
+    }
+}
+
 /// Preserve user components and attributes; only the known game/loader components change.
 /// Existing core components must still match the previously completed release.
 pub(super) fn transition(

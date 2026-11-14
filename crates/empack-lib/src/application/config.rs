@@ -76,16 +76,6 @@ pub struct AppConfig {
     #[serde(default = "default_fns::net_timeout")]
     pub net_timeout: u64,
 
-    /// Reserved Modrinth client identifier (currently unused)
-    #[arg(long, env = "EMPACK_ID_MODRINTH", hide_env_values = true)]
-    #[serde(default)]
-    pub modrinth_api_client_id: Option<String>,
-
-    /// Reserved Modrinth client key (currently unused)
-    #[arg(long, env = "EMPACK_KEY_MODRINTH", hide_env_values = true)]
-    #[serde(default)]
-    pub modrinth_api_client_key: Option<String>,
-
     /// CurseForge API Client Key
     #[arg(long, env = "EMPACK_KEY_CURSEFORGE",
         hide_default_value = true,
@@ -98,7 +88,7 @@ pub struct AppConfig {
     #[serde(default = "default_fns::log_level")]
     pub log_level: u8,
 
-    /// Output format (text, json, yaml)
+    /// Log format: compact text, JSON events or pretty text
     #[arg(long, env = "EMPACK_LOG_FORMAT", default_value = defaults::LOG_FORMAT)]
     #[serde(default = "default_fns::log_format")]
     pub log_format: LogFormat,
@@ -143,8 +133,6 @@ impl Default for AppConfig {
             cache_dir: None,
             cpu_jobs: default_fns::cpu_parallels(),
             net_timeout: default_fns::net_timeout(),
-            modrinth_api_client_id: None,
-            modrinth_api_client_key: None,
             curseforge_api_client_key: default_fns::curseforge_api_client_key(),
             log_level: default_fns::log_level(),
             log_format: default_fns::log_format(),
@@ -180,12 +168,6 @@ impl AppConfig {
         }
         if other.workdir.is_some() {
             self.workdir = other.workdir;
-        }
-        if other.modrinth_api_client_id.is_some() {
-            self.modrinth_api_client_id = other.modrinth_api_client_id;
-        }
-        if other.modrinth_api_client_key.is_some() {
-            self.modrinth_api_client_key = other.modrinth_api_client_key;
         }
         if other.curseforge_api_client_key.is_some() {
             self.curseforge_api_client_key = other.curseforge_api_client_key;

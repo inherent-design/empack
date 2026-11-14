@@ -10,7 +10,7 @@ repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-dev"
 
 [workspace.metadata.empack]
-release-target = "0.8.4-beta"
+release-target = "0.8.5-beta"
 
 [workspace.dependencies]
 empack-core = { path = "crates/empack-core" }
@@ -36,10 +36,12 @@ envy = "0.4.2"
 ed25519-dalek = "3.0.0"
 getrandom = "0.4.3"
 indicatif = { version = "0.18.6", features = ["rayon", "improved_unicode"] }
+vt100 = "0.16.2"
 percent-encoding = "2.3.2"
 reqwest = { version = "0.13.5", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_path_to_error = "0.1.20"
 serde-saphyr = "2.0.0"
 semver = "1"
 time = { version = "0.3.55", features = ["parsing"] }
@@ -55,7 +57,6 @@ fuzzy-matcher = "0.3.7"
 tower = "0.5.3"
 tower_governor = "0.8.0" # Rate limiting middleware
 tracing = "0.1.44"
-tracing-indicatif = "0.3.14"
 tracing-subscriber = { version = "0.3.23", features = [
     "env-filter",
     "json",
@@ -68,7 +69,7 @@ windows-core = "0.100.0"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
 tar = "0.4.46" # Tar archive creation for .tar.gz distribution fallback
 flate2 = "1.1" # Gzip compression paired with tar
-sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
+sevenz-rust2 = { version = "0.25.0", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
 handlebars = "6.4.4"
 
 # Telemetry (optional, behind `telemetry` feature gate)

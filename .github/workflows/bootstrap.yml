@@ -1,0 +1,157 @@
+name: Bootstrap JAR
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Optional native release version to stamp before building
+        type: string
+        default: ""
+      test:
+        description: Execute the finite supported JVM set
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          working_directory: bootstrap
+      - name: Stamp the same version as the native products
+        if: inputs.version != ''
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python3 scripts/prepare-release.py --version "${RELEASE_VERSION#v}" --output .git/bootstrap-inputs.json
+      - run: python3 scripts/build-bootstrap.py
+      - name: Prove a no-change rebuild retains the exact JAR
+        run: |
+          cp bootstrap/target/empack-bootstrap.jar "$RUNNER_TEMP/bootstrap.jar"
+          python3 scripts/build-bootstrap.py
+          cmp "$RUNNER_TEMP/bootstrap.jar" bootstrap/target/empack-bootstrap.jar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bootstrap-jar
+          path: |
+            bootstrap/target/empack-bootstrap.jar
+            bootstrap/target/empack-bootstrap.json
+            bootstrap/target/test-classes/
+          if-no-files-found: error
+
+  runtimes:
+    needs: build
+    if: inputs.test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
+      - uses: actions/setup-java@v6
+        id: java8
+        with:
+          distribution: zulu
+          java-version: "8"
+      - uses: actions/setup-java@v6
+        id: java16
+        with:
+          distribution: temurin
+          java-version: "16"
+      - uses: actions/setup-java@v6
+        id: java17
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-java@v6
+        id: java21
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-java@v6
+        id: java25
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Execute the same packaged bytes on every admitted JVM major
+        env:
+          TEST_JAVA8: ${{ steps.java8.outputs.path }}
+          TEST_JAVA16: ${{ steps.java16.outputs.path }}
+          TEST_JAVA17: ${{ steps.java17.outputs.path }}
+          TEST_JAVA21: ${{ steps.java21.outputs.path }}
+          TEST_JAVA25: ${{ steps.java25.outputs.path }}
+        run: |
+          mkdir -p bootstrap/target/results
+          for major in 8 16 17 21 25; do
+            variable="TEST_JAVA$major"
+            python3 bootstrap/tests/probe_encoding.py --java "${!variable}/bin/java" --output "bootstrap/target/results/encoding-java$major.json"
+            python3 bootstrap/tests/test_bootstrap.py --java "${!variable}/bin/java" -v > "bootstrap/target/results/java$major.log" 2>&1 || { cat "bootstrap/target/results/java$major.log"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bootstrap-jvm-results
+          path: bootstrap/target/results/
+          if-no-files-found: error
+
+  hosts:
+    name: Host ${{ matrix.target }} Java ${{ matrix.java }}
+    needs: build
+    if: inputs.test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            java: "8"
+            distribution: zulu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            java: "25"
+            distribution: temurin
+          - os: macos-26
+            target: aarch64-apple-darwin
+            java: "25"
+            distribution: temurin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
+      - uses: actions/setup-java@v6
+        with:
+          distribution: ${{ matrix.distribution }}
+          java-version: ${{ matrix.java }}
+      - name: Observe native and JVM encoding without changing runner locale
+        shell: bash
+        run: python3 bootstrap/tests/probe_encoding.py --output bootstrap/target/encoding-probe.json
+      - name: Exercise the packaged bootstrap before native compilation
+        shell: bash
+        run: python3 bootstrap/tests/test_bootstrap.py -v > bootstrap/target/host-tests.log 2>&1 || { cat bootstrap/target/host-tests.log; exit 1; }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bootstrap-host-${{ matrix.target }}-java${{ matrix.java }}
+          path: |
+            bootstrap/target/host-tests.log
+            bootstrap/target/encoding-probe.json
+          if-no-files-found: error

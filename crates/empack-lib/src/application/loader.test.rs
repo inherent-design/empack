@@ -47,8 +47,6 @@ fn test_config_merging() {
         workdir: Some(PathBuf::from("/tmp/override-workdir")),
         state_dir: Some(PathBuf::from("/tmp/override-state")),
         cache_dir: Some(PathBuf::from("/tmp/override-cache")),
-        modrinth_api_client_id: Some("modrinth-id".to_string()),
-        modrinth_api_client_key: Some("modrinth-key".to_string()),
         curseforge_api_client_key: Some("curseforge-key".to_string()),
         log_level: 4,
         net_timeout: 45,
@@ -56,7 +54,7 @@ fn test_config_merging() {
         cpu_jobs: 16,
         yes: true,
         dry_run: true,
-        log_format: crate::primitives::LogFormat::Yaml,
+        log_format: crate::primitives::LogFormat::Pretty,
         log_output: crate::primitives::LogOutput::Stdout,
     };
 
@@ -68,14 +66,6 @@ fn test_config_merging() {
         Some(PathBuf::from("/tmp/override-workdir"))
     );
     assert_eq!(
-        merged.modrinth_api_client_id,
-        Some("modrinth-id".to_string())
-    );
-    assert_eq!(
-        merged.modrinth_api_client_key,
-        Some("modrinth-key".to_string())
-    );
-    assert_eq!(
         merged.curseforge_api_client_key,
         Some("curseforge-key".to_string())
     );
@@ -85,7 +75,7 @@ fn test_config_merging() {
     assert_eq!(merged.cpu_jobs, 16);
     assert!(merged.yes);
     assert!(merged.dry_run);
-    assert_eq!(merged.log_format, crate::primitives::LogFormat::Yaml);
+    assert_eq!(merged.log_format, crate::primitives::LogFormat::Pretty);
     assert_eq!(merged.log_output, crate::primitives::LogOutput::Stdout);
 }
 
@@ -156,7 +146,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     std::fs::write(
         &env_local,
         format!(
-            "EMPACK_WORKDIR={}\nEMPACK_CPU_JOBS=12\nEMPACK_NET_TIMEOUT=37\nEMPACK_ID_MODRINTH=modrinth-id\nEMPACK_KEY_MODRINTH=modrinth-key\nEMPACK_KEY_CURSEFORGE=curseforge-key\nEMPACK_LOG_LEVEL=2\nEMPACK_LOG_FORMAT=json\nEMPACK_LOG_OUTPUT=stderr\nEMPACK_COLOR=never\nEMPACK_YES=true\nEMPACK_DRY_RUN=true\n",
+            "EMPACK_WORKDIR={}\nEMPACK_CPU_JOBS=12\nEMPACK_NET_TIMEOUT=37\nEMPACK_KEY_CURSEFORGE=curseforge-key\nEMPACK_LOG_LEVEL=2\nEMPACK_LOG_FORMAT=json\nEMPACK_LOG_OUTPUT=stderr\nEMPACK_COLOR=never\nEMPACK_YES=true\nEMPACK_DRY_RUN=true\n",
             env_workdir.display().to_string().replace('\\', "/"),
         ),
     )
@@ -171,7 +161,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
         "--log-level",
         "4",
         "--log-format",
-        "yaml",
+        "pretty",
         "--log-output",
         "stdout",
         "--net-timeout",
@@ -184,14 +174,12 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     assert_same_existing_path(config.workdir, &env_workdir);
     assert_eq!(config.cpu_jobs, 8);
     assert_eq!(config.net_timeout, 45);
-    assert_eq!(config.modrinth_api_client_id, Some("modrinth-id".to_string()));
-    assert_eq!(config.modrinth_api_client_key, Some("modrinth-key".to_string()));
     assert_eq!(
         config.curseforge_api_client_key,
         Some("curseforge-key".to_string())
     );
     assert_eq!(config.log_level, 4);
-    assert_eq!(config.log_format, crate::primitives::LogFormat::Yaml);
+    assert_eq!(config.log_format, crate::primitives::LogFormat::Pretty);
     assert_eq!(config.log_output, crate::primitives::LogOutput::Stdout);
     assert_eq!(config.color, TerminalCapsDetectIntent::Always);
     assert!(config.yes);
@@ -206,29 +194,28 @@ fn test_load_from_reports_invalid_env_file() {
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_file = temp_dir.path().join(".env");
-    std::fs::write(&env_file, "not valid dotenv syntax").expect("write invalid env file");
+    let secret = "empack-synthetic-secret-do-not-render";
+    std::fs::write(&env_file, format!("EMPACK_KEY_CURSEFORGE=\"{secret}\n"))
+        .expect("write invalid env file");
 
     let _cwd = CurrentDirGuard::set(temp_dir.path());
 
-    let result = AppConfig::load_from(["empack"]);
-    assert!(matches!(result, Err(crate::primitives::ConfigError::EnvFileError { .. })));
-}
-
-#[test]
-fn test_init_global_and_global_round_trip() {
-    let _guard = crate::test_support::env_lock().lock().unwrap();
-    let config = AppConfig::default();
-
-    match AppConfig::init_global(config.clone()) {
-        Ok(()) => assert_eq!(AppConfig::global().log_level, config.log_level),
-        Err(crate::primitives::ConfigError::AlreadyInitialized) => {
-            let _ = AppConfig::global();
-        }
-        Err(other) => panic!("unexpected init_global error: {other}"),
+    let error = AppConfig::load_from(["empack"]).unwrap_err();
+    assert!(matches!(error, crate::primitives::ConfigError::EnvFileError {
+        source: crate::primitives::EnvFileProblem::Syntax { .. }, ..
+    }));
+    assert!(error.to_string().contains("Invalid environment-file syntax"));
+    assert!(!error.to_string().contains(secret));
+    assert!(!format!("{error:?}").contains(secret));
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        assert!(!cause.to_string().contains(secret));
+        assert!(!format!("{cause:?}").contains(secret));
+        source = cause.source();
     }
-
-    assert!(matches!(
-        AppConfig::init_global(AppConfig::default()),
-        Err(crate::primitives::ConfigError::AlreadyInitialized)
+    // A non-Unicode environment value is secret-bearing too.
+    let problem = crate::primitives::EnvFileProblem::from(dotenvy::Error::EnvVar(
+        std::env::VarError::NotUnicode(std::ffi::OsString::from(secret)),
     ));
+    assert!(!format!("{problem:?}: {problem}").contains(secret));
 }

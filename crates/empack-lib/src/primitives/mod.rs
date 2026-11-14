@@ -47,9 +47,8 @@ pub enum LogFormat {
     /// alias: json
     Json,
 
-    /// YAML
-    /// alias: yaml, yml
-    Yaml,
+    /// Multiline human-readable text
+    Pretty,
 }
 
 /// Logger configuration combining terminal capabilities with application config
@@ -91,17 +90,40 @@ impl LogContext {
     }
 }
 
+/// Environment-file failures without retaining source lines or environment values.
+#[derive(Debug, Error)]
+pub enum EnvFileProblem {
+    #[error("Invalid environment-file syntax at character {position}")]
+    Syntax { position: usize },
+    #[error("{0}")]
+    Io(#[source] std::io::Error),
+    #[error("An environment variable could not be read")]
+    Environment,
+    #[error("Environment-file parsing failed")]
+    Other,
+}
+
+impl From<dotenvy::Error> for EnvFileProblem {
+    fn from(error: dotenvy::Error) -> Self {
+        // dotenvy's syntax and non-Unicode environment errors contain input
+        // values. They must not survive in Display, Debug or the source chain.
+        match error {
+            dotenvy::Error::LineParse(_, position) => Self::Syntax { position },
+            dotenvy::Error::Io(source) => Self::Io(source),
+            dotenvy::Error::EnvVar(_) => Self::Environment,
+            _ => Self::Other,
+        }
+    }
+}
+
 /// Application configuration loading and validation errors
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("Failed to load environment file '{file}': {source}")]
     EnvFileError {
         file: String,
-        source: dotenvy::Error,
+        source: EnvFileProblem,
     },
-
-    #[error("Global configuration already initialized")]
-    AlreadyInitialized,
 
     #[error("Invalid working directory: {path}")]
     InvalidWorkDir { path: String },
@@ -198,7 +220,7 @@ impl ValueEnum for LogLevel {
 
 impl ValueEnum for LogFormat {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Text, Self::Json, Self::Yaml]
+        &[Self::Text, Self::Json, Self::Pretty]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
@@ -209,7 +231,7 @@ impl ValueEnum for LogFormat {
                     .alias("plain"),
             ),
             Self::Json => Some(clap::builder::PossibleValue::new("json")),
-            Self::Yaml => Some(clap::builder::PossibleValue::new("yaml").alias("yml")),
+            Self::Pretty => Some(clap::builder::PossibleValue::new("pretty")),
         }
     }
 }

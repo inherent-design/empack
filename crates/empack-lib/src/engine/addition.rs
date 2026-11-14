@@ -45,6 +45,20 @@ impl AdditionCandidate {
     ) -> Result<Self> {
         Self::prepare_mode(source, lock, group, true)
     }
+    pub fn prepare_update_with_pins(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        group: &AdditionGroup,
+        pins: &std::collections::BTreeMap<
+            empack_core::model::DependencyKey,
+            empack_core::identity::PinSelector,
+        >,
+    ) -> Result<Self> {
+        Self::from_plan(
+            source,
+            AdditionPlan::prepare_update_with_pins(&lock.bind(source)?, group, pins)?,
+        )
+    }
     /// Bind an explicitly selected foreign-identity replacement into one document candidate.
     pub fn prepare_replacement(
         source: &DecodedIntent,

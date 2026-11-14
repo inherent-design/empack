@@ -113,14 +113,18 @@ impl JavaPolicy {
                 self.required_minimum
             )));
         }
-        if self
+        if let Some(supported) = self
             .supported
             .as_ref()
-            .is_some_and(|values| !values.contains(&major))
+            .filter(|values| !values.contains(&major))
         {
+            let versions = supported
+                .iter()
+                .map(|value| format!("{value}"))
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(ModelError(format!(
-                "Java {major} is outside the admitted runtime policy {:?}; recommended Java {}. This is a support boundary, not proof every excluded JVM fails",
-                self.supported,
+                "Java {major} is outside this pack's supported versions ({versions}); Java {} is recommended",
                 self.recommended().unwrap_or(major)
             )));
         }
@@ -133,7 +137,7 @@ impl JavaPolicy {
         self.select(Some(preferred))?;
         if self.supported.is_none() && actual != preferred {
             return Err(ModelError(format!(
-                "Java compatibility is unqualified; explicitly selected Java {preferred}, actual Java {actual}"
+                "This pack requires its explicitly selected Java {preferred}; found Java {actual}"
             )));
         }
         self.select(Some(actual)).map(|_| ())

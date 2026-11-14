@@ -2,31 +2,129 @@
 use super::*;
 use crate::engine::addition::{DirectFileInput, DirectFileSource, FileEvidence, FileKindPolicy};
 use empack_core::model::{
-    AcquisitionSpec, DependencyKey, DependencySelection, ExpectedContent, Placement,
-    PlacementIntent, ResolvedIdentity, SourceIntent,
+    AcquisitionSpec, DependencyKey, DependencySelection, ExpectedContent, PlacementIntent,
+    ResolvedIdentity, SourceIntent,
 };
 
 mod initial;
 mod observation;
 
-pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
-    update_with_policy(session, keys, None, BatchPolicy::AllRequested).await
-}
-pub async fn update_with_policy(
+pub async fn update_command(
     session: &dyn Session,
-    keys: Vec<String>,
-    releases: Option<ReleasePolicy>,
-    policy: BatchPolicy,
+    options: crate::application::cli::UpdateArgs,
 ) -> Result<()> {
-    update_with_services(
+    run_update(session, options, || {
+        dependencies::configured_services(session)
+    })
+    .await
+}
+#[cfg(test)]
+pub(super) async fn update_with_services(
+    session: &dyn Session,
+    options: crate::application::cli::UpdateArgs,
+    services: dependencies::AdditionServices,
+) -> Result<()> {
+    run_update(session, options, || Ok(services)).await
+}
+async fn run_update(
+    session: &dyn Session,
+    options: crate::application::cli::UpdateArgs,
+    services: impl FnOnce() -> Result<dependencies::AdditionServices>,
+) -> Result<()> {
+    ensure!(
+        options.all == options.dependencies.is_empty(),
+        crate::application::cli::CommandInputRequired(
+            "Select dependency names or --all, but not both"
+        )
+    );
+    ensure!(
+        !(options.apply && session.config().app_config().dry_run),
+        crate::application::cli::CommandInputRequired("--apply cannot be combined with --dry-run")
+    );
+    ensure!(
+        !(options.json && (options.apply || options.details)),
+        crate::application::cli::CommandInputRequired(
+            "--json previews cannot be combined with --apply or --details"
+        )
+    );
+    if options.select {
+        ensure!(
+            !options.all && options.pins.is_empty() && !options.json,
+            crate::application::cli::CommandInputRequired(
+                "--select cannot be combined with --all, --pin or --json"
+            )
+        );
+        ensure!(
+            !session.config().app_config().yes && session.interactive().can_choose(),
+            crate::application::cli::CommandInputRequired(
+                "Version selection requires an interactive terminal; use --pin KEY=VERSION_ID without --select"
+            )
+        );
+    }
+    let current = current(session).await?;
+    let keys = if options.all {
+        current
+            .intent()
+            .roots
+            .keys()
+            .map(|key| key.as_str().to_owned())
+            .collect()
+    } else {
+        options.dependencies
+    };
+    if options.all && keys.is_empty() {
+        ensure!(
+            options.pins.is_empty(),
+            crate::application::cli::CommandInputRequired(
+                "There are no dependencies for the requested --pin selections"
+            )
+        );
+        dependencies::UpdatePreviewReport::empty().present(
+            session,
+            dependencies::UpdateOutput {
+                json: options.json,
+                details: options.details,
+                quiet: options.quiet,
+            },
+        )?;
+        return Ok(());
+    }
+    let (_, project) = project_path(session)?;
+    let mut inputs = selections(&current, &project, keys)?.into_vec();
+    let pins = requested_pins(&current, &mut inputs, options.pins)?;
+    dependencies::update_batch_with_services(
         session,
-        keys,
-        releases,
-        policy,
-        dependencies::configured_services(session)?,
+        NonEmpty::new(inputs)?,
+        options.release_policy.map(Into::into),
+        SourceEvidencePolicy::Compatibility,
+        services()?,
+        dependencies::UpdateExecution {
+            selection: if options.select {
+                dependencies::UpdateSelection::Interactive
+            } else {
+                dependencies::UpdateSelection::Automatic
+            },
+            batch: if options.continue_independent {
+                BatchPolicy::ContinueIndependent
+            } else {
+                BatchPolicy::AllRequested
+            },
+            pins,
+            output: dependencies::UpdateOutput {
+                json: options.json,
+                details: options.details,
+                quiet: options.quiet,
+            },
+            mode: if options.apply {
+                ApplicationMode::Apply
+            } else {
+                ApplicationMode::Preview
+            },
+        },
     )
     .await
 }
+
 /// Adopt selected installed content. Provider pins come from verified byte identification,
 /// not from a latest-version query; final native preparation verifies the observed bytes.
 pub async fn adopt(session: &dyn Session, keys: Vec<String>) -> Result<()> {
@@ -159,25 +257,51 @@ pub(super) async fn adopt_with_services(
     }
     dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await
 }
-pub(super) async fn update_with_services(
-    session: &dyn Session,
-    keys: Vec<String>,
-    releases: Option<ReleasePolicy>,
-    policy: BatchPolicy,
-    services: dependencies::AdditionServices,
-) -> Result<()> {
-    let current = current(session).await?;
-    let (_, project) = project_path(session)?;
-    let inputs = selections(&current, &project, keys)?;
-    dependencies::update_batch_with_services(
-        session,
-        inputs,
-        releases,
-        SourceEvidencePolicy::Compatibility,
-        services,
-        policy,
-    )
-    .await
+/// Exact logical keys select installed identities; version IDs are parsed in that provider's
+/// namespace. Nothing here searches, edits documents or promotes transitive selections.
+fn requested_pins(
+    current: &ResolvedProject,
+    inputs: &mut [AddHostInput],
+    values: Vec<String>,
+) -> Result<std::collections::BTreeMap<DependencyKey, PinSelector>> {
+    let mut pins = std::collections::BTreeMap::new();
+    for value in values {
+        let (key, version) = value.rsplit_once('=').context(UpdatePinInput::Syntax)?;
+        let key = DependencyKey::parse(key)?;
+        ensure!(
+            current.intent().roots.contains_key(&key),
+            UpdatePinInput::NotAuthorRoot(key.clone())
+        );
+        let input = inputs
+            .iter_mut()
+            .find_map(|input| match input {
+                AddHostInput::Provider(input) if input.key.as_ref() == Some(&key) => Some(input),
+                _ => None,
+            })
+            .context(UpdatePinInput::NotRequestedProvider(key.clone()))?;
+        let ResolvedIdentity::Provider(project) = &current.lock().dependencies[&key].identity
+        else {
+            unreachable!("provider host input")
+        };
+        let pin = project.parse_pin(version)?;
+        ensure!(
+            pins.insert(key.clone(), pin.clone()).is_none(),
+            UpdatePinInput::Duplicate(key.clone())
+        );
+        input.pin = Some(pin);
+    }
+    Ok(pins)
+}
+#[derive(Debug, thiserror::Error)]
+pub enum UpdatePinInput {
+    #[error("Expected --pin KEY=ID")]
+    Syntax,
+    #[error("Update pin requires an existing direct dependency in empack.yml: {}", .0.as_str())]
+    NotAuthorRoot(DependencyKey),
+    #[error("Exact update pin must also name a requested provider dependency: {}", .0.as_str())]
+    NotRequestedProvider(DependencyKey),
+    #[error("Repeated --pin key: {}; supply one reviewed version per dependency", .0.as_str())]
+    Duplicate(DependencyKey),
 }
 fn selections(
     current: &ResolvedProject,
@@ -188,70 +312,23 @@ fn selections(
     let mut inputs = Vec::new();
     for value in keys {
         let key = DependencyKey::parse(&value)?;
-        ensure!(seen.insert(key.clone()), "Repeated update key: {value}");
-        let selected = current
-            .lock()
-            .dependencies
-            .get(&key)
-            .with_context(|| format!("Unknown installed dependency key: {value}"))?;
+        ensure!(
+            seen.insert(key.clone()),
+            crate::engine::providers::DependencySelectionError::Duplicate(key.clone())
+        );
+        let selected = current.lock().dependencies.get(&key).ok_or_else(|| {
+            crate::engine::providers::DependencySelectionError::Missing(key.clone())
+        })?;
         let root = current.intent().roots.get(&key);
         let primary = &selected.files.as_slice()[0];
         let requirements = root
             .map(|root| root.requirements.clone())
             .unwrap_or_else(|| primary.placements.as_slice()[0].requirements.clone());
-        let pin = root.and_then(|root| match &root.selection {
-            DependencySelection::ProviderPin(pin) => Some(pin.clone()),
-            _ => None,
-        });
         match &selected.identity {
-            ResolvedIdentity::Provider(id) => {
-                let files = if let Some(root) = root {
-                    ProviderFiles::from_placement(&root.placement)
-                } else if matches!(
-                    primary.acquisition,
-                    AcquisitionSpec::ProviderArchiveMember { .. }
-                ) {
-                    let suffix = format!("/{}", primary.slot.as_str());
-                    let roots = primary
-                        .placements
-                        .as_slice()
-                        .iter()
-                        .map(|placement| {
-                            let base = placement
-                                .destination
-                                .relative()
-                                .as_str()
-                                .strip_suffix(&suffix)
-                                .context("World member has no consistent destination root")?;
-                            Ok(Placement {
-                                destination: empack_core::path::InstallDestination::parse(base)?,
-                                layer: placement.layer,
-                                requirements: placement.requirements.clone(),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    ProviderFiles::PrimaryPlaced(NonEmpty::new(roots)?)
-                } else {
-                    ProviderFiles::Placed(
-                        selected
-                            .files
-                            .as_slice()
-                            .iter()
-                            .map(|file| (file.slot.as_str().to_owned(), file.placements.clone()))
-                            .collect(),
-                    )
-                };
-                inputs.push(AddHostInput::Provider(ProviderAddInput {
-                    source_selector: root.and_then(|root| root.source.selector()).cloned(),
-                    releases: root.and_then(|root| root.releases),
-                    selector: ProjectSelector::canonical(id.clone()),
-                    key: Some(key),
-                    kind: Some(selected.kind),
-                    pin,
-                    requirements,
-                    folder: None,
-                    files,
-                }));
+            ResolvedIdentity::Provider(_) => {
+                inputs.push(AddHostInput::Provider(ProviderAddInput::for_update(
+                    current, &key,
+                )?));
             }
             ResolvedIdentity::Local(_) | ResolvedIdentity::Url(_) => {
                 // A retained group keeps its exact member map even after its root is forgotten.

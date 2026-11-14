@@ -76,14 +76,18 @@ async fn update_with_transport(
         else {
             anyhow::bail!("Channel observation requires input")
         };
-        session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
+        let OperationPreview::Subscription(view) = prepared.view() else {
+            anyhow::bail!("Unexpected subscription preview");
+        };
+        show_offer(session, &view.record)?;
+        let expected_offer = view.record.floor.clone().context("Verified update offer has no floor")?;
         // Never continue after preview/decline: fetching a new release requires the durable floor.
-        if !approve(session, "Channel observation")? {
+        if !approve(session, "Update offer")? {
             return Ok(None);
         }
-        execute_approved(session, &engine, prepared, "Channel observation", |receipt| {
+        execute_approved(session, &engine, prepared, "Update offer", |receipt| {
             ensure!(matches!(receipt, ExecutionReceipt::Subscription(_)), "Unexpected channel receipt");
-            Ok("Authenticated channel observation saved".into())
+            Ok("Update offer saved".into())
         }).await?;
         let selected_root = root.clone();
         let proof = initialize::discover(session, move |mut scope| async move {
@@ -93,12 +97,13 @@ async fn update_with_transport(
                 state,
                 &transport,
                 version,
+                expected_offer,
             ).await
         }).await?;
         ensure!(proof.release().document().runtime == release.document().runtime
             || (server && record.side == InstanceSide::Server && proof.release().document().server_launch.is_some()),
             if record.layout == InstanceLayout::Prism {
-                "Channel release changes the runtime; stop Prism, run instance update, then relaunch so Prism reloads its components"
+                "Channel release changes the runtime; stop Prism, run instance update --apply, then relaunch so Prism reloads its components"
             } else {
                 "Channel release changes the runtime; prepare its launcher/runtime integration before launch"
             });
@@ -117,7 +122,7 @@ async fn update_with_transport(
             assets: None,
         };
         let Some(prepared) = require_instance_ready(
-            session, &engine, cancellable(session, engine.prepare(root, request)).await?
+            session, &engine, cancellable(session, engine.prepare(root, request)).await?, ApplicationMode::Apply, false
         ).await? else { return Ok(None); };
         if !approve(session, "Prelaunch update")? {
             return Ok(None);
@@ -125,7 +130,7 @@ async fn update_with_transport(
         execute_approved(session, &engine, prepared, "Prelaunch update", |receipt| {
             let ExecutionReceipt::Instance(receipt) = receipt else { anyhow::bail!("Unexpected instance receipt"); };
             ensure!(receipt.record.release == expected, "Prelaunch installed another release");
-            Ok(format!("Prepared release {} for launch", receipt.record.release))
+            Ok(text::completed(&receipt.record, &receipt.release_version))
         }).await?;
         Ok(Some(expected))
     }.await;

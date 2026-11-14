@@ -104,8 +104,7 @@ test_fromstr_aliases!(
         ("txt", LogFormat::Text),
         ("plain", LogFormat::Text),
         ("json", LogFormat::Json),
-        ("yaml", LogFormat::Yaml),
-        ("yml", LogFormat::Yaml),
+        ("pretty", LogFormat::Pretty),
     ]
 );
 
@@ -219,13 +218,6 @@ fn test_terminal_capability_types_basic() {
 
 #[test]
 fn test_config_error_display() {
-    // Test error message formatting
-    let error = ConfigError::AlreadyInitialized;
-    assert_eq!(
-        error.to_string(),
-        "Global configuration already initialized"
-    );
-
     let error = ConfigError::InvalidWorkDir {
         path: "/invalid/path".to_string(),
     };

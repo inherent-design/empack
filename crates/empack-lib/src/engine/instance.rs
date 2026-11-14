@@ -21,12 +21,15 @@ use std::{
     path::Path,
 };
 
+pub mod checking;
 mod conflicts;
 #[cfg(test)]
 mod publication_tests;
 pub mod subscription;
 mod worlds;
-pub use conflicts::{ConflictChoice, ConflictResolution, FileIdentity, LocalOverride};
+pub use conflicts::{
+    ConflictChoice, ConflictResolution, FileIdentity, InstanceConflict, LocalOverride,
+};
 
 /// Snapshot selection and publisher verification both retain exact validated bytes.
 pub enum SelectedRelease {
@@ -58,6 +61,12 @@ impl InstanceLayout {
             Self::Prism => ".minecraft",
         }
     }
+    fn marker(self) -> &'static [u8] {
+        match self {
+            Self::Prism => b"empack-prism-layout-v1\n",
+            Self::Game => b"empack-game-layout-v1\n",
+        }
+    }
     fn target(self, path: PortableRelPath) -> ManagedPath {
         match self {
             Self::Game => ManagedPath::InstanceFile(path),
@@ -70,7 +79,7 @@ impl InstanceLayout {
 #[serde(rename_all = "kebab-case")]
 pub enum InstanceAction {
     /// Install the initial snapshot, or retain and verify the active compatible release.
-    Prepare,
+    Ensure,
     Apply,
     Repair,
     /// Change persistent choices within the completed release, without selecting an update.
@@ -124,10 +133,14 @@ impl InstanceRecord {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         ensure!(
             bytes.len() <= super::release::MAX_RELEASE_BYTES,
-            "Instance record exceeds byte bound"
+            "Instance record exceeds byte bound (.empack/instance.json)"
         );
-        let record: Self = serde_json::from_slice(bytes).context("Invalid instance record")?;
-        ensure!(record.schema == 1, "Unsupported instance schema");
+        let record: Self = serde_json::from_slice(bytes)
+            .context("Invalid instance record (.empack/instance.json)")?;
+        ensure!(
+            record.schema == 1,
+            "Unsupported instance schema (.empack/instance.json)"
+        );
         ensure!(
             record.layout != InstanceLayout::Prism || record.side == InstanceSide::Client,
             "Prism instance record requires client environment"
@@ -173,26 +186,56 @@ impl InstanceRecord {
     }
 }
 /// Every requested decision is exposed before content staging or live mutation.
-#[derive(Debug, thiserror::Error)]
-#[error("Instance has unresolved file conflicts: {files:?}")]
+#[derive(Debug)]
 pub struct InstanceConflicts {
-    pub files: Vec<(String, empack_core::instance::FileConflict)>,
+    pub action: InstanceAction,
+    pub authenticated_release: bool,
+    pub files: Vec<InstanceConflict>,
 }
+impl std::fmt::Display for InstanceConflicts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Instance has unresolved file conflicts")?;
+        for file in &self.files {
+            write!(f, "\n  {:?}: {}", file.path, file.explanation())?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for InstanceConflicts {}
 
 pub(super) struct InstancePlan {
     root: ProjectReadRoot,
     snapshot: NativeSnapshot,
     pub(super) record: InstanceRecord,
+    pub(super) release_version: String,
     pub(super) files: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     needed: BTreeMap<ManagedPath, ReleaseFile>,
     merge_sources: BTreeMap<String, std::path::PathBuf>,
     asset_base: Option<reqwest::Url>,
+    prism_read: Option<ReadOnlyPrismProfile>,
 }
 pub(super) struct PreparedInstance {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     pub(super) record: InstanceRecord,
+    prism_read: Option<ReadOnlyPrismProfile>,
+}
+
+struct ReadOnlyPrismProfile {
+    identity: super::prism::ProfileIdentity,
+    limits: SnapshotLimits,
+}
+impl ReadOnlyPrismProfile {
+    fn revalidate(&self, root: &ProjectReadRoot, cancel: &Cancellation) -> Result<()> {
+        let snapshot = root.capture(
+            &[ProjectLayout::path(&ManagedPath::PrismProfile)?],
+            self.limits,
+            cancel,
+        )?;
+        let bytes = read_optional(root, &snapshot, &ManagedPath::PrismProfile, cancel)?;
+        self.identity.verify(bytes.as_deref().unwrap_or_default())
+    }
 }
 impl PreparedInstance {
     pub(super) fn publish(
@@ -204,6 +247,9 @@ impl PreparedInstance {
             publisher.bound_root_key(&self.root)? == self.record.root,
             "Instance root association changed after preparation"
         );
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
         let receipt = publisher.publish(&self.root, self.change, cancel)?;
         Ok((receipt, self.record))
     }
@@ -288,6 +334,21 @@ fn project_files(
     }
     Ok(files)
 }
+fn validate_consumer_inventory(
+    layout: InstanceLayout,
+    incoming: &BTreeMap<ManagedPath, ReleaseFile>,
+) -> Result<()> {
+    if layout == InstanceLayout::Prism {
+        for file in incoming.values() {
+            ensure!(
+                !file.destination.eq_ignore_ascii_case("icon.png")
+                    || file.policy == FilePolicy::Seed,
+                "Prism rewrites game-root icon.png before preparation; the selected release must publish it as seed (policies: {{icon.png: seed}} in empack.bindings.yml). Rebuild and publish a corrected release; a conflict override cannot authorize managed icon ownership"
+            );
+        }
+    }
+    Ok(())
+}
 pub(super) fn read_optional(
     root: &ProjectReadRoot,
     snapshot: &NativeSnapshot,
@@ -334,6 +395,23 @@ pub fn inspect_optional(
     limits: SnapshotLimits,
     cancel: &Cancellation,
 ) -> Result<Option<(InstanceRecord, DecodedRelease)>> {
+    let captured = capture_completed(selected_root, release, &recovery, limits, cancel)?;
+    Ok(captured.map(|capture| (capture.record, capture.release)))
+}
+/// A coherent read set, without preparation or mutation authority.
+struct CompletedInstance {
+    root: ProjectReadRoot,
+    snapshot: NativeSnapshot,
+    record: InstanceRecord,
+    release: DecodedRelease,
+}
+fn capture_completed(
+    selected_root: &Path,
+    release: Option<&str>,
+    recovery: &RecoveryReader,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<Option<CompletedInstance>> {
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let snapshot = root.capture(
@@ -369,7 +447,12 @@ pub fn inspect_optional(
         "Retained release descriptor changed"
     );
     root.revalidate(&snapshot, cancel)?;
-    Ok(Some((record, decoded)))
+    Ok(Some(CompletedInstance {
+        root,
+        snapshot,
+        record,
+        release: decoded,
+    }))
 }
 
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
@@ -491,7 +574,7 @@ pub(super) fn plan(
         document_limits(limits),
         cancel,
     )?)?;
-    let active = if action == InstanceAction::Prepare {
+    let active = if action == InstanceAction::Ensure {
         if let Some(previous) = &previous {
             ensure!(
                 requested_choices.is_empty(),
@@ -558,7 +641,7 @@ pub(super) fn plan(
             .transpose()?;
     }
     match action {
-        InstanceAction::Prepare => {}
+        InstanceAction::Ensure => {}
         InstanceAction::Apply => {}
         InstanceAction::Repair | InstanceAction::ChangeChoices => {
             let previous = previous
@@ -646,15 +729,7 @@ pub(super) fn plan(
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
     let mut incoming = project_files(release, side, layout, &choices)?;
-    if layout == InstanceLayout::Prism {
-        for file in incoming.values() {
-            ensure!(
-                !file.destination.eq_ignore_ascii_case("icon.png")
-                    || file.policy == FilePolicy::Seed,
-                "Prism rewrites game-root icon.png before preparation; the selected release must publish it as seed (policies: {{icon.png: seed}} in empack.bindings.yml). Rebuild and publish a corrected release; a conflict override cannot authorize managed icon ownership"
-            );
-        }
-    }
+    validate_consumer_inventory(layout, &incoming)?;
     let (initialized_worlds, retired_world_targets, updated_snapshot) = worlds::protect(
         &root,
         layout,
@@ -688,18 +763,31 @@ pub(super) fn plan(
             cancel,
         )?)?;
     }
+    let mut prism_read = None;
     let prism_profile = if layout == InstanceLayout::Prism {
-        snapshot = snapshot.merge(root.capture(
+        let profile_snapshot = root.capture(
             &[ProjectLayout::path(&ManagedPath::PrismProfile)?],
             document_limits(limits),
             cancel,
-        )?)?;
-        let bytes = read_optional(&root, &snapshot, &ManagedPath::PrismProfile, cancel)?;
-        Some(super::prism::transition(
-            bytes.as_deref(),
-            &old_runtime,
-            &release.document().runtime,
-        )?)
+        )?;
+        let bytes = read_optional(&root, &profile_snapshot, &ManagedPath::PrismProfile, cancel)?;
+        let desired =
+            super::prism::transition(bytes.as_deref(), &old_runtime, &release.document().runtime)?;
+        if bytes.as_deref() == Some(desired.as_slice()) {
+            prism_read = Some(ReadOnlyPrismProfile {
+                identity: super::prism::ProfileIdentity::capture(
+                    &desired,
+                    release.document().runtime.resolution()?,
+                )?,
+                limits: document_limits(limits),
+            });
+            None
+        } else {
+            // An actual profile write retains exact bytes, object binding and
+            // expected absence through the existing recoverable publication.
+            snapshot = snapshot.merge(profile_snapshot)?;
+            Some(desired)
+        }
     } else {
         None
     };
@@ -854,7 +942,17 @@ pub(super) fn plan(
                 removals.insert(target.clone());
             }
             FileDecision::Conflict(conflict) => {
-                conflicts.push((ProjectLayout::path(&target)?.as_str().into(), conflict))
+                let destination = incoming
+                    .get(&target)
+                    .or_else(|| old_files.get(&target))
+                    .context("Conflicting file has no release destination")?;
+                conflicts.push(InstanceConflict {
+                    path: ProjectLayout::path(&target)?.as_str().into(),
+                    destination: destination.destination.as_str().into(),
+                    reason: conflict,
+                    existing_file: matches!(current, ObservedPath::File(_)),
+                    incoming_policy: new.as_ref().map(|file| file.policy),
+                });
             }
             FileDecision::Unchanged => {
                 // A matching content address does not excuse checking a changed source assertion.
@@ -869,7 +967,14 @@ pub(super) fn plan(
         resolutions.is_empty(),
         "Conflict decision names an unselected destination"
     );
-    ensure!(conflicts.is_empty(), InstanceConflicts { files: conflicts });
+    ensure!(
+        conflicts.is_empty(),
+        InstanceConflicts {
+            action,
+            authenticated_release: !matches!(&selected, SelectedRelease::Snapshot(_)),
+            files: conflicts,
+        }
+    );
     let mut history = previous
         .as_ref()
         .map(|p| p.history.clone())
@@ -911,10 +1016,7 @@ pub(super) fn plan(
     if let Some(profile) = prism_profile {
         documents.insert(ManagedPath::PrismProfile, profile);
     }
-    let marker: &[u8] = match layout {
-        InstanceLayout::Prism => b"empack-prism-layout-v1\n",
-        InstanceLayout::Game => b"empack-game-layout-v1\n",
-    };
+    let marker = layout.marker();
     if let Some(bytes) = read_optional(&root, &snapshot, &layout_marker, cancel)? {
         ensure!(
             bytes == marker && previous.is_some(),
@@ -959,17 +1061,20 @@ pub(super) fn plan(
         }
     }
     needed.retain(|target, _| files.expected().contains_key(target));
-    root.revalidate(&snapshot, cancel)?;
-    Ok(InstancePlan {
+    let plan = InstancePlan {
         asset_base,
         root,
         snapshot,
         record,
+        release_version: release.document().version.clone(),
         files,
         documents,
         needed,
         merge_sources,
-    })
+        prism_read,
+    };
+    plan.revalidate(cancel)?;
+    Ok(plan)
 }
 fn verify_current_file(
     root: &ProjectReadRoot,
@@ -992,9 +1097,26 @@ fn verify_current_file(
 }
 
 impl InstancePlan {
-    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
+    fn revalidate(&self, cancel: &Cancellation) -> Result<()> {
         self.root.revalidate(&self.snapshot, cancel)?;
-        self.snapshot.fingerprint()
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
+        Ok(())
+    }
+    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
+        self.revalidate(cancel)?;
+        let base = self.snapshot.fingerprint()?;
+        if let Some(profile) = &self.prism_read {
+            use sha2::{Digest, Sha256};
+            let mut hash = Sha256::new();
+            hash.update(b"empack-instance-prism-read-v1");
+            hash.update(base);
+            hash.update(profile.identity.fingerprint()?);
+            Ok(hash.finalize().into())
+        } else {
+            Ok(base)
+        }
     }
     pub(super) fn launch_lease(
         &self,
@@ -1006,7 +1128,7 @@ impl InstancePlan {
             "Instance content requires repair before launch"
         );
         let lease = Publisher::open(state)?.lease_instance(&self.root)?;
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         Ok(lease)
     }
     /// Resolve signed relative asset identity to a transient transport locator.
@@ -1128,7 +1250,7 @@ impl InstancePlan {
         files: &BTreeMap<String, std::path::PathBuf>,
         cancel: &Cancellation,
     ) -> Result<BTreeMap<String, AcquiredContent>> {
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         for key in files.keys() {
             ensure!(
                 self.needed.values().any(|file| &file.key == key) && !supplied.contains_key(key),
@@ -1142,7 +1264,7 @@ impl InstancePlan {
                 content.insert(file.key.clone(), pool.insert(acquired, cancel)?);
             }
         }
-        self.root.revalidate(&self.snapshot, cancel)?;
+        self.revalidate(cancel)?;
         Ok(content)
     }
     pub(super) fn stage(
@@ -1152,6 +1274,9 @@ impl InstancePlan {
         assets: Option<&Path>,
         cancel: &Cancellation,
     ) -> Result<PreparedInstance> {
+        if let Some(profile) = &self.prism_read {
+            profile.revalidate(&self.root, cancel)?;
+        }
         let limits = verification::candidate_stage_limits(&self.snapshot, &self.files)?;
         let mut stage = MutableStage::empty()?;
         for (target, bytes) in &self.documents {
@@ -1179,6 +1304,7 @@ impl InstancePlan {
             root: self.root,
             change,
             record: self.record,
+            prism_read: self.prism_read,
         })
     }
 }

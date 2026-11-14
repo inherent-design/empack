@@ -33,7 +33,7 @@ Changed user bytes block ordinary replacement/deletion. A replacement decision m
 
 ## Batches
 
-Author add/update defaults to `AllRequested`. Explicit `ContinueIndependent` joins requests connected by shared identities, required dependencies, overlapping writes or source-read relationships. A failed group retains its previous intent/content; verified groups publish one coherent combined candidate with a nonzero partial outcome. Unresolved identity cannot establish an independent footprint.
+Author add/update defaults to `AllRequested`. Explicit `ContinueIndependent` joins requests connected by shared identities, required dependencies, overlapping writes or source-read relationships. A failed group retains its previous intent/content; verified groups publish one coherent combined candidate with a nonzero partial outcome. Unresolved identity cannot establish an independent footprint. Partial or unknown required-relationship coverage in either proposed or retained selections prevents partitioning: the requests remain one ordinary candidate, which must succeed together. The batch report retains the affected dependency keys instead of treating missing edges as proof of independence.
 
 Release installation and activation are always all-requested for selected required content. Optionality is decided before planning; failed optional acquisition is not permission to silently change the selected choice.
 

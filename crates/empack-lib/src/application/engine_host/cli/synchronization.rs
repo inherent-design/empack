@@ -29,34 +29,24 @@ pub async fn synchronize(session: &dyn Session, materialize: bool) -> Result<()>
     .await
 }
 
-pub async fn resume(session: &dyn Session, files: Vec<String>) -> Result<()> {
-    resume_with_services(session, files, dependencies::configured_services(session)?).await
-}
-pub(super) async fn resume_with_services(
-    session: &dyn Session,
-    files: Vec<String>,
-    services: dependencies::AdditionServices,
-) -> Result<()> {
-    resume_with_services_selected(session, files, services, None).await
-}
 pub(in crate::application::engine_host) async fn resume_selected(
     session: &dyn Session,
     files: Vec<String>,
     expected: String,
 ) -> Result<()> {
-    resume_with_services_selected(
+    resume_with_services(
         session,
         files,
         dependencies::configured_services(session)?,
-        Some(expected),
+        &expected,
     )
     .await
 }
-async fn resume_with_services_selected(
+async fn resume_with_services(
     session: &dyn Session,
     files: Vec<String>,
     services: dependencies::AdditionServices,
-    expected: Option<String>,
+    expected: &str,
 ) -> Result<()> {
     let resumed = load_selected(session, expected, services.files.transfer).await?;
     let context = resumed.context.clone();
@@ -70,6 +60,7 @@ async fn resume_with_services_selected(
         services,
         materialization::SyncInputs {
             migration: migrating,
+            migration_output: None,
             context,
             resumed: Some(resumed),
             files,
@@ -86,7 +77,7 @@ pub(in crate::application::engine_host) async fn retained_input_keys(
 ) -> Result<BTreeSet<String>> {
     let resumed = load_selected(
         session,
-        Some(expected.to_owned()),
+        expected,
         dependencies::configured_services(session)?.files.transfer,
     )
     .await?;
@@ -98,7 +89,7 @@ pub(in crate::application::engine_host) async fn retained_input_keys(
 }
 async fn load_selected(
     session: &dyn Session,
-    expected: Option<String>,
+    expected: &str,
     transfer: crate::engine::acquisition::TransferLimits,
 ) -> Result<crate::engine::synchronization::suspension::ResumedSync> {
     let (invocation, project) = project_path(session)?;
@@ -132,9 +123,7 @@ async fn load_selected(
     })
     .await?;
     ensure!(
-        expected
-            .as_ref()
-            .is_none_or(|id| id == &resumed.saved.identity()),
+        expected == resumed.saved.identity(),
         "Selected pending synchronization changed; inspect its new identity"
     );
     Ok(resumed)
@@ -395,73 +384,204 @@ pub(super) async fn synchronize_mode(
         transport: services.transport.clone(),
         files: services.files,
     };
-    let resolved = scoped(session, governor(session.config().app_config()), move |mut scope| async move {
-        let provider = if providers.is_empty() { None } else {
-            let outcome = if revalidate_libraries {
-                services.catalog.resolve_addition_for_runtime_change(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await?
+    let resolved = scoped(
+        session,
+        governor(session.config().app_config()),
+        move |mut scope| async move {
+            let provider = if providers.is_empty() {
+                None
             } else {
-                services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await?
+                let outcome = if revalidate_libraries {
+                    services
+                        .catalog
+                        .resolve_addition_for_runtime_change(
+                            &mut scope,
+                            &baseline,
+                            NonEmpty::new(providers)?,
+                            releases,
+                            limits,
+                        )
+                        .await
+                        .map_err(|error| {
+                            dependencies::provider_failure(
+                                error,
+                                limits.selection.catalog.deadline,
+                                false,
+                            )
+                        })?
+                } else {
+                    services
+                        .catalog
+                        .resolve_addition(
+                            &mut scope,
+                            &baseline,
+                            NonEmpty::new(providers)?,
+                            releases,
+                            limits,
+                        )
+                        .await
+                        .map_err(|error| {
+                            dependencies::provider_failure(
+                                error,
+                                limits.selection.catalog.deadline,
+                                false,
+                            )
+                        })?
+                };
+                match outcome {
+                    ProviderAdditionOutcome::Ready(value) => Some(value),
+                    ProviderAdditionOutcome::Archives(draft) => Some(
+                        draft
+                            .acquire(
+                                &mut scope,
+                                &services.transport,
+                                SourceEvidencePolicy::Compatibility,
+                                services.files,
+                            )
+                            .await?,
+                    ),
+                    ProviderAdditionOutcome::NeedsInput(closure) => {
+                        return Err(anyhow::Error::new(
+                            crate::engine::providers::UnresolvedDependencies {
+                                issues: closure.issues,
+                            },
+                        )
+                        .context("Project files were not synchronized"));
+                    }
+                }
             };
-            match outcome {
-                ProviderAdditionOutcome::Ready(value) => Some(value),
-                ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?),
-                ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!("Synchronization was not published: dependency evidence requires a decision: {:?}", closure.issues),
+            let direct = if files.is_empty() {
+                None
+            } else {
+                Some(
+                    FileAddition::acquire(
+                        &mut scope,
+                        &baseline,
+                        NonEmpty::new(files)?,
+                        &services.transport,
+                        SourceEvidencePolicy::Compatibility,
+                        services.files,
+                    )
+                    .await?,
+                )
+            };
+            let checked_provider_keys = provider
+                .as_ref()
+                .map(|group| {
+                    group
+                        .project()
+                        .lock()
+                        .dependencies
+                        .keys()
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            let acquired = provider
+                .as_ref()
+                .into_iter()
+                .flat_map(|provider| provider.materialized())
+                .filter_map(|(key, content)| {
+                    content
+                        .materialized()
+                        .map(|file| (key.clone(), file.clone()))
+                })
+                .collect();
+            let worker = scope.spawn_blocking(
+                ResourceRequest {
+                    jobs: 1,
+                    memory_bytes: 64 << 20,
+                    ..Default::default()
+                },
+                ResourceRequest {
+                    memory_bytes: 64 << 20,
+                    ..Default::default()
+                },
+                move |cancel| {
+                    cancel.check()?;
+                    let mut lock = previous.unwrap_or_else(|| ResolutionLock {
+                        acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
+                        intent_revision: source.semantic_revision(),
+                        resolver: "empack-synchronization-v0.5".into(),
+                        dependencies: BTreeMap::new(),
+                        required_edges: BTreeMap::new(),
+                        coverage: BTreeMap::new(),
+                        runtime: runtime.clone(),
+                    });
+                    lock.acceptable_versions = source.intent().runtime.acceptable_versions.clone();
+                    lock.runtime = runtime;
+                    lock.intent_revision = source.semantic_revision();
+                    let mut seen = BTreeSet::new();
+                    for group in provider
+                        .as_ref()
+                        .map(|group| group.project())
+                        .into_iter()
+                        .chain(direct.as_ref().map(|group| group.project()))
+                    {
+                        for (key, dependency) in &group.lock().dependencies {
+                            ensure!(
+                                seen.insert(key.clone()),
+                                "Resolved groups overlap a logical dependency"
+                            );
+                            let mut dependency = dependency.clone();
+                            preserve_provider_assertions(
+                                lock.dependencies.get(key),
+                                &mut dependency,
+                            )?;
+                            lock.dependencies.insert(key.clone(), dependency);
+                            lock.coverage
+                                .insert(key.clone(), group.lock().coverage[key]);
+                            lock.required_edges.remove(key);
+                            if let Some(edges) = group.lock().required_edges.get(key) {
+                                lock.required_edges.insert(key.clone(), edges.clone());
+                            }
+                        }
+                    }
+                    let proposed = ResolvedProject::validate(
+                        source.intent().clone(),
+                        lock,
+                        source.semantic_revision(),
+                    )?;
+                    if migrating {
+                        SynchronizationCandidate::prepare_migration(
+                            &original_source,
+                            prior.as_ref().context("Migration needs a prior lock")?,
+                            &proposed,
+                        )?;
+                    } else if let Some(prior) = &prior {
+                        SynchronizationCandidate::prepare_resolved(&source, prior, &proposed)?;
+                    } else {
+                        SynchronizationCandidate::prepare_initial(&source, &proposed)?;
+                    }
+                    Ok::<_, anyhow::Error>(proposed)
+                },
+            )?;
+            let proposed = scope.accept(worker.wait().await?)?.transpose()?;
+            if revalidate_libraries {
+                retained::validate_providers(
+                    &mut scope,
+                    &services.catalog,
+                    &proposed,
+                    &checked_provider_keys,
+                    limits,
+                )
+                .await?;
             }
-        };
-        let direct = if files.is_empty() { None } else {
-            Some(FileAddition::acquire(&mut scope, &baseline, NonEmpty::new(files)?, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?)
-        };
-        let checked_provider_keys = provider.as_ref().map(|group| group.project().lock().dependencies.keys().cloned().collect()).unwrap_or_default();
-        let acquired = provider.as_ref().into_iter().flat_map(|provider|provider.materialized()).filter_map(|(key,content)|content.materialized().map(|file|(key.clone(),file.clone()))).collect();
-        let worker = scope.spawn_blocking(ResourceRequest { jobs: 1, memory_bytes: 64 << 20, ..Default::default() }, ResourceRequest { memory_bytes: 64 << 20, ..Default::default() }, move |cancel| {
-        cancel.check()?;
-        let mut lock = previous.unwrap_or_else(|| ResolutionLock {
-            acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
-            intent_revision: source.semantic_revision(), resolver: "empack-synchronization-v0.5".into(),
-            dependencies: BTreeMap::new(), required_edges: BTreeMap::new(), coverage: BTreeMap::new(), runtime: runtime.clone(),
-        });
-        lock.acceptable_versions = source.intent().runtime.acceptable_versions.clone();
-        lock.runtime = runtime;
-        lock.intent_revision = source.semantic_revision();
-        let mut seen = BTreeSet::new();
-        for group in provider.as_ref().map(|group| group.project()).into_iter().chain(direct.as_ref().map(|group| group.project())) {
-            for (key, dependency) in &group.lock().dependencies {
-                ensure!(seen.insert(key.clone()), "Resolved groups overlap a logical dependency");
-                let mut dependency = dependency.clone();
-                preserve_provider_assertions(lock.dependencies.get(key), &mut dependency)?;
-                lock.dependencies.insert(key.clone(), dependency);
-                lock.coverage.insert(key.clone(), group.lock().coverage[key]);
-                lock.required_edges.remove(key);
-                if let Some(edges) = group.lock().required_edges.get(key) { lock.required_edges.insert(key.clone(), edges.clone()); }
-            }
-        }
-        let proposed = ResolvedProject::validate(source.intent().clone(), lock, source.semantic_revision())?;
-        if migrating {
-            SynchronizationCandidate::prepare_migration(&original_source, prior.as_ref().context("Migration needs a prior lock")?, &proposed)?;
-        } else if let Some(prior) = &prior { SynchronizationCandidate::prepare_resolved(&source, prior, &proposed)?; }
-        else { SynchronizationCandidate::prepare_initial(&source, &proposed)?; }
-        Ok::<_, anyhow::Error>(proposed)
-        })?;
-        let proposed = scope.accept(worker.wait().await?)?.transpose()?;
-        if revalidate_libraries {
-            retained::validate_providers(&mut scope, &services.catalog, &proposed, &checked_provider_keys, limits).await?;
-        }
-        Ok((proposed, acquired))
-    }).await?;
+            Ok((proposed, acquired))
+        },
+    )
+    .await?;
     let (resolved, acquired) = resolved;
-    if let Some(options) = &migration {
-        options.present(
-            session,
+    let mut inputs = materialization::SyncInputs::initial(context.clone());
+    inputs.migration = migrating;
+    inputs.migration_output = migration.as_ref().map(|options| {
+        options.report(
             original,
             captured.1.as_ref().expect("migration requires a lock"),
             &resolved,
-        )?;
-        if options.plan {
-            return Ok(());
-        }
-    }
-    let mut inputs = materialization::SyncInputs::initial(context.clone());
-    inputs.migration = migrating;
+            materialize,
+        )
+    });
     inputs.resolved = acquired;
     publish(
         session,

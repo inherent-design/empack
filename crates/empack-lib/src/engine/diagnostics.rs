@@ -13,6 +13,10 @@ pub enum DiagnosticCode {
     /// The selected executable cannot satisfy the release's engine requirement.
     IncompatibleEngine,
     StaleSnapshot,
+    /// Author/bindings semantics changed; reconcile intent rather than native recovery.
+    AuthoringChanged,
+    /// An explicit update group must include retained dependency context.
+    DependencyResolutionRequired,
     DigestMismatch,
     SizeMismatch,
     InvalidDigest,
@@ -48,8 +52,7 @@ pub enum RecoveryClassification {
 }
 /// Values are optional when the failing boundary cannot establish them. This envelope
 /// never copies an arbitrary error message or download locator into serializable evidence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[error("{code:?} during {phase:?}")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub phase: DiagnosticPhase,
@@ -58,6 +61,68 @@ pub struct Diagnostic {
     pub observed: Option<String>,
     pub recovery: RecoveryClassification,
 }
+// Display is supplemental human context. Codes and serialized fields remain
+// stable, and no caller classifies a failure by this wording.
+impl std::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use DiagnosticCode::*;
+        let summary = match self.code {
+            AuthorizationDenied => "Permission was denied",
+            PublisherAuthenticationFailed => "The publisher signature could not be verified",
+            ReleaseIdentityMismatch => "The release does not match the selected content",
+            IncompatibleEngine => "This release needs a different empack version",
+            StaleSnapshot => "Inputs changed after this operation was prepared",
+            AuthoringChanged => "Author files changed since the lock was created",
+            DependencyResolutionRequired => "Related dependencies need to be resolved together",
+            DigestMismatch => "A file checksum does not match",
+            SizeMismatch => "A file size does not match",
+            InvalidDigest => "A checksum is invalid",
+            UnsupportedConversion => "The requested conversion is not supported",
+            PublicationConflict => "The planned changes conflict with the current files",
+            RecoveryRequired => "An interrupted file change needs recovery",
+            ExecutionUncertain => "The operation's final state could not be confirmed",
+            RuntimeRecoveryRequired => "Runtime ownership needs recovery",
+            Interrupted => "Operation interrupted",
+            ResourceAdmission => "The operation could not obtain its required resources",
+            AcquisitionFailed => "A required download or file could not be acquired",
+            OperationFailed => "Operation failed",
+        };
+        let phase = match self.phase {
+            DiagnosticPhase::Preparation => "preparing the operation",
+            DiagnosticPhase::Authorization => "checking permission",
+            DiagnosticPhase::Acquisition => "downloading or reading files",
+            DiagnosticPhase::Verification => "checking files",
+            DiagnosticPhase::Publication => "saving changes",
+            DiagnosticPhase::Execution => "running the operation",
+        };
+        write!(f, "{summary} (while {phase})")?;
+        for (label, value) in [
+            ("Item", &self.object),
+            ("Expected", &self.expected),
+            ("Observed", &self.observed),
+        ] {
+            if let Some(value) = value {
+                write!(f, "; {label}: {}", crate::terminal::display_line(value))?;
+            }
+        }
+        match self.recovery {
+            RecoveryClassification::Required => {
+                write!(f, ". Recovery is required before retrying.")
+            }
+            RecoveryClassification::InspectRecovery => write!(
+                f,
+                ". Inspect recovery before retrying; completion is not confirmed."
+            ),
+            RecoveryClassification::PartiallyCompleted => write!(
+                f,
+                ". Some work completed; inspect the result before retrying."
+            ),
+            RecoveryClassification::Unclassified | RecoveryClassification::NotPublished => Ok(()),
+        }
+    }
+}
+impl std::error::Error for Diagnostic {}
+
 impl Diagnostic {
     pub fn new(code: DiagnosticCode, phase: DiagnosticPhase) -> Self {
         Self {
@@ -74,6 +139,21 @@ impl Diagnostic {
         use DiagnosticCode::*;
         if let Some(value) = error.downcast_ref::<Self>() {
             return value.clone();
+        }
+        if error.is::<super::documents::AuthoringChanged>() {
+            return Self::new(AuthoringChanged, phase);
+        }
+        if error.is::<super::providers::UnresolvedDependencies>() {
+            return Self::new(DependencyResolutionRequired, phase);
+        }
+        if matches!(
+            error.downcast_ref::<empack_core::addition::AdditionError>(),
+            Some(
+                empack_core::addition::AdditionError::RequiredBy(_)
+                    | empack_core::addition::AdditionError::RetainedSelectionConflict(_)
+            )
+        ) {
+            return Self::new(DependencyResolutionRequired, phase);
         }
         if error.is::<super::api::RuntimeRecoveryRequired>() {
             let mut diagnostic = Self::new(RuntimeRecoveryRequired, DiagnosticPhase::Execution);

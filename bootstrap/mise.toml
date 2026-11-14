@@ -1,0 +1,12 @@
+[tools]
+java = "25.0.5+8.0.LTS"
+maven = "3.9.11"
+
+[tasks.build]
+description = "Build the reproducible Java 8-compatible bootstrap JAR"
+run = "python3 ../scripts/build-bootstrap.py"
+
+[tasks.test]
+description = "Exercise the packaged bootstrap against native engine fixtures"
+depends = ["build"]
+run = "python3 tests/test_bootstrap.py --jar target/empack-bootstrap.jar"

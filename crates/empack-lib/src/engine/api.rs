@@ -20,7 +20,7 @@ use super::{
     resources::{ResourceGovernor, ResourceRequest},
     runtime::{
         OperationHandle, OperationId, OperationOutcome, OperationRuntime, RetainedOutput,
-        RuntimeError,
+        RuntimeError, WorkProgress,
     },
     server_runtime::installer::InstallerExecution,
     snapshot::{Observation, SnapshotLimits},
@@ -81,8 +81,7 @@ pub use instance::{
     PendingInstanceCleanup, ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt,
 };
 pub use release_publication::{
-    PublishChannelRequest, ReleasePublicationPreview, ReleasePublicationReceipt,
-    StageReleaseRequest,
+    CreateChannelRequest, ReleasePublicationPreview, ReleasePublicationReceipt, StageReleaseRequest,
 };
 pub use subscription::{
     SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,
@@ -269,7 +268,7 @@ pub enum Request {
     LaunchInstance(LaunchInstanceRequest),
     Subscription(SubscriptionRequest),
     StageRelease(StageReleaseRequest),
-    PublishChannel(PublishChannelRequest),
+    CreateChannel(CreateChannelRequest),
     InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
@@ -294,9 +293,9 @@ impl From<PathBuf> for ProjectTarget {
         Self::Existing(path)
     }
 }
-impl From<PublishChannelRequest> for Request {
-    fn from(request: PublishChannelRequest) -> Self {
-        Self::PublishChannel(request)
+impl From<CreateChannelRequest> for Request {
+    fn from(request: CreateChannelRequest) -> Self {
+        Self::CreateChannel(request)
     }
 }
 impl From<StageReleaseRequest> for Request {
@@ -875,7 +874,7 @@ impl Engine {
                                 .await?
                                 .map(|value| PreparedKind::Launch(Box::new(value))))
                         }
-                        Request::PublishChannel(request) => {
+                        Request::CreateChannel(request) => {
                             Ok(release_publication::prepare_channel(
                                 project, request, &config, &mut scope,
                             )
@@ -949,7 +948,8 @@ impl Engine {
                         .await?
                         .map(|value| PreparedKind::Update(Box::new(value)))),
                         Request::DependencyBatch(request) => {
-                            let update = matches!(request.change, DependencyBatchChange::Update);
+                            let update =
+                                matches!(request.change, DependencyBatchChange::Update { .. });
                             Ok(
                                 addition::prepare_batch(project, *request, &config, &mut scope)
                                     .await?

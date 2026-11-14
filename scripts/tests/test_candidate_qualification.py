@@ -152,6 +152,91 @@ class CandidatePolicy(unittest.TestCase):
             with self.subTest(identity=identity), self.assertRaisesRegex(ValueError, "operator-only"):
                 self.evaluate()
 
+    def test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
+        # Synthetic gate mechanics, never a consumer execution record.
+        procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
+                      "acceptance::server::managed-gui"]
+        scope = dict(approved_on="2026-11-11", reason="Synthetic approved scope fixture",
+                     platforms=["macos"], procedures=procedures)
+        self.document["gates"] = dict(v085_manual_scope=scope)
+        row = next(row for row in self.document["requirements"] if row["id"] == "UX-001")
+        row["evidence_tiers"].append("C")
+        for index, identity in enumerate([*procedures, "acceptance::prism::bundled-instance"]):
+            row["cases"].append(dict(id=f"UX-001.operator-{index}", boundary="C", test_ids=[identity],
+                required_platforms=["linux", "macos", "windows"],
+                required_product_features=["default", "telemetry"]))
+        records = []
+        for index, identity in enumerate(procedures):
+            for feature in ["default", "telemetry"]:
+                records.append(dict(source_revision=REVISION, kind="operator-acceptance", test_id=identity,
+                    boundary="C", platform="macos", target="aarch64-apple-darwin", features=feature,
+                    status="PASS", receipt_sha256=f"{100 + len(records):064x}", artifact_sha256="f" * 64,
+                    created_at="2026-11-11T22:00:00+00:00", operator=dict(id="synthetic", role="maintainer"),
+                    environment=dict(), evidence_scope="Synthetic policy data", procedures_sha256="e" * 64))
+
+        def evaluate(selected=records, version="0.8.5-beta"):
+            return evaluate_requirements(self.document, self.classification, self.evidence,
+                REVISION, version, self.package_proofs, acceptance_evidence=selected)
+
+        self.assertEqual(evaluate([])["status"], "BLOCKED")
+        result = evaluate()
+        self.assertTrue(result["qualification"], "synthetic policy fixture only")
+        observed = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-001")
+        self.assertEqual(observed["status"], "NOT_RUN")
+        self.assertEqual(observed["release_status"], "PASS")
+        self.assertEqual(result["deferred_environment_cases"], ["UX-001.operator-3"])
+        for case in observed["cases"][1:4]:
+            self.assertEqual(case["status"], "NOT_RUN")
+            self.assertEqual(case["release_status"], "PASS")
+            for variant in case["variants"]:
+                self.assertEqual(variant["required_for_release"], variant["platform"] == "macos")
+        self.assertEqual(evaluate(records[:-1])["status"], "BLOCKED", "both product features required")
+        self.evidence[0]["tests"][0]["status"] = "FAIL"
+        self.assertEqual(evaluate()["status"], "FAIL", "automated evidence cannot be deferred")
+        self.evidence[0]["tests"][0]["status"] = "PASS"
+        failed = dict(records[0], receipt_sha256="d" * 64, platform="windows",
+                      target="x86_64-pc-windows-msvc", status="FAIL")
+        self.assertEqual(evaluate([*records, failed])["status"], "FAIL", "out-of-scope failures remain failures")
+        self.assertEqual(evaluate(version="0.8.6-beta")["status"], "BLOCKED", "scope does not roll forward")
+
+        result.update(schema=1, kind="release-candidate-qualification", source_revision=REVISION,
+                      version="0.8.5-beta", archive_evidence_sha256="b" * 64)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "candidate.json"
+            write_json(path, result)
+            check_qualification(path, sha256(path), REVISION, "0.8.5-beta", "b" * 64, document=self.document)
+            for target in ["automated", "selected-manual"]:
+                changed = copy.deepcopy(result)
+                first = next(row for row in changed["acceptance"]["requirements"] if row["id"] == "UX-001")
+                case = first["cases"][0 if target == "automated" else 1]
+                case["variants"].clear()
+                case.update(required_for_release=False, release_status="DEFERRED")
+                write_json(path, changed)
+                with self.subTest(target=target), self.assertRaisesRegex(ValueError, "required observations"):
+                    check_qualification(path, sha256(path), REVISION, "0.8.5-beta", "b" * 64, document=self.document)
+
+    def test_v085_manual_scope_refuses_expansion_or_automated_exclusions(self):
+        scope = dict(approved_on="2026-11-11", reason="Synthetic negative fixture", platforms=["macos"],
+                     procedures=["acceptance::prism::reference-instance", "acceptance::server::managed-console",
+                                 "acceptance::server::managed-gui"])
+        for change in [dict(platforms=[]), dict(procedures=["fixture::command"]),
+                       dict(procedures=[]), dict(approved_on="2026-11-10"), dict(cases=["UX-001.fixture"])]:
+            self.document["gates"] = dict(v085_manual_scope=dict(scope, **change))
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "v0.8.5 manual scope"):
+                self.evaluate("0.8.5-beta")
+        from verification.acceptance import procedures
+        from verification.requirements import release_deferrals, release_manual_scope, release_variant_required
+        document = json.loads((SCRIPTS.parent / "tests/verification/requirements.json").read_text())
+        deferred = release_deferrals(document, "0.8.5-beta")
+        manual = release_manual_scope(document, "0.8.5-beta")
+        operators = procedures()
+        for row in document["requirements"]:
+            for case in row["cases"]:
+                if not all(identity in operators for identity in case["test_ids"]):
+                    self.assertNotIn(case["id"], deferred)
+                    for platform in case["required_platforms"]:
+                        self.assertTrue(release_variant_required(case, dict(platform=platform), deferred, manual))
+
     def test_package_case_needs_proof_for_each_architecture_not_just_each_os(self):
         row = next(r for r in self.document["requirements"] if r["id"] == "UX-085")
         row["evidence_tiers"] = ["P"]

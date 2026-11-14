@@ -602,29 +602,6 @@ async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
     engine.shutdown().await;
 }
 
-#[test]
-fn java_properties_reject_ambiguous_missing_or_malformed_versions() {
-    assert_eq!(
-        java_major("", "    java.specification.version = 1.8\n").unwrap(),
-        8
-    );
-    assert_eq!(
-        java_major("java.specification.version = 21\n", "").unwrap(),
-        21
-    );
-    for (out, err) in [
-        ("", "java.version = 21"),
-        (
-            "java.specification.version = 21",
-            "java.specification.version = 17",
-        ),
-        ("", "java.specification.version = 21.0.1"),
-        ("", "java.specification.version = +21"),
-    ] {
-        assert!(java_major(out, err).is_err());
-    }
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn java_validation_requires_approval_and_retires_before_rejecting_old_java() {

@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 use empack_core::{
     digest::DigestSet,
     identity::{ModrinthProjectId, ModrinthVersionId},
@@ -27,11 +28,18 @@ pub(super) fn project(bytes: &[u8]) -> Result<CanonicalProject> {
         _ => return Err(CatalogError::UnsupportedKind.into()),
     };
     ensure!(
-        !value.title.trim().is_empty() && !value.slug.is_empty(),
-        CatalogError::InvalidRecord
+        !value.title.trim().is_empty(),
+        record_error("title", RecordInvariant::NonEmpty)
+    );
+    ensure!(
+        !value.slug.is_empty(),
+        record_error("slug", RecordInvariant::NonEmpty)
     );
     Ok(CanonicalProject {
-        id: ProviderProjectId::Modrinth(ModrinthProjectId::parse(&value.id)?),
+        id: ProviderProjectId::Modrinth(
+            ModrinthProjectId::parse(&value.id)
+                .map_err(|_| record_error("id", RecordInvariant::CanonicalIdentity))?,
+        ),
         slug: value.slug,
         title: value.title,
         kinds,
@@ -42,7 +50,7 @@ pub(super) fn project(bytes: &[u8]) -> Result<CanonicalProject> {
         },
     })
 }
-fn mod_kinds(loaders: &[String]) -> Result<NonEmpty<ContentKind>> {
+pub(super) fn mod_kinds(loaders: &[String]) -> Result<NonEmpty<ContentKind>> {
     let datapack = loaders.iter().any(|value| value == "datapack");
     let mut kinds = Vec::new();
     if !datapack || loaders.iter().any(|value| value != "datapack") {
@@ -84,6 +92,13 @@ pub(super) fn selection(
     pin: &ResolvedPin,
     bytes: &[u8],
 ) -> Result<ProviderResolution> {
+    decode_selection(project, pin, bytes).with_context(|| selection_context(pin))
+}
+fn decode_selection(
+    project: CanonicalProject,
+    pin: &ResolvedPin,
+    bytes: &[u8],
+) -> Result<ProviderResolution> {
     let version = checked_version(pin, bytes)?;
     let files = version_files(version.files)?;
     let mut coverage = if version.dependencies.is_some() {
@@ -98,22 +113,50 @@ pub(super) fn selection(
             "optional" => DependencyRelation::Optional,
             "incompatible" => DependencyRelation::Incompatible,
             "embedded" => DependencyRelation::Embedded,
-            _ => return Err(CatalogError::InvalidRecord.into()),
+            _ => {
+                return Err(record_error(
+                    "dependencies[].dependency_type",
+                    RecordInvariant::RecognizedValue,
+                ));
+            }
         };
         let project = dep
             .project_id
-            .map(|id| ModrinthProjectId::parse(&id).map(ProviderProjectId::Modrinth))
+            .map(|id| {
+                ModrinthProjectId::parse(&id)
+                    .map(ProviderProjectId::Modrinth)
+                    .map_err(|_| {
+                        record_error(
+                            "dependencies[].project_id",
+                            RecordInvariant::CanonicalIdentity,
+                        )
+                    })
+            })
             .transpose()?;
         let pin = dep
             .version_id
-            .map(|id| ModrinthVersionId::parse(&id).map(PinSelector::ModrinthVersion))
+            .map(|id| {
+                ModrinthVersionId::parse(&id)
+                    .map(PinSelector::ModrinthVersion)
+                    .map_err(|_| {
+                        record_error(
+                            "dependencies[].version_id",
+                            RecordInvariant::CanonicalIdentity,
+                        )
+                    })
+            })
             .transpose()?;
         if project.is_none() && pin.is_none() {
             coverage = Coverage::Partial;
         }
         // A version-only edge still requires its ownership to be resolved before graph closure.
         if let Some(name) = &dep.file_name {
-            filename(name)?;
+            filename(name).map_err(|_| {
+                record_error(
+                    "dependencies[].file_name",
+                    RecordInvariant::PortableFilename,
+                )
+            })?;
         }
         dependencies.push(ProviderDependency {
             project,
@@ -124,17 +167,7 @@ pub(super) fn selection(
     }
     let mut environment = project.environment.clone();
     environment.version = version.environment;
-    let kinds = if project
-        .kinds
-        .as_slice()
-        .iter()
-        .any(|kind| matches!(kind, ContentKind::Mod | ContentKind::DataPack))
-        && !version.loaders.is_empty()
-    {
-        mod_kinds(&version.loaders)?
-    } else {
-        project.kinds.clone()
-    };
+    let kinds = version_kinds(&project, &version.loaders)?;
     Ok(ProviderResolution {
         project,
         kinds,
@@ -148,37 +181,75 @@ pub(super) fn selection(
     })
 }
 
+pub(super) fn version_kinds(
+    project: &CanonicalProject,
+    loaders: &[String],
+) -> Result<NonEmpty<ContentKind>> {
+    if !loaders.is_empty()
+        && project
+            .kinds
+            .as_slice()
+            .iter()
+            .any(|kind| matches!(kind, ContentKind::Mod | ContentKind::DataPack))
+    {
+        mod_kinds(loaders)
+    } else {
+        Ok(project.kinds.clone())
+    }
+}
 fn checked_version(pin: &ResolvedPin, bytes: &[u8]) -> Result<Version> {
     let version: Version = json(bytes)?;
+    let project = ModrinthProjectId::parse(&version.project_id)
+        .map_err(|_| record_error("project_id", RecordInvariant::CanonicalIdentity))?;
+    let selection = ModrinthVersionId::parse(&version.id)
+        .map_err(|_| record_error("id", RecordInvariant::CanonicalIdentity))?;
     ensure!(
-        ProviderProjectId::Modrinth(ModrinthProjectId::parse(&version.project_id)?) == pin.project
-            && PinSelector::ModrinthVersion(ModrinthVersionId::parse(&version.id)?)
-                == pin.selection,
-        CatalogError::Identity
+        ProviderProjectId::Modrinth(project) == pin.project,
+        identity_error("project_id")
+    );
+    ensure!(
+        PinSelector::ModrinthVersion(selection) == pin.selection,
+        identity_error("id")
     );
     Ok(version)
 }
 fn version_files(input: Vec<File>) -> Result<NonEmpty<ProviderFile>> {
-    ensure!(!input.is_empty(), CatalogError::InvalidRecord);
+    ensure!(
+        !input.is_empty(),
+        record_error("files", RecordInvariant::NonEmpty)
+    );
     ensure!(
         input.iter().filter(|file| file.primary).count() <= 1,
-        CatalogError::InvalidRecord
+        record_error("files[].primary", RecordInvariant::AtMostOnePrimary)
     );
     let mut names = std::collections::BTreeSet::new();
     let mut files = Vec::new();
-    for file in input {
-        filename(&file.filename)?;
+    for (index, file) in input.into_iter().enumerate() {
+        filename(&file.filename).map_err(|_| {
+            record_error(
+                format!("files[{index}].filename"),
+                RecordInvariant::PortableFilename,
+            )
+        })?;
         ensure!(
             names.insert(file.filename.clone()),
-            CatalogError::InvalidRecord
+            record_error(
+                format!("files[{index}].filename"),
+                RecordInvariant::UniqueFilename
+            )
         );
-        download_locator(&file.url)?;
+        download_locator(&file.url).map_err(|_| {
+            record_error(
+                format!("files[{index}].url"),
+                RecordInvariant::DownloadLocator,
+            )
+        })?;
         let expected = DigestSet::parse(
             file.hashes
                 .iter()
                 .map(|(algorithm, value)| (algorithm.as_str(), value.as_str())),
         )
-        .map_err(|_| CatalogError::InvalidRecord)?;
+        .map_err(|_| record_error(format!("files[{index}].hashes"), RecordInvariant::DigestSet))?;
         files.push(ProviderFile {
             filename: file.filename,
             primary: file.primary,
@@ -199,21 +270,32 @@ pub(super) fn archive_file(
     pin: &ResolvedPin,
     value: &serde_json::Value,
 ) -> Result<Option<ProviderFile>> {
+    decode_archive_file(pin, value).with_context(|| selection_context(pin))
+}
+fn decode_archive_file(
+    pin: &ResolvedPin,
+    value: &serde_json::Value,
+) -> Result<Option<ProviderFile>> {
     let files = value
         .get("files")
         .and_then(serde_json::Value::as_array)
-        .ok_or(CatalogError::InvalidRecord)?;
-    ensure!(!files.is_empty(), CatalogError::InvalidRecord);
+        .ok_or_else(|| record_error("files", RecordInvariant::JsonType))?;
+    ensure!(
+        !files.is_empty(),
+        record_error("files", RecordInvariant::NonEmpty)
+    );
     let mut primary = None;
     for (index, file) in files.iter().enumerate() {
         let selected = file
             .get("primary")
             .and_then(serde_json::Value::as_bool)
-            .ok_or(CatalogError::InvalidRecord)?;
+            .ok_or_else(|| {
+                record_error(format!("files[{index}].primary"), RecordInvariant::JsonType)
+            })?;
         if selected {
             ensure!(
                 primary.replace(index).is_none(),
-                CatalogError::InvalidRecord
+                record_error("files[].primary", RecordInvariant::AtMostOnePrimary)
             );
         }
     }
@@ -221,8 +303,18 @@ pub(super) fn archive_file(
     let name = selected
         .get("filename")
         .and_then(serde_json::Value::as_str)
-        .ok_or(CatalogError::InvalidRecord)?;
-    filename(name)?;
+        .ok_or_else(|| {
+            record_error(
+                format!("files[{}].filename", primary.unwrap_or(0)),
+                RecordInvariant::JsonType,
+            )
+        })?;
+    filename(name).map_err(|_| {
+        record_error(
+            format!("files[{}].filename", primary.unwrap_or(0)),
+            RecordInvariant::PortableFilename,
+        )
+    })?;
     if !name.to_ascii_lowercase().ends_with(".mrpack") {
         return Ok(None);
     }

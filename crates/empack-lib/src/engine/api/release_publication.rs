@@ -22,7 +22,7 @@ use empack_core::{
 };
 use std::collections::BTreeSet;
 mod channel;
-pub use channel::PublishChannelRequest;
+pub use channel::CreateChannelRequest;
 pub(super) use channel::prepare as prepare_channel;
 
 /// Selected local export and independently supplied keys. Keys never enter the receipt or archive.
@@ -310,6 +310,7 @@ pub(super) async fn run(
         if let Some(remote) = &prepared.remote {
             channel::verify_hosted(remote, &transport, &config, &mut scope).await?;
         }
+        let progress = scope.progress_reporter();
         let work = scope.spawn_blocking(
             config.resources.assembly,
             config.resources.receipt,
@@ -318,6 +319,7 @@ pub(super) async fn run(
                 prepared
                     .source
                     .revalidate(&prepared.source_snapshot, &cancel)?;
+                progress(WorkProgress::PublishingChanges);
                 let publication = Publisher::open(&config.state_root)?.publish(
                     &prepared.root,
                     prepared.change,

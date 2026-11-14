@@ -1,22 +1,7 @@
 //! CLI recovery commands retain native selections without turning paths into shell code.
 use super::session::Session;
+use super::shell::{NAME as SHELL, quote};
 use crate::engine::publication::{RecoveryKind, RecoveryLocation, RecoveryStatus};
-
-#[cfg(windows)]
-const SHELL: &str = "PowerShell";
-#[cfg(not(windows))]
-const SHELL: &str = "POSIX shell";
-
-fn quote(value: &str) -> String {
-    #[cfg(windows)]
-    {
-        format!("'{}'", value.replace('\'', "''"))
-    }
-    #[cfg(not(windows))]
-    {
-        format!("'{}'", value.replace('\'', "'\"'\"'"))
-    }
-}
 
 fn command(location: &RecoveryLocation, action: &str, operation: Option<&str>) -> Option<String> {
     let project = location.project.to_str()?;
@@ -31,11 +16,11 @@ fn command(location: &RecoveryLocation, action: &str, operation: Option<&str>) -
     }
     let mut command = format!(
         "empack --workdir {} --state-dir {} recover {action}",
-        quote(project),
-        quote(state)
+        quote(project)?,
+        quote(state)?
     );
     if let Some(operation) = operation {
-        command.push_str(&format!(" --operation {}", quote(operation)));
+        command.push_str(&format!(" --operation {}", quote(operation)?));
     }
     Some(command)
 }
@@ -93,7 +78,12 @@ mod tests {
     #[test]
     fn shell_commands_do_not_emit_control_characters_or_ambiguous_relative_paths() {
         let base = std::env::temp_dir();
-        for unsafe_path in ["project\nname", "project\u{1b}name", "project\0name"] {
+        for unsafe_path in [
+            "project\nname",
+            "project\u{1b}name",
+            "project\0name",
+            "project\u{202e}name",
+        ] {
             let location = RecoveryLocation {
                 project: base.join(unsafe_path),
                 state: base.join("state"),

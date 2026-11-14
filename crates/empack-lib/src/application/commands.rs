@@ -9,20 +9,19 @@ use empack_core::{
     removal::{RemovalEvidencePolicy, RemovalMode},
 };
 
-/// Execute CLI commands through session-owned native engine hosts
-pub async fn execute_command(config: CliConfig) -> Result<()> {
-    execute_command_with_cancellation(config, Default::default()).await
+/// Validate configuration and execute CLI input through a new command session.
+/// The caller owns logging, signal handling and presentation of the terminal result.
+pub async fn execute_command(mut config: CliConfig) -> Result<()> {
+    config.app_config.validate()?;
+    let session = CommandSession::new(config.app_config);
+    execute_invocation(config.command, &session).await
 }
 
-pub async fn execute_command_with_cancellation(
-    config: CliConfig,
-    cancellation: super::process_runtime::Cancellation,
-) -> Result<()> {
-    // Create command session (owns all ephemeral state)
-    let session = CommandSession::new(config.app_config).with_cancellation(cancellation.clone());
-    cancellation.check()?;
+/// Dispatch parsed CLI input using the caller's terminal and cancellation owner.
+pub async fn execute_invocation(command: Option<Commands>, session: &dyn Session) -> Result<()> {
+    session.process().check_cancelled()?;
 
-    let command = match config.command {
+    let command = match command {
         Some(cmd) => cmd,
         None => {
             session
@@ -38,7 +37,7 @@ pub async fn execute_command_with_cancellation(
     };
 
     // Dispatch to session-aware command handlers
-    execute_command_with_session(command, &session).await
+    execute_command_with_session(command, session).await
 }
 
 /// Execute one command using the same native engine host as library clients.
@@ -56,6 +55,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
 }
 fn command_name(command: &Commands) -> &'static str {
     match command {
+        Commands::Check(_) => "check",
         Commands::Status { .. } => "status",
         Commands::Manifest { .. } => "manifest",
         Commands::Pin { .. } => "pin",
@@ -66,16 +66,14 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Init(_) => "init",
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
-        Commands::Update { .. } => "update",
-        Commands::Outdated { .. } => "outdated",
+        Commands::Update(_) => "update",
         Commands::Migrate(_) => "migrate",
         Commands::Adopt { .. } => "adopt",
         Commands::Build(_) => "build",
         Commands::Clean { .. } => "clean",
         Commands::Sync { .. } => "sync",
         Commands::Recover { .. } => "recover",
-        Commands::Requirements => "requirements",
-        Commands::Version => "version",
+        Commands::Doctor(_) => "doctor",
     }
 }
 async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
@@ -85,6 +83,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     // Keep each workflow state on the heap. Otherwise debug builds embed the
     // largest workflow in every dispatch frame, exhausting the Windows CLI stack.
     match command {
+        Commands::Check(options) => Box::pin(engine_host::checking::check(session, options)).await,
         Commands::Manifest { command } => {
             Box::pin(engine_host::cli::manifest::inspect(session, command)).await
         }
@@ -114,12 +113,10 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         Commands::Recover { action, operation } => {
             Box::pin(engine_host::recover(session, action, operation)).await
         }
-        Commands::Requirements => Box::pin(handle_requirements(session)).await,
-        Commands::Version => Box::pin(handle_version(session)).await,
+        Commands::Doctor(options) => Box::pin(engine_host::doctor::inspect(session, options)).await,
         Commands::Init(args) => Box::pin(engine_host::cli::initialize(session, &args)).await,
         Commands::Add {
             mods,
-            force,
             platform,
             project_type,
             version_id,
@@ -132,7 +129,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                 session,
                 engine_host::cli::AddOptions {
                     inputs: mods,
-                    force,
                     platform,
                     kind: project_type,
                     version_id,
@@ -145,35 +141,8 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             .await
         }
         Commands::Migrate(options) => Box::pin(engine_host::cli::migrate(session, options)).await,
-        Commands::Outdated {
-            strict,
-            json,
-            release_policy,
-        } => {
-            Box::pin(engine_host::cli::outdated(
-                session,
-                json,
-                release_policy.map(Into::into),
-                strict,
-            ))
-            .await
-        }
-        Commands::Update {
-            release_policy,
-            dependencies,
-            continue_independent,
-        } => {
-            Box::pin(engine_host::cli::update_with_policy(
-                session,
-                dependencies,
-                release_policy.map(Into::into),
-                if continue_independent {
-                    crate::engine::api::BatchPolicy::ContinueIndependent
-                } else {
-                    crate::engine::api::BatchPolicy::AllRequested
-                },
-            ))
-            .await
+        Commands::Update(options) => {
+            Box::pin(engine_host::cli::update_command(session, options)).await
         }
         Commands::Adopt {
             dependencies,
@@ -199,7 +168,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                     session,
                     engine_host::cli::AddOptions {
                         inputs: from,
-                        force: false,
                         platform: selection.platform,
                         kind: selection.project_type,
                         version_id: selection.version_id,
@@ -214,19 +182,19 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Remove {
             mods,
-            deps,
             forget,
             acknowledge_unknown,
         } => {
-            anyhow::ensure!(
-                !deps,
-                "Automatic orphan cleanup requires complete dependency evidence; select exact dependencies to remove"
-            );
             Box::pin(engine_host::remove(
                 session,
                 RemoveRequest {
                     selections: NonEmpty::new(
-                        mods.into_iter().map(RemovalSelector::Query).collect(),
+                        mods.into_iter()
+                            .map(|value| {
+                                empack_core::model::DependencyKey::parse(&value)
+                                    .map(RemovalSelector::Key)
+                            })
+                            .collect::<std::result::Result<Vec<_>, _>>()?,
                     )?,
                     mode: if forget {
                         RemovalMode::ForgetRoots
@@ -244,69 +212,11 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Build(args) => Box::pin(engine_host::cli::build(session, &args)).await,
         Commands::Clean { targets } => Box::pin(engine_host::clean(session, &targets)).await,
-        Commands::Sync {
-            materialize,
-            continue_sync,
-            files,
-        } => {
-            if continue_sync {
-                Box::pin(engine_host::cli::resume_synchronization(session, files)).await
-            } else {
-                Box::pin(engine_host::cli::synchronize(session, materialize)).await
-            }
+        Commands::Sync { materialize } => {
+            Box::pin(engine_host::cli::synchronize(session, materialize)).await
         }
     }
 }
-async fn handle_requirements(session: &dyn Session) -> Result<()> {
-    session.display().status().section("Runtime capabilities");
-    session.display().status().success(
-        "project operations",
-        "native engine; no external dependency manager required",
-    );
-    session.display().status().success(
-        "archive support",
-        "native ZIP, TAR.GZ and 7z output; bounded ZIP import",
-    );
-    match session.process().find_program("java") {
-        Some(path) => session.display().status().success("java", &path),
-        None => session.display().status().warning(
-            "Java was not found; Forge/NeoForge server builds and generated launchers need it",
-        ),
-    }
-    session.display().status().info(
-        "Java discovery checks the executable path, not version compatibility with the selected runtime",
-    );
-    session
-        .display()
-        .status()
-        .info("Provider operations require network access; CurseForge also requires an API key");
-    Ok(())
-}
-async fn handle_version(session: &dyn Session) -> Result<()> {
-    session
-        .display()
-        .status()
-        .emphasis(&format!("empack {}", env!("CARGO_PKG_VERSION")));
-    session
-        .display()
-        .status()
-        .message("A Minecraft modpack development and distribution tool");
-    session.display().status().message("");
-
-    let build_info = [
-        (
-            "Built from commit",
-            option_env!("GIT_HASH").unwrap_or("unknown"),
-        ),
-        ("Build date", option_env!("BUILD_DATE").unwrap_or("unknown")),
-        ("Target", std::env::consts::ARCH),
-    ];
-
-    session.display().table().properties(&build_info);
-
-    Ok(())
-}
-
 #[cfg(test)]
 #[path = "commands.test.rs"]
 mod tests;

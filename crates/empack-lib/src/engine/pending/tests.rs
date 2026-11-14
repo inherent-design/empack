@@ -61,10 +61,10 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     let cancel = Cancellation::default();
     for kind in [Kind::Import, Kind::Synchronization, Kind::Instance] {
         let record = OpaqueRecord {
-            schema: if matches!(kind, Kind::Synchronization | Kind::Instance) {
-                2
-            } else {
-                1
+            schema: match kind {
+                Kind::Import => 1,
+                Kind::Synchronization => 2,
+                Kind::Instance => 3,
             },
             binding: store::bind_for(&state, kind, &target, &cancel).unwrap().1,
             marker: 0,
@@ -124,7 +124,12 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
             PendingKind::Sync => "Missing synchronization mode",
             PendingKind::Instance => "Missing release payload",
         };
-        assert!(operation.diagnostic.as_ref().unwrap().contains(diagnostic));
+        assert!(
+            operation.diagnostic.as_ref().unwrap().contains(diagnostic),
+            "{:?}: expected {diagnostic:?}, got {:?}",
+            operation.kind,
+            operation.diagnostic,
+        );
         assert_eq!(
             operation.next,
             vec!["pending", "resume", operation.id.as_str()]
@@ -148,8 +153,15 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
                 serde_json::to_value(&view).unwrap()
             );
         } else {
-            assert_eq!(captured[0], view.text());
-            assert!(captured[0].contains("Metadata only"));
+            assert!(captured[0].starts_with("Saved work: 4\n"));
+            assert!(!captured[0].contains("Metadata only"));
+            for operation in &view.operations {
+                assert!(captured[0].contains(&operation.id[..12]));
+                assert!(captured[0].contains(operation.diagnostic.as_ref().unwrap()));
+                assert!(
+                    !captured[0].contains(&format!("Next: empack pending resume {}", operation.id))
+                );
+            }
         }
         for operation in &view.operations {
             execute_command_with_session(

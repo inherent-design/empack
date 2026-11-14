@@ -34,6 +34,7 @@ mod retention;
 mod root_state;
 pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
 pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
+pub use root_state::UnassociatedState;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -87,6 +88,13 @@ impl RecoveryReader {
         match Publisher::open_existing(&self.host_state)? {
             Some(publisher) => publisher.bound_root_key(root),
             None => root_key(root),
+        }
+    }
+    /// Presence means active or unconfirmed ownership, never proof that a process is retired.
+    pub(super) fn has_runtime_evidence(&self, root: &ProjectReadRoot) -> Result<bool> {
+        match Publisher::open_existing(&self.host_state)? {
+            Some(publisher) => Ok(publisher.observe_runtime(root)?.is_some()),
+            None => Ok(false),
         }
     }
     pub(super) fn enter(&self, root: &ProjectReadRoot) -> Result<ProjectReadGuard> {

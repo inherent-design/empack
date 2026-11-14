@@ -14,11 +14,7 @@ mod journeys;
 
 fn command(project: &TestProject) -> assert_cmd::Command {
     let mut cmd = empack_tests::harness::process::offline_command(project.dir());
-    cmd.env(
-        "EMPACK_PACKWIZ_BIN",
-        project.dir().join("must-not-be-executed"),
-    )
-    .timeout(Duration::from_secs(15));
+    cmd.timeout(Duration::from_secs(15));
     cmd
 }
 fn initialized() -> TestProject {
@@ -39,6 +35,30 @@ fn initialized() -> TestProject {
         .assert()
         .success();
     project
+}
+
+#[test]
+fn cli_bootstrap_probe_ignores_configuration_and_cannot_execute_work() {
+    let project = TestProject::new();
+    let dotenv = b"EMPACK_CPU_JOBS=invalid\n";
+    fs::write(project.dir().join(".env"), dotenv).unwrap();
+    command(&project)
+        .env("EMPACK_CPU_JOBS", "invalid")
+        .env("EMPACK_COLOR", "invalid")
+        .args(["--bootstrap-protocol"])
+        .assert()
+        .success()
+        .stdout("empack-bootstrap/1\n")
+        .stderr("");
+    for arguments in [
+        vec!["--bootstrap-protocol", "status"],
+        vec!["--bootstrap-protocol", "--yes"],
+        vec!["--bootstrap-protocol", "--bootstrap-protocol"],
+    ] {
+        command(&project).args(arguments).assert().failure();
+    }
+    assert_eq!(fs::read(project.dir().join(".env")).unwrap(), dotenv);
+    assert!(!project.dir().join("empack.yml").exists());
 }
 
 #[test]
@@ -202,6 +222,146 @@ fn cli_preview_and_failed_add_batch_preserve_snapshot() {
     assert_eq!(snapshot(&project), before);
 }
 #[test]
+fn cli_update_requires_apply_even_with_yes() {
+    let project = initialized();
+    jar_version(&project, "fixture.jar", "1");
+    command(&project)
+        .args(["add", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    let installed = fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap();
+    jar_version(&project, "fixture.jar", "2");
+    let before = snapshot(&project);
+    for args in [
+        vec!["update", "fixture", "--select"],
+        vec!["--yes", "update", "fixture", "--select"],
+    ] {
+        command(&project)
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicates::str::contains(
+                "Version selection requires an interactive terminal",
+            ));
+        assert_eq!(snapshot(&project), before);
+    }
+
+    for selector in ["fixture", "--all"] {
+        command(&project)
+            .args(["update", selector, "--yes"])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("Preview only; use --apply"));
+        assert_eq!(snapshot(&project), before, "preview for {selector}");
+        assert_eq!(
+            fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+            installed
+        );
+    }
+    for dry in ["false", "true"] {
+        command(&project)
+            .env("EMPACK_DRY_RUN", dry)
+            .args(["update", "fixture", "--yes"])
+            .assert()
+            .success();
+        assert_eq!(
+            snapshot(&project),
+            before,
+            "An update without --apply must remain a preview: {dry}"
+        );
+    }
+    for (dry, explicit) in [("true", false), ("false", true)] {
+        let mut cmd = command(&project);
+        cmd.env("EMPACK_DRY_RUN", dry);
+        if explicit {
+            cmd.arg("--dry-run");
+        }
+        cmd.args(["update", "--all", "--apply", "--yes"])
+            .assert()
+            .code(2)
+            .stderr(predicates::str::contains(
+                "--apply cannot be combined with --dry-run",
+            ));
+        assert_eq!(snapshot(&project), before);
+    }
+    let output = command(&project)
+        .args(["update", "--all", "--json", "--quiet", "--yes"])
+        .assert()
+        .success()
+        .stderr("")
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["requested"], serde_json::json!(["fixture"]));
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["changed_selections"], serde_json::json!(["fixture"]));
+    assert!(
+        report["discovery"].is_null(),
+        "Local content must not acquire fake provider evidence"
+    );
+    let installed_change = report["file_changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "pack/mods/fixture.jar")
+        .unwrap();
+    use sha2::Digest;
+    assert_eq!(
+        installed_change["after"]["sha256"],
+        sha2::Sha256::digest(fs::read(project.dir().join("fixture.jar")).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    assert_eq!(snapshot(&project), before);
+    fs::write(project.dir().join("pack/mods/fixture.jar"), b"local edit").unwrap();
+    let blocked_before = snapshot(&project);
+    let failed = command(&project)
+        .args(["update", "fixture", "--json", "--quiet"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let blocked: serde_json::Value = serde_json::from_slice(&failed).unwrap();
+    assert_eq!(blocked["requested"], serde_json::json!(["fixture"]));
+    assert_eq!(blocked["proposal"], "blocked");
+    assert!(blocked["diagnostic"].is_object());
+    assert_eq!(snapshot(&project), blocked_before);
+    fs::write(project.dir().join("pack/mods/fixture.jar"), &installed).unwrap();
+    assert_eq!(snapshot(&project), before);
+    for args in [
+        vec!["update"],
+        vec!["update", "fixture", "--all"],
+        vec!["update", "--all", "--apply", "--dry-run"],
+        vec!["update", "--all", "--apply", "--json"],
+        vec!["update", "--all", "--details", "--json"],
+    ] {
+        command(&project).args(args).assert().code(2);
+        assert_eq!(snapshot(&project), before);
+    }
+    for dry in [None, Some("false")] {
+        if dry.is_some() {
+            jar_version(&project, "fixture.jar", "3");
+        }
+        let mut cmd = command(&project);
+        if let Some(dry) = dry {
+            cmd.env("EMPACK_DRY_RUN", dry);
+        }
+        cmd.args(["update", "--all", "--apply", "--yes"])
+            .assert()
+            .success();
+        assert_eq!(
+            fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+            fs::read(project.dir().join("fixture.jar")).unwrap()
+        );
+        assert_ne!(snapshot(&project), before);
+    }
+}
+
+#[test]
 fn cli_headless_search_refuses_implicit_choice() {
     let project = initialized();
     let before = snapshot(&project);
@@ -274,7 +434,7 @@ fn cli_invalid_choice_arguments_preserve_project() {
     let before = snapshot(&project);
     for args in [
         vec!["build", "modrinth", "--optional", "choice=maybe"],
-        vec!["build", "--continue", "--optional-defaults"],
+        vec!["pending", "resume", "abcdef", "--optional-defaults"],
         vec!["remove", "fixture", "--forget", "--acknowledge-unknown"],
     ] {
         command(&project).args(args).assert().failure();
@@ -435,7 +595,10 @@ fn cli_independent_add_preserves_conflicting_unowned_directory() {
             "--yes",
         ])
         .assert()
-        .success();
+        .failure()
+        .stderr(predicates::str::contains(
+            "dependency information is incomplete",
+        ));
     assert_eq!(project_snapshot(&project), before);
     command(&project)
         .args([
@@ -447,6 +610,13 @@ fn cli_independent_add_preserves_conflicting_unowned_directory() {
         ])
         .assert()
         .failure();
+    assert_eq!(project_snapshot(&project), before);
+    assert!(!project.dir().join("pack/mods/ready.jar").exists());
+    // The author can explicitly select the other file as one complete operation.
+    command(&project)
+        .args(["add", "ready.jar", "--yes"])
+        .assert()
+        .success();
     assert_eq!(fs::read(destination.join("sentinel")).unwrap(), b"unowned");
     assert_eq!(
         fs::read(project.dir().join("pack/mods/ready.jar")).unwrap(),
@@ -492,7 +662,7 @@ fn cli_build_explanation_is_json_and_preserves_missing_lock_workspace() {
     assert_eq!(snapshot(&project), before);
     for args in [
         vec!["build", "--profile", "prism", "server"],
-        vec!["build", "--continue", "--profile", "prism"],
+        vec!["pending", "resume", "abcdef", "--profile", "prism"],
         vec!["build", "--json"],
         vec!["build", "--ad-hoc"],
         vec!["build", "curseforge", "--explain"],
@@ -507,17 +677,36 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
     let project = initialized();
     let before = snapshot(&project);
     let output = command(&project)
-        .args(["outdated", "--json", "--release-policy", "stable-only"])
+        .args([
+            "update",
+            "--all",
+            "--json",
+            "--release-policy",
+            "stable-only",
+        ])
         .assert()
         .success()
+        .stderr(predicates::str::is_empty())
         .get_output()
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(report["schema"], 1);
-    assert_eq!(report["release_policy"], "stable-only");
-    assert_eq!(report["joint"]["state"], "not-applicable");
-    assert_eq!(report["dependencies"], serde_json::json!([]));
+    assert_eq!(report["requested"], serde_json::json!([]));
+    assert_eq!(report["proposal"], "unchanged");
+    assert!(report["discovery"].is_null());
+    assert_eq!(report["source_kinds"], serde_json::json!({}));
+    let text = command(&project)
+        .args(["update", "--all", "--quiet"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        String::from_utf8(text).unwrap().trim_end(),
+        "No dependencies to update."
+    );
     let output = command(&project)
         .args([
             "migrate",
@@ -525,7 +714,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
             "1.21.1",
             "--loader",
             "vanilla",
-            "--plan",
+            "--dry-run",
             "--json",
         ])
         .assert()
@@ -534,7 +723,10 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
+    assert_eq!(report["proposal"], "unchanged");
+    assert_eq!(report["native_publication_performed"], false);
+    assert_eq!(report["file_changes"], serde_json::json!([]));
     assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.1");
     assert_eq!(report["proposed_runtime"]["loader"], "vanilla");
     assert_eq!(report["current_runtime"], report["proposed_runtime"]);
@@ -558,7 +750,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
             "--replace",
             "bad",
         ],
-        vec!["outdated", "--release-policy", "latest"],
+        vec!["update", "--all", "--release-policy", "latest"],
     ] {
         command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
@@ -566,16 +758,179 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
 }
 
 #[test]
-fn cli_strict_outdated_accepts_complete_empty_assessment() {
+fn cli_update_terminal_clears_progress_before_one_final_report() {
+    use empack_tests::harness::{process, terminal};
+    let project = initialized();
+    let path = project.dir().join("manual-pack.zip");
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("pack.mcmeta", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(br#"{"pack":{"pack_format":34,"description":"Offline progress fixture"}}"#)
+        .unwrap();
+    fs::write(&path, zip.finish().unwrap().into_inner()).unwrap();
+    command(&project)
+        .args(["--yes", "add", "--type", "resourcepack"])
+        .arg(&path)
+        .assert()
+        .success();
+    let before = project_snapshot(&project);
+    for columns in [80, 40] {
+        let mut command = process::offline_empack_cmd(project.dir());
+        command
+            .env("TERM", "xterm-256color")
+            .args(["update", "--all"]);
+        let output = terminal::capture_output(command, columns, 40, 0);
+        let mut parser = vt100::Parser::new(40, columns, 0);
+        parser.process(&output);
+        let screen = parser.screen().contents();
+        assert!(
+            !screen.contains("Checking"),
+            "stale progress at {columns} columns: {screen:?}"
+        );
+        assert_eq!(
+            screen.matches("Proposal:").count(),
+            1,
+            "at {columns} columns: {screen:?}"
+        );
+        assert_eq!(
+            screen.matches("Update plan: 1 dependency").count(),
+            1,
+            "at {columns} columns: {screen:?}"
+        );
+        assert!(screen.contains("manual-pack: no change"), "{screen:?}");
+        assert!(screen.contains("Preview only; use --apply"), "{screen:?}");
+    }
+    assert_eq!(project_snapshot(&project), before);
+}
+
+#[test]
+fn cli_empty_update_is_unchanged_and_obsolete_queries_are_rejected() {
     let project = initialized();
     let output = command(&project)
-        .args(["outdated", "--strict", "--json"])
+        .args(["update", "--all", "--json"])
         .assert()
         .success()
+        .stderr(predicates::str::is_empty())
         .get_output()
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["joint"]["state"], "not-applicable");
-    assert_eq!(report["dependencies"].as_array().unwrap().len(), 0);
+    assert_eq!(report["proposal"], "unchanged");
+    assert_eq!(report["requested"], serde_json::json!([]));
+    for args in [vec!["outdated"], vec!["update", "--all", "--strict"]] {
+        command(&project).args(args).assert().code(2);
+    }
+}
+
+#[test]
+fn cli_unassociated_saved_operations_identify_records_without_changing_them() {
+    let project = initialized();
+    let state = project.dir().join(".host-state");
+    let mut records = Vec::new();
+    for entry in fs::read_dir(&state).unwrap() {
+        let directory = entry.unwrap().path();
+        let identity = directory.join("root-identity.json");
+        if identity.is_file() {
+            fs::remove_file(identity).unwrap();
+            fs::write(
+                directory.join("retained-evidence"),
+                b"unfinished work; keep this",
+            )
+            .unwrap();
+            records.push(directory);
+        }
+    }
+    assert!(
+        !records.is_empty(),
+        "initialization must retain its directory association"
+    );
+    let before = empack_tests::harness::workspace::snapshot(project.dir());
+    for args in [
+        vec!["status"],
+        vec!["update", "--all"],
+        vec!["--yes", "sync"],
+    ] {
+        let output = command(&project)
+            .args(args)
+            .assert()
+            .code(1)
+            .get_output()
+            .clone();
+        assert!(
+            output.stdout.is_empty(),
+            "an unsafe read must not produce a success report"
+        );
+        let diagnostic = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            diagnostic.contains("Saved operations cannot be matched safely"),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("Keep these records"), "{diagnostic}");
+        let reported = diagnostic
+            .lines()
+            .filter_map(|line| line.strip_prefix("Missing directory identity: "))
+            .map(|quoted| {
+                let path: String = serde_json::from_str(quoted).unwrap();
+                fs::canonicalize(path).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(reported.len(), records.len(), "{diagnostic}");
+        for path in &records {
+            // Windows may report the same directory through a short-name alias.
+            // Compare the actual preserved location, not its escaped spelling.
+            assert!(
+                reported.contains(&fs::canonicalize(path).unwrap()),
+                "{diagnostic}"
+            );
+        }
+        assert!(!diagnostic.contains("--state-dir"), "{diagnostic}");
+        assert_eq!(
+            empack_tests::harness::workspace::snapshot(project.dir()),
+            before
+        );
+    }
+}
+
+#[test]
+fn cli_check_reports_document_failures_as_json_without_changing_inputs() {
+    let project = initialized();
+    let before = snapshot(&project);
+    for args in [
+        vec!["check", "--json"],
+        vec!["check", "--documents", "--json"],
+    ] {
+        let output = command(&project).args(args).output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["lock"], "current");
+        assert_eq!(snapshot(&project), before);
+    }
+    fs::write(project.dir().join("empack.lock"), b"damaged lock").unwrap();
+    let before = snapshot(&project);
+    let output = command(&project)
+        .args(["check", "--documents", "--json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(report["lock"], "invalid");
+    assert!(
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["state"] == "failed")
+    );
+    assert!(!output.stderr.is_empty());
+    assert_eq!(snapshot(&project), before);
+    for args in [
+        vec!["manifest", "check"],
+        vec!["check", "--documents", "--online"],
+        vec!["check", "--json", "--details"],
+    ] {
+        command(&project).args(args).assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
 }

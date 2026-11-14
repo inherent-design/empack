@@ -2,6 +2,7 @@
 use super::*;
 use crate::engine::{
     content::verify_stream,
+    runtime::WorkProgress,
     snapshot::{Observation, SnapshotLimits},
     staging::{FrozenStage, MutableStage, StageToolArgument},
 };
@@ -103,6 +104,8 @@ impl InstallerServerPlan {
             .acquire_libraries(transport, scope, transfer, policy, execution.output)
             .await?;
         let (request, retained) = execution.reservations()?;
+        let progress = scope.progress_reporter();
+        progress(WorkProgress::PreparingServerRuntime);
         let worker = scope.spawn(request, retained, move |cancel| async move {
             let stage_cancel = cancel.clone();
             let staged = tokio::task::spawn_blocking(move || -> Result<_> {
@@ -146,6 +149,7 @@ impl InstallerServerPlan {
                 StageToolArgument::Text("--installServer".into()),
                 StageToolArgument::Root,
             ];
+            progress(WorkProgress::RunningServerInstaller);
             let stage = stage
                 .run_tool(
                     &execution.java,
@@ -154,6 +158,7 @@ impl InstallerServerPlan {
                     cancel.clone(),
                 )
                 .await?;
+            progress(WorkProgress::VerifyingContent);
             tokio::task::spawn_blocking(move || {
                 let frozen = stage.freeze(execution.output, &cancel)?;
                 plan.verify_outputs(vanilla, frozen, archive, policy, &cancel)

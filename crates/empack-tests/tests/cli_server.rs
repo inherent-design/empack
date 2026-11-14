@@ -26,11 +26,13 @@ struct Server {
 
 impl Server {
     fn new() -> Self {
+        Self::with_java_directory("server Java Ω ")
+    }
+
+    fn with_java_directory(prefix: &str) -> Self {
         let instance = TestProject::new();
-        let fixtures = tempfile::Builder::new()
-            .prefix("server Java Ω ")
-            .tempdir()
-            .unwrap();
+        let fixtures = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+        fs::create_dir(fixtures.path().join("jvm-temp")).unwrap();
         let export = fixtures.path().join("export");
         fs::create_dir_all(export.join("assets")).unwrap();
         // Literal inventory and arbitrary bytes exercise ownership/invocation only.
@@ -98,6 +100,11 @@ impl Server {
         fs::write(self.program.parent().unwrap().join("java-fixture.json"), serde_json::to_vec(&json!({
             "stdout":stdout,"stderr":stderr,"probe_status":probe_status,"runtime_status":runtime_status,
             "observations":self.fixtures.path().join("observations"),
+            "bootstrap_java":self.instance.dir().join(".empack-tools/empack-bootstrap.jar").is_file().then(empack_tests::harness::process::java_bin),
+            // The real JAR consumes an ordinary distribution-relative path,
+            // not Rust's Windows verbatim spelling from qualification capture.
+            "engine":PathBuf::from(".empack-tools").join(if cfg!(windows) { "empack.exe" } else { "empack" }),
+            "development_engine":empack_tests::harness::process::expected_cli_version() == "0.0.0-dev",
         })).unwrap()).unwrap();
         for name in ["probe.json", "runtime.json"] {
             let path = self.fixtures.path().join("observations").join(name);
@@ -184,6 +191,29 @@ impl Server {
         let root = self.instance.dir();
         let export = self.fixtures.path().join("export");
         let bootstrap = root.join(".empack-consumer");
+        if managed {
+            let tools = root.join(".empack-tools");
+            fs::create_dir_all(&tools).unwrap();
+            fs::copy(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../bootstrap/target/empack-bootstrap.jar"),
+                tools.join("empack-bootstrap.jar"),
+            )
+            .unwrap();
+            // Provision the exact admitted product through the same local-tool
+            // location used by unpublished-candidate consumer checks. Keep the
+            // descriptor and full-instance preservation assertions unchanged.
+            let selected = empack_bin();
+            let local = tools.join(if cfg!(windows) {
+                "empack.exe"
+            } else {
+                "empack"
+            });
+            let digest = file_sha256(&selected).unwrap();
+            fs::copy(&selected, &local).unwrap();
+            fs::set_permissions(&local, fs::metadata(&selected).unwrap().permissions()).unwrap();
+            assert_eq!(file_sha256(&local).unwrap(), digest);
+        }
         fs::create_dir_all(bootstrap.join("assets")).unwrap();
         for name in ["release.json", "assets/server.jar"] {
             fs::copy(export.join(name), bootstrap.join(name)).unwrap();
@@ -231,6 +261,12 @@ impl Server {
                 command.env(key, value);
             }
         }
+        // Actual JVM scratch (including Windows hsperfdata) is host-owned,
+        // outside the instance whose complete preservation this case asserts.
+        empack_tests::harness::process::command_temp_dir(
+            &mut command,
+            &self.fixtures.path().join("jvm-temp"),
+        );
         let binary = empack_bin();
         let paths = std::env::join_paths(
             [
@@ -244,6 +280,14 @@ impl Server {
         )
         .unwrap();
         command.env("PATH", paths).env("EMPACK_NO_PAUSE", "1");
+        // This fixture requires Unicode *external JVM* arguments. Keep the
+        // harness's ordinary C-locale CLI coverage separate from that contract.
+        #[cfg(target_os = "linux")]
+        command.env("LANG", "C.UTF-8").env("LC_ALL", "C.UTF-8");
+        #[cfg(target_os = "macos")]
+        command
+            .env("LANG", "en_US.UTF-8")
+            .env("LC_ALL", "en_US.UTF-8");
         if home {
             command.env(
                 "JAVA_HOME",
@@ -443,18 +487,27 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
         ),
         (
             "",
-            "fixture Java probe failure\n",
+            "fixture Java probe failure\nfixture.private.property = fixture-private-jvm-value\n",
             9,
-            "Selected Java failed its version check: fixture Java probe failure",
+            "Selected Java failed its version check; run that executable's version command separately for its output",
         ),
     ] {
         server.configure(stdout, stderr, status, 0);
         let tools = snapshot(server.program.parent().unwrap());
-        server
+        let output = server
             .launch(&["--yes"], server.program.as_os_str())
             .assert()
             .code(EmpackExitCode::General.as_i32())
-            .stderr(contains(diagnostic));
+            .stderr(contains(diagnostic))
+            .get_output()
+            .clone();
+        if status != 0 {
+            for stream in [&output.stdout, &output.stderr] {
+                let text = String::from_utf8_lossy(stream);
+                assert!(!text.contains("fixture Java probe failure"));
+                assert!(!text.contains("fixture-private-jvm-value"));
+            }
+        }
         server.invocation("probe.json", &["-XshowSettings:properties", "-version"]);
         server.not_started();
         assert_eq!(snapshot(server.program.parent().unwrap()), tools);
@@ -475,13 +528,32 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
     server.preserved();
     server.configure("", "java.specification.version = 21\n", 0, 0);
     server.successful(server.program.as_os_str());
+    server.configure("", "java.specification.version = 21\n", 0, 130);
+    let output = server
+        .launch(&["--yes"], server.program.as_os_str())
+        .assert()
+        .code(EmpackExitCode::Interrupted.as_i32())
+        .stderr(contains("Runtime interrupted"))
+        .get_output()
+        .clone();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Error:"));
+    server.preserved();
+    server.configure("", "java.specification.version = 21\n", 0, 0);
+    server.successful(server.program.as_os_str());
 }
 
 #[test]
 fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() {
     const CHILD: &str = "engine::build::server::tests::generated_server_entrypoint_fixture";
     let driver = Driver::native_fixture(CHILD);
-    let server = Server::new();
+    // Windows launcher argv uses the system ANSI encoding before Java Main.
+    // Keep this external JVM path within that documented scope. Direct native
+    // launch cases retain the Unicode Java directory through Server::new().
+    let server = Server::with_java_directory(if cfg!(windows) {
+        "server Java fixture "
+    } else {
+        "server Java Ω "
+    });
     server.generate_scripts(&driver, true);
     let bootstrap = snapshot(&server.instance.dir().join(".empack-consumer"));
     let scripts = |name: &str| fs::read(server.instance.dir().join(name)).unwrap();
@@ -578,6 +650,18 @@ fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() 
         }
         server.preserved();
     }
+    // The unchanged generated entry point invokes the real JAR and selected
+    // native product. Runtime interruption must survive both parent processes.
+    server.configure("", "java.specification.version = 21\n", 0, 130);
+    let output = server
+        .script(false, true)
+        .assert()
+        .code(EmpackExitCode::Interrupted.as_i32())
+        .stderr(contains("Runtime interrupted"))
+        .get_output()
+        .clone();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Error:"));
+    server.preserved();
     assert_eq!(
         snapshot(&server.instance.dir().join(".empack-consumer")),
         bootstrap

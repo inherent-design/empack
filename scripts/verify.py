@@ -17,7 +17,8 @@ from verification.compiler import compiler_environment
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
 from verification.progress import phase
-from verification.product_build import metadata_command, retain_build
+from verification.product_build import metadata_command, retain_build, inspect_bootstrap
+from verification.bootstrap import admit as admit_bootstrap
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,7 +128,8 @@ def product(args, attempt, environment, host):
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         # A distinct target directory keeps product compilation outside the additive
         # workspace test feature graph. Build the ordinary product package only.
-        target_dir = (ROOT / "target" / "verification-product" / features).resolve()
+        target_base = Path(environment.get("CARGO_TARGET_DIR") or ROOT / "target")
+        target_dir = (ROOT / target_base / "verification-product" / features).resolve()
         command = ["cargo", "build", "--locked", "-p", "empack", "--target-dir", str(target_dir)]
         if profile == "release":
             command += ["--release"]
@@ -135,9 +137,14 @@ def product(args, attempt, environment, host):
             command += ["--features", "telemetry"]
         command += ["--message-format=json"]
         compiler = compiler_environment(environment)
+        bootstrap = admit_bootstrap(ROOT)
         messages = checked(command, attempt, "product-build", compiler, timeout=1800, cwd=ROOT)
         metadata = checked(metadata_command(host),
                            attempt, "product-metadata", compiler, cwd=ROOT)
+        inspect_bootstrap(messages, json.loads(metadata), bootstrap["jar_sha256"])
+        if admit_bootstrap(ROOT) != bootstrap:
+            raise Blocked("Bootstrap changed during product compilation")
+        write_json(attempt / "bootstrap-build.json", bootstrap)
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         path = path.resolve()
         digest = sha256(path)

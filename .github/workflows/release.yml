@@ -23,7 +23,13 @@ env:
   RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
 jobs:
+  bootstrap:
+    uses: ./.github/workflows/bootstrap.yml
+    with:
+      version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+
   build:
+    needs: bootstrap
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -81,6 +87,10 @@ jobs:
               print("BUILD_DATE=" + record["build_date"], file=output)
           PYTHON
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
         with:
           targets: ${{ matrix.target }}
@@ -174,6 +184,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -220,6 +234,10 @@ jobs:
         with:
           pattern: release-*
           path: .git/release-evidence
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - name: Revalidate all five build and execution records
         id: admit
         shell: bash
@@ -260,6 +278,7 @@ jobs:
 
   auxiliary:
     name: Qualify telemetry on ${{ matrix.os }}
+    needs: bootstrap
     runs-on: ${{ matrix.os }}
     timeout-minutes: 100
     strategy:
@@ -270,11 +289,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
@@ -310,6 +333,7 @@ jobs:
           path: |
             .git/auxiliary/*/build.json
             .git/auxiliary/*/compile.json
+            .git/auxiliary/*/bootstrap-build.json
             .git/auxiliary/*/product-build-messages.jsonl
             .git/auxiliary/*/product-metadata.json
             .git/auxiliary/*/product-build-audit.json
@@ -343,30 +367,34 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - uses: astral-sh/setup-uv@v7
         if: runner.os == 'Linux'
         with:
-          version: "0.13.5"
+          version: "0.13.7"
           cache-dependency-glob: scripts/check-authoring-schema.py
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         id: java8
         with:
           distribution: zulu
           java-version: "8"
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         id: java17
         with:
           distribution: temurin
           java-version: "17"
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -426,7 +454,11 @@ jobs:
           path: .git/candidate-consumer
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: "3.15"
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - run: python3 scripts/verify.py python --output .git/candidate-python
       - uses: actions/download-artifact@v8

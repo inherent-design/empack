@@ -610,6 +610,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     fs::write(root.path().join("pack/unrelated.pw.toml"), b"invalid = [").unwrap();
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || UpdateRequest {
+        pins: Default::default(),
         source_revision: None,
         group: AdditionGroup::from_resolved(&requested).unwrap(),
         content: crate::engine::dependency_content::materialized(acquired_project(&requested)),
@@ -1394,6 +1395,30 @@ mod independent_batch {
     use super::*;
     use crate::engine::mrpack::tests::explicitly_placed;
     use empack_core::{model::*, path::InstallDestination};
+    // These positive partition fixtures explicitly declare their empty required
+    // lists complete. Unknown/partial evidence is exercised separately below.
+    fn complete(project: ResolvedProject) -> ResolvedProject {
+        let mut lock = project.lock().clone();
+        for coverage in lock.coverage.values_mut() {
+            *coverage = Coverage::CompleteForSelection;
+        }
+        ResolvedProject::validate(
+            project.intent().clone(),
+            lock,
+            project.lock().intent_revision,
+        )
+        .unwrap()
+    }
+    fn complete_fixture(root: &Path) {
+        fixture(root);
+        fs::write(
+            root.join("empack.lock"),
+            crate::engine::documents::DocumentCodec
+                .encode_lock(&complete(project(false, false)))
+                .unwrap(),
+        )
+        .unwrap();
+    }
     fn named(name: &str) -> ResolvedProject {
         let source = project(false, false);
         let mut intent = source.intent().clone();
@@ -1448,6 +1473,7 @@ mod independent_batch {
     }
     fn broken() -> DependencyBatchItem {
         let mut request = request(ExistingDependencyPolicy::UpdateSameIdentity);
+        request.group = AdditionGroup::from_resolved(&complete(project(false, false))).unwrap();
         let first = request.content.values_mut().next().unwrap();
         *first = DependencyContent::Materialized(AcquiredBuildFile {
             content: verify_stream(
@@ -1496,7 +1522,7 @@ mod independent_batch {
         for policy in [BatchPolicy::AllRequested, BatchPolicy::ContinueIndependent] {
             let root = tempfile::tempdir().unwrap();
             let state = tempfile::tempdir().unwrap();
-            fixture(root.path());
+            complete_fixture(root.path());
             let before = snapshot(root.path());
             let (engine, governor) = engine(state.path().join("state"));
             let valid = named("new");
@@ -1536,7 +1562,7 @@ mod independent_batch {
                 assert!(cause.downcast_ref::<DependencyBatchIncomplete>().is_some());
                 assert_eq!(receipt.batch.as_ref().unwrap().successful, [vec![1]]);
                 assert_eq!(receipt.project.lock().dependencies.len(), 2);
-                let original = project(false, false);
+                let original = complete(project(false, false));
                 assert_eq!(
                     receipt.project.lock().dependencies[&DependencyKey::parse("assets").unwrap()],
                     original.lock().dependencies[&DependencyKey::parse("assets").unwrap()]
@@ -1575,12 +1601,108 @@ mod independent_batch {
         }
     }
     #[tokio::test]
+    async fn incomplete_dependency_evidence_cannot_authorize_partial_publication() {
+        for coverage in [Coverage::Unknown, Coverage::Partial] {
+            let root = tempfile::tempdir().unwrap();
+            let state = tempfile::tempdir().unwrap();
+            complete_fixture(root.path());
+            let before = snapshot(root.path());
+            let (engine, governor) = engine(state.path().join("state"));
+            let value = named("unverified");
+            let mut lock = value.lock().clone();
+            *lock.coverage.values_mut().next().unwrap() = coverage;
+            let unverified = explicitly_placed(value.intent().clone(), lock);
+            let request = DependencyBatchRequest {
+                source_revision: None,
+                policy: BatchPolicy::ContinueIndependent,
+                change: DependencyBatchChange::Add(ExistingDependencyPolicy::UpdateSameIdentity),
+                items: NonEmpty::new(vec![broken(), item(&unverified)]).unwrap(),
+            };
+            let (refused, published) =
+                match engine.prepare(root.path().to_path_buf(), request).await {
+                    Err(error) => (
+                        error
+                            .downcast_ref::<DependencyBatchIncomplete>()
+                            .is_some_and(|failure| {
+                                failure.0.successful.is_empty()
+                                    && failure.0.blocked.len() == 1
+                                    && failure.0.blocked[0].requests == vec![0, 1]
+                                    && failure.0.independence_unverified
+                                        == vec![DependencyKey::parse("unverified").unwrap()]
+                            }),
+                        false,
+                    ),
+                    Ok(Preparation::Ready(prepared)) => {
+                        // Exercise normal authorization/execution as well: a speculative
+                        // partition must not become a usable partial-publication ticket.
+                        let permission = grant(&prepared);
+                        let mut handle = engine
+                            .start(prepared.authorize(permission).unwrap())
+                            .unwrap();
+                        let outcome = handle.wait().await;
+                        let published = matches!(
+                            &*outcome,
+                            OperationOutcome::Completed(
+                                ExecutionOutcome::Completed(_)
+                                    | ExecutionOutcome::PartiallyCompleted { .. }
+                            )
+                        );
+                        engine.release_completed(handle.id());
+                        drop((outcome, handle));
+                        (false, published)
+                    }
+                    Ok(_) => (false, false),
+                };
+            let unchanged = snapshot(root.path()) == before;
+            engine.shutdown().await;
+            assert_eq!(governor.status().reserved, ResourceRequest::default());
+            assert!(
+                refused && !published && unchanged,
+                "{coverage:?} dependency information was treated as proof of independence: refused={refused}, published={published}, unchanged={unchanged}"
+            );
+            // A complete operation remains available for manual content; only
+            // an unsupported partial-publication claim is prohibited.
+            let (whole, whole_governor) = super::engine(state.path().join("state"));
+            let request = DependencyBatchRequest {
+                source_revision: None,
+                policy: BatchPolicy::ContinueIndependent,
+                change: DependencyBatchChange::Add(ExistingDependencyPolicy::UpdateSameIdentity),
+                items: NonEmpty::new(vec![
+                    item(&complete(project(false, false))),
+                    item(&unverified),
+                ])
+                .unwrap(),
+            };
+            let prepared = ready(&whole, root.path(), request).await;
+            let report = prepared.view().add().unwrap().batch.as_ref().unwrap();
+            assert_eq!(report.successful, vec![vec![0, 1]]);
+            assert!(report.blocked.is_empty());
+            assert_eq!(
+                report.independence_unverified,
+                vec![DependencyKey::parse("unverified").unwrap()]
+            );
+            let permission = grant(&prepared);
+            let mut handle = whole
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = handle.wait().await;
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Add(_)))
+            ));
+            whole.release_completed(handle.id());
+            drop((outcome, handle));
+            whole.shutdown().await;
+            assert_eq!(whole_governor.status().reserved, ResourceRequest::default());
+        }
+    }
+    #[tokio::test]
     async fn failed_shared_component_blocks_all_its_requests_but_not_an_unrelated_group() {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
-        fixture(root.path());
+        complete_fixture(root.path());
         let (engine, governor) = engine(state.path().join("state"));
-        let original = project(false, false);
+        let original = complete(project(false, false));
         let other = named("other");
         let partial = DependencyBatchRequest {
             source_revision: None,
@@ -1615,7 +1737,7 @@ mod independent_batch {
         for stale in [false, true] {
             let root = tempfile::tempdir().unwrap();
             let state = tempfile::tempdir().unwrap();
-            fixture(root.path());
+            complete_fixture(root.path());
             let (engine, governor) = engine(state.path().join("state"));
             let extra = named("extra");
             let prepared = ready(
@@ -1645,7 +1767,9 @@ mod independent_batch {
             let batch = DependencyBatchRequest {
                 source_revision: None,
                 policy: BatchPolicy::ContinueIndependent,
-                change: DependencyBatchChange::Update,
+                change: DependencyBatchChange::Update {
+                    pins: Default::default(),
+                },
                 items: NonEmpty::new(vec![broken(), item(&extra)]).unwrap(),
             };
             let prepared = ready(&engine, root.path(), batch).await;
@@ -1699,6 +1823,103 @@ mod independent_batch {
             engine.shutdown().await;
             assert_eq!(governor.status().reserved, ResourceRequest::default());
         }
+    }
+    #[tokio::test]
+    async fn partial_pinned_update_publishes_only_successful_groups_author_pins() {
+        use empack_core::{identity::*, model::*};
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let original = crate::engine::addition::tests::fixture(
+            &[("a", "Project1", "Version1"), ("b", "Project2", "Version1")],
+            &["a", "b"],
+            &[],
+            true,
+        );
+        let pin =
+            |version| PinSelector::ModrinthVersion(ModrinthVersionId::parse(version).unwrap());
+        let mut intent = original.intent().clone();
+        for root in intent.roots.values_mut() {
+            root.selection = DependencySelection::ProviderPin(pin("Version1"));
+        }
+        let codec = crate::engine::documents::DocumentCodec;
+        let source = codec
+            .decode_intent(&codec.encode_intent(&intent).unwrap(), "author")
+            .unwrap();
+        let mut lock = original.lock().clone();
+        lock.intent_revision = source.semantic_revision();
+        let current =
+            ResolvedProject::validate(intent.clone(), lock, source.semantic_revision()).unwrap();
+        fs::write(root.path().join("empack.yml"), source.original()).unwrap();
+        fs::write(
+            root.path().join("empack.lock"),
+            codec.encode_lock(&current).unwrap(),
+        )
+        .unwrap();
+        let a = crate::engine::addition::tests::fixture(
+            &[("a", "Project1", "Version2")],
+            &["a"],
+            &[],
+            true,
+        );
+        let b = crate::engine::addition::tests::fixture(
+            &[("b", "Project2", "Version2")],
+            &["b"],
+            &[],
+            true,
+        );
+        let mut failed = item(&a);
+        *failed.content.values_mut().next().unwrap() =
+            broken().content.into_values().next().unwrap();
+        let pins = [
+            (DependencyKey::parse("a").unwrap(), pin("Version2")),
+            (DependencyKey::parse("b").unwrap(), pin("Version2")),
+        ]
+        .into();
+        let (engine, governor) = engine(state.path().join("state"));
+        let prepared = ready(
+            &engine,
+            root.path(),
+            DependencyBatchRequest {
+                source_revision: None,
+                policy: BatchPolicy::ContinueIndependent,
+                change: DependencyBatchChange::Update { pins },
+                items: NonEmpty::new(vec![failed, item(&b)]).unwrap(),
+            },
+        )
+        .await;
+        let expected_changes = [(DependencyKey::parse("b").unwrap(), pin("Version2"))].into();
+        assert_eq!(
+            prepared.view().update().unwrap().author_pin_changes,
+            expected_changes
+        );
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let outcome = handle.wait().await;
+        let OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted {
+            receipt: ExecutionReceipt::Update(receipt),
+            ..
+        }) = &*outcome
+        else {
+            panic!("expected partial pinned update")
+        };
+        assert_eq!(receipt.author_pin_changes, expected_changes);
+        assert_eq!(receipt.batch.as_ref().unwrap().blocked[0].requests, [0]);
+        intent
+            .roots
+            .get_mut(&DependencyKey::parse("b").unwrap())
+            .unwrap()
+            .selection = DependencySelection::ProviderPin(pin("Version2"));
+        assert_eq!(receipt.project.intent(), &intent);
+        assert_eq!(
+            receipt.project.lock().dependencies[&DependencyKey::parse("a").unwrap()],
+            current.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+        );
+        engine.release_completed(handle.id());
+        drop((outcome, handle));
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
     fn group_for(project: &ResolvedProject) -> AdditionGroup {
         AdditionGroup::from_resolved(project).unwrap()

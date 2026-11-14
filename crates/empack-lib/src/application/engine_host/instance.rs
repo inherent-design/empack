@@ -12,6 +12,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 mod prelaunch;
+mod text;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
     install_with_transport(
@@ -28,14 +29,24 @@ async fn install_with_transport(
 ) -> Result<()> {
     let require_subscription = matches!(
         &command,
-        InstanceCommand::Prepare {
+        InstanceCommand::Ensure {
             require_subscription: true,
             ..
         }
     );
-    let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
-    let check = matches!(&command, InstanceCommand::Update { check: true, .. });
+    let ensure_current = matches!(command, InstanceCommand::Ensure { .. });
+    let mode = if matches!(&command, InstanceCommand::Update { apply: false, .. }) {
+        ApplicationMode::Preview
+    } else if matches!(&command, InstanceCommand::Update { .. }) {
+        ApplicationMode::for_action(session.config().app_config())
+    } else {
+        ApplicationMode::Apply
+    };
     let subscribed = matches!(command, InstanceCommand::Update { .. });
+    let channel_file = match &command {
+        InstanceCommand::Update { channel_file, .. } => channel_file.clone(),
+        _ => None,
+    };
     let (release, sha256, side, layout, choices, files, conflicts) = match command {
         InstanceCommand::Install {
             conflicts,
@@ -46,7 +57,7 @@ async fn install_with_transport(
             choices,
             files,
         }
-        | InstanceCommand::Prepare {
+        | InstanceCommand::Ensure {
             require_subscription: _,
             conflicts,
             release,
@@ -65,7 +76,8 @@ async fn install_with_transport(
             conflicts,
         ),
         InstanceCommand::Update {
-            check: _,
+            apply: _,
+            channel_file: _,
             conflicts,
             release,
             side,
@@ -76,6 +88,7 @@ async fn install_with_transport(
         _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let installed = inspect_optional(
         session,
         root.clone(),
@@ -95,34 +108,24 @@ async fn install_with_transport(
         installed.as_ref().map(|(record, _)| record),
     )?;
     if let Some((record, decoded)) = &*installed {
-        session.display().status().info(&format!(
-            "Installed {} (release {}), {:?}/{:?}; update owner: {}",
-            decoded.document().version,
-            record.release,
-            record.side,
-            record.layout,
-            if subscribed {
-                "enrolled publisher via empack"
-            } else {
-                "explicit snapshot via empack"
-            }
-        ));
+        session
+            .display()
+            .status()
+            .message(&text::installed(record, decoded));
     } else {
-        session.display().status().info(&format!(
-            "First installation: {side:?}/{layout:?} (default: client/game)"
-        ));
-    }
-    if check
-        && !subscription_with_transport(
-            session,
-            InstanceCommand::ObserveChannel { envelope: None },
-            transport.clone(),
-        )
-        .await?
-    {
-        return Ok(());
+        session.display().status().info(&text::first(side, layout));
     }
     let selected = release.map(|path| absolute(&invocation, &path));
+    // An applying channel journey announces its authenticated offer before preparation.
+    // Other paths announce the effective prepared identity with the file plan.
+    let show_selected_identity =
+        !(subscribed && selected.is_none() && mode == ApplicationMode::Apply);
+    ensure!(
+        selected.is_none() || channel_file.is_none(),
+        crate::application::cli::CommandInputRequired(
+            "Select a local release or --channel-file, not both"
+        )
+    );
     let assets = selected
         .as_ref()
         .and_then(|path| path.parent())
@@ -153,6 +156,24 @@ async fn install_with_transport(
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let conflicts = conflict_resolutions(conflicts, &invocation)?;
+    let selected_offer = if subscribed && selected.is_none() {
+        let Some(floor) = select_update_offer(
+            session,
+            &invocation,
+            &root,
+            channel_file,
+            transport.clone(),
+            mode,
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        Some(floor)
+    } else {
+        None
+    };
     let version = crate::engine::compatibility_version();
     let version = semver::Version::parse(version)?;
     enum ReleaseInput {
@@ -169,12 +190,14 @@ async fn install_with_transport(
         let state = state_root(session.config().app_config(), &invocation)?;
         let proof = initialize::discover(session, move |mut scope| async move {
             let Some(selected) = selected else {
+                let expected = selected_offer.context("No selected publisher update offer")?;
                 return crate::engine::instance::subscription::fetch_release(
                     &mut scope,
                     selected_root,
                     state,
                     &transport,
                     version,
+                    expected,
                 )
                 .await;
             };
@@ -229,16 +252,11 @@ async fn install_with_transport(
             SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
         }
     };
-    session.display().status().info(&format!(
-        "Offered {} (release {})",
-        release.release().document().version,
-        release.release().id()
-    ));
     let request = InstallInstanceRequest {
         require_subscription,
-        conflicts: conflict_resolutions(conflicts, &invocation)?,
-        action: if prepare_current {
-            crate::engine::instance::InstanceAction::Prepare
+        conflicts,
+        action: if ensure_current {
+            crate::engine::instance::InstanceAction::Ensure
         } else {
             crate::engine::instance::InstanceAction::Apply
         },
@@ -256,30 +274,27 @@ async fn install_with_transport(
             session,
             &engine,
             cancellable(session, engine.prepare(root, request)).await?,
+            mode,
+            show_selected_identity,
         )
         .await?
         else {
             return Ok(());
         };
-        let OperationPreview::Instance(view) = prepared.view() else {
-            anyhow::bail!("Unexpected instance preview");
-        };
-        session.display().status().info(&format!(
-            "Release {}: {} exact file changes, {} downloads",
-            view.record.release,
-            view.files.changes().len(),
-            view.downloads.len()
-        ));
-        apply(session, &engine, prepared, "Instance content", |receipt| {
-            let ExecutionReceipt::Instance(receipt) = receipt else {
-                anyhow::bail!("Unexpected instance receipt");
-            };
-            Ok(format!(
-                "Applied release {} to {}/",
-                receipt.record.release,
-                receipt.record.layout.directory()
-            ))
-        })
+        apply_in_mode(
+            session,
+            &engine,
+            prepared,
+            "Instance content",
+            mode,
+            false,
+            |receipt| {
+                let ExecutionReceipt::Instance(receipt) = receipt else {
+                    anyhow::bail!("Unexpected instance receipt");
+                };
+                Ok(text::completed(&receipt.record, &receipt.release_version))
+            },
+        )
         .await
     }
     .await;
@@ -292,8 +307,6 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
-        InstanceCommand::Continue { files } => resume_instance(session, files).await,
-        InstanceCommand::DiscardPending => discard_pending(session).await,
         InstanceCommand::RecoverRuntime {
             acknowledge_stopped,
         } => {
@@ -333,43 +346,20 @@ pub(in crate::application) async fn dispatch(
         }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
-        | InstanceCommand::ObserveChannel { .. }) => {
-            subscription(session, command).await.map(|_| ())
-        }
+        | InstanceCommand::CheckUpdates { .. }) => subscription(session, command).await.map(|_| ()),
         command @ (InstanceCommand::Install { .. }
-        | InstanceCommand::Prepare { .. }
+        | InstanceCommand::Ensure { .. }
         | InstanceCommand::Update { .. }) => install(session, command).await,
+        InstanceCommand::Check(options) => super::checking::instance_check(session, options).await,
         InstanceCommand::Inspect => {
             let (invocation, root) = project_path(session)?;
             let state = state_root(session.config().app_config(), &invocation)?;
             let inspected = inspect(session, root, None, state).await?;
             let (record, release) = &*inspected;
-            session.display().status().info(&format!(
-                "Pack {} {} ({:?}), release {}; game directory: {}/",
-                record.pack,
-                release.document().version,
-                record.side,
-                record.release,
-                record.layout.directory()
-            ));
-            for choice in &record.choices {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("{}={}", choice.key, choice.value));
-            }
-            for local in &record.local_overrides {
-                session.display().status().info(&format!(
-                    "Local override: {} (accepted SHA-256 {})",
-                    local.destination, local.accepted.sha256
-                ));
-            }
-            for release in &record.history {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("Retained release: {release}"));
-            }
+            session
+                .display()
+                .status()
+                .message(&text::inspect(record, &release.document().version));
             Ok(())
         }
         InstanceCommand::Options {
@@ -495,6 +485,7 @@ async fn maintain(
     conflicts: crate::application::cli::InstanceConflictArgs,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let state = state_root(session.config().app_config(), &invocation)?;
     let inspected = inspect(session, root.clone(), release, state).await?;
     let (record, decoded) = &*inspected;
@@ -548,20 +539,13 @@ async fn maintain(
             session,
             &engine,
             cancellable(session, engine.prepare(root, request)).await?,
+            ApplicationMode::Apply,
+            true,
         )
         .await?
         else {
             return Ok(());
         };
-        let OperationPreview::Instance(view) = prepared.view() else {
-            anyhow::bail!("Unexpected instance preview");
-        };
-        session.display().status().info(&format!(
-            "Release {}: {} exact file changes, {} downloads",
-            view.record.release,
-            view.files.changes().len(),
-            view.downloads.len()
-        ));
         apply(
             session,
             &engine,
@@ -571,14 +555,111 @@ async fn maintain(
                 let ExecutionReceipt::Instance(receipt) = receipt else {
                     anyhow::bail!("Unexpected instance receipt");
                 };
-                Ok(format!(
-                    "Applied release {} to {}/",
-                    receipt.record.release,
-                    receipt.record.layout.directory()
-                ))
+                Ok(text::completed(&receipt.record, &receipt.release_version))
             },
         )
         .await
+    }
+    .await;
+    engine.shutdown().await;
+    result
+}
+
+/// Acquisition only; signature/enrollment/floor verification belongs to native preparation.
+async fn observation_request(
+    session: &dyn Session,
+    invocation: &Path,
+    root: &Path,
+    envelope: Option<PathBuf>,
+    transport: crate::engine::acquisition::HttpAcquisition,
+) -> Result<crate::engine::api::SubscriptionRequest> {
+    let path = envelope.map(|path| absolute(invocation, &path));
+    let selected_root = root.to_path_buf();
+    let state = state_root(session.config().app_config(), invocation)?;
+    let bytes = initialize::discover(session, move |mut scope| async move {
+        let Some(path) = path else {
+            let record = read_subscription(&mut scope, selected_root, state).await?;
+            // Revoked enrollment must fail before issuing a request.
+            record.trust()?;
+            return transport
+                .publisher_metadata(&mut scope, &record.url, 48 << 10, Duration::from_secs(30))
+                .await;
+        };
+        let work = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 1 << 20,
+                open_files: 8,
+                ..Default::default()
+            },
+            ResourceRequest {
+                memory_bytes: 128 << 10,
+                ..Default::default()
+            },
+            move |cancel| crate::engine::release::trust::read_channel_envelope(&path, &cancel),
+        )?;
+        scope.accept(work.wait().await?)?.transpose()
+    })
+    .await?;
+    let version = crate::engine::compatibility_version();
+    Ok(crate::engine::api::SubscriptionRequest::Observe {
+        envelope: bytes.iter().copied().collect(),
+        engine: semver::Version::parse(version)?,
+    })
+}
+
+/// None stops before release acquisition: either a complete offer-only preview or declined approval.
+async fn select_update_offer(
+    session: &dyn Session,
+    invocation: &Path,
+    root: &Path,
+    channel_file: Option<PathBuf>,
+    transport: crate::engine::acquisition::HttpAcquisition,
+    mode: ApplicationMode,
+) -> Result<Option<crate::engine::release::trust::SequenceFloor>> {
+    let request = observation_request(session, invocation, root, channel_file, transport).await?;
+    let engine = engine(session.config().app_config(), invocation)?;
+    let result = async {
+        let Preparation::Ready(prepared) =
+            cancellable(session, engine.prepare(root.to_path_buf(), request)).await?
+        else {
+            anyhow::bail!("Unexpected update offer input request")
+        };
+        let OperationPreview::Subscription(view) = prepared.view() else {
+            anyhow::bail!("Unexpected update offer preview")
+        };
+        let floor = view
+            .record
+            .floor
+            .clone()
+            .context("Verified update offer has no floor")?;
+        if mode == ApplicationMode::Preview {
+            if view.previous_floor.as_ref() == Some(&floor) {
+                return Ok(Some(floor));
+            }
+            let channel = view.record.authenticated_channel(&semver::Version::parse(
+                crate::engine::compatibility_version(),
+            )?)?;
+            session.display().status().message(&text::offer_preview(
+                &channel.document().release.id,
+                channel.document().sequence,
+                session.config().app_config().dry_run,
+            ));
+            return Ok(None);
+        }
+        show_offer(session, &view.record)?;
+        if !approve(session, "Update offer")? {
+            return Ok(None);
+        }
+        execute_approved(session, &engine, prepared, "Update offer", |receipt| {
+            ensure!(
+                matches!(receipt, ExecutionReceipt::Subscription(_)),
+                "Unexpected update offer receipt"
+            );
+            Ok("Update offer saved".into())
+        })
+        .await?;
+        Ok(Some(floor))
     }
     .await;
     engine.shutdown().await;
@@ -598,7 +679,7 @@ async fn subscription_with_transport(
     command: InstanceCommand,
     transport: crate::engine::acquisition::HttpAcquisition,
 ) -> Result<bool> {
-    let observing = matches!(&command, InstanceCommand::ObserveChannel { .. });
+    let observing = matches!(&command, InstanceCommand::CheckUpdates { .. });
     use crate::engine::api::SubscriptionRequest;
     use ed25519_dalek::VerifyingKey;
     let keys = |values: Vec<String>| -> Result<Vec<VerifyingKey>> {
@@ -621,6 +702,7 @@ async fn subscription_with_transport(
             .collect()
     };
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let request = match command {
         InstanceCommand::Subscribe {
             pack,
@@ -636,47 +718,8 @@ async fn subscription_with_transport(
         InstanceCommand::Trust { keys: values, .. } => SubscriptionRequest::ReplaceKeys {
             keys: keys(values)?,
         },
-        InstanceCommand::ObserveChannel { envelope } => {
-            let path = envelope.map(|path| absolute(&invocation, &path));
-            let selected_root = root.clone();
-            let state = state_root(session.config().app_config(), &invocation)?;
-            let bytes = initialize::discover(session, move |mut scope| async move {
-                let Some(path) = path else {
-                    let record = read_subscription(&mut scope, selected_root, state).await?;
-                    // Revoked enrollment must fail before issuing a request.
-                    record.trust()?;
-                    return transport
-                        .publisher_metadata(
-                            &mut scope,
-                            &record.url,
-                            48 << 10,
-                            Duration::from_secs(30),
-                        )
-                        .await;
-                };
-                let work = scope.spawn_blocking(
-                    ResourceRequest {
-                        jobs: 1,
-                        memory_bytes: 1 << 20,
-                        open_files: 8,
-                        ..Default::default()
-                    },
-                    ResourceRequest {
-                        memory_bytes: 128 << 10,
-                        ..Default::default()
-                    },
-                    move |cancel| {
-                        crate::engine::release::trust::read_channel_envelope(&path, &cancel)
-                    },
-                )?;
-                scope.accept(work.wait().await?)?.transpose()
-            })
-            .await?;
-            let version = crate::engine::compatibility_version();
-            SubscriptionRequest::Observe {
-                envelope: bytes.iter().copied().collect(),
-                engine: semver::Version::parse(version)?,
-            }
+        InstanceCommand::CheckUpdates { envelope } => {
+            observation_request(session, &invocation, &root, envelope, transport).await?
         }
         _ => anyhow::bail!("Expected a subscription command"),
     };
@@ -690,37 +733,43 @@ async fn subscription_with_transport(
         let OperationPreview::Subscription(view) = prepared.view() else {
             anyhow::bail!("Unexpected subscription preview")
         };
-        session.display().status().info(&format!(
-            "Publisher for {} / {} at {}: {} enrolled keys; sequence {}",
-            view.record.pack,
-            view.record.channel,
-            reqwest::Url::parse(&view.record.url)?
-                .origin()
-                .ascii_serialization(),
-            view.record.keys.len(),
-            view.record.floor.as_ref().map_or(0, |floor| floor.sequence)
+        let fingerprints = keys(view.record.keys.clone())?
+            .iter()
+            .map(crate::engine::release::trust::key_id)
+            .collect::<Vec<_>>();
+        let origin = reqwest::Url::parse(&view.record.url)?
+            .origin()
+            .ascii_serialization();
+        session.display().status().message(&text::publisher(
+            &view.record,
+            &origin,
+            &fingerprints,
+            observing,
         ));
-        for key in keys(view.record.keys.clone())? {
-            session.display().status().info(&format!(
-                "Publisher key fingerprint: {}",
-                crate::engine::release::trust::key_id(&key)
-            ));
-        }
         if observing {
-            let channel = view.record.authenticated_channel(&semver::Version::parse(crate::engine::compatibility_version())?)?;
-            session.display().status().info(&format!("Offered release {}; sequence {}; no calendar expiry; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence));
-            session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
+            show_offer(session, &view.record)?;
         }
-        if !approve(session, "Publisher trust and channel observation")? {
+        let label = if observing {
+            "Update offer"
+        } else {
+            "Publisher settings"
+        };
+        if !approve(session, label)? {
             return Ok(false);
         }
-        execute_approved(session, &engine, prepared, "Publisher trust", |receipt| {
+        execute_approved(session, &engine, prepared, label, |receipt| {
             let ExecutionReceipt::Subscription(receipt) = receipt else {
                 anyhow::bail!("Unexpected subscription receipt")
             };
             Ok(format!(
-                "Saved subscription for {} / {}",
-                receipt.record.pack, receipt.record.channel
+                "Saved {} for {} / {}",
+                if observing {
+                    "update offer"
+                } else {
+                    "publisher settings"
+                },
+                receipt.record.pack,
+                receipt.record.channel
             ))
         })
         .await?;
@@ -729,6 +778,20 @@ async fn subscription_with_transport(
     .await;
     engine.shutdown().await;
     result
+}
+
+fn show_offer(
+    session: &dyn Session,
+    record: &crate::engine::instance::subscription::SubscriptionRecord,
+) -> Result<()> {
+    let channel = record.authenticated_channel(&semver::Version::parse(
+        crate::engine::compatibility_version(),
+    )?)?;
+    session.display().status().message(&text::offer(
+        &channel.document().release.id,
+        channel.document().sequence,
+    ));
+    Ok(())
 }
 
 async fn read_subscription(
@@ -826,7 +889,10 @@ async fn launch(
 }
 
 fn require_runtime_success(status: std::process::ExitStatus) -> Result<()> {
-    ensure!(status.success(), "Instance runtime exited with {status}");
+    ensure!(
+        status.success(),
+        super::super::process_runtime::RuntimeExit(status)
+    );
     Ok(())
 }
 
@@ -884,7 +950,20 @@ async fn require_instance_ready(
     session: &dyn Session,
     engine: &Engine,
     preparation: Preparation,
+    mode: ApplicationMode,
+    show_identity: bool,
 ) -> Result<Option<crate::engine::api::PreparedOperation>> {
+    let view = match &preparation {
+        Preparation::Ready(prepared) => prepared.view(),
+        Preparation::NeedsInput(pending) => pending.view(),
+    };
+    let OperationPreview::Instance(view) = view else {
+        anyhow::bail!("Unexpected instance preview");
+    };
+    session
+        .display()
+        .status()
+        .message(&text::plan(view, show_identity));
     match preparation {
         Preparation::Ready(prepared) => Ok(Some(prepared)),
         Preparation::NeedsInput(pending) => {
@@ -892,6 +971,12 @@ async fn require_instance_ready(
                 anyhow::bail!("Unexpected instance input request")
             };
             report_requirements(session, &view.manual);
+            ensure!(
+                mode != ApplicationMode::Preview,
+                crate::application::cli::CommandInputRequired(
+                    "Installation needs manual files; supply --file KEY=PATH and preview again, or use --apply to save waiting work"
+                )
+            );
             if !approve(session, "Save pending instance")? {
                 return Ok(None);
             }
@@ -906,16 +991,17 @@ pub(super) async fn save_pending(
     pending: crate::engine::api::PreparationContinuation,
 ) -> Result<()> {
     let saved = cancellable(session, engine.suspend_instance(pending, None)).await?;
-    session.display().status().info(&format!("Saved pending instance with {} verified files; resume with instance continue --file KEY=PATH",saved.retained_files));
+    session.display().status().info(&format!(
+        "Saved installation with {} verified files.\nResume: empack pending resume {}",
+        saved.retained_files,
+        saved.saved.identity()
+    ));
     anyhow::bail!("Instance was not applied; exact manual inputs remain pending")
-}
-async fn resume_instance(session: &dyn Session, files: Vec<String>) -> Result<()> {
-    resume_instance_selected(session, files, None).await
 }
 pub(super) async fn resume_instance_selected(
     session: &dyn Session,
     files: Vec<String>,
-    expected: Option<&str>,
+    expected: &str,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut associations = BTreeMap::new();
@@ -943,10 +1029,17 @@ pub(super) async fn resume_instance_selected(
         .await?
         .context("No pending instance operation")?;
         ensure!(
-            expected.is_none_or(|id| id == resumed.saved.identity()),
+            expected == resumed.saved.identity(),
             "Selected pending instance changed; inspect its new identity"
         );
-        let Some(prepared) = require_instance_ready(session, &engine, resumed.preparation).await?
+        let Some(prepared) = require_instance_ready(
+            session,
+            &engine,
+            resumed.preparation,
+            ApplicationMode::Apply,
+            true,
+        )
+        .await?
         else {
             return Ok(());
         };
@@ -961,7 +1054,7 @@ pub(super) async fn resume_instance_selected(
                     anyhow::bail!("Unexpected instance receipt")
                 };
                 published = true;
-                Ok(format!("Applied release {}", receipt.record.release))
+                Ok(text::completed(&receipt.record, &receipt.release_version))
             },
         )
         .await?;
@@ -977,29 +1070,6 @@ pub(super) async fn resume_instance_selected(
                     "Instance applied; pending cleanup failed: {error:#}"
                 )),
             }
-        }
-        Ok(())
-    }
-    .await;
-    engine.shutdown().await;
-    result
-}
-async fn discard_pending(session: &dyn Session) -> Result<()> {
-    let (invocation, root) = project_path(session)?;
-    let engine = engine(session.config().app_config(), &invocation)?;
-    let result = async {
-        let pending = cancellable(session, engine.observe_pending_instance(root))
-            .await?
-            .context("No pending instance operation")?;
-        if approve(session, "Discard pending instance")? {
-            ensure!(
-                cancellable(session, engine.discard_pending_instance(pending)).await?,
-                "Pending state changed; inspect it again"
-            );
-            session
-                .display()
-                .status()
-                .complete("Pending instance discarded; installed content retained");
         }
         Ok(())
     }
@@ -1070,7 +1140,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_exit_uses_empack_classification() {
-        for code in [0, 7] {
+        for code in [0, 7, 130] {
             // A real child supplies the same status value used by the launch receipt.
             // This tests CLI classification, not Java or generated-script acceptance.
             #[cfg(windows)]
@@ -1087,17 +1157,57 @@ mod tests {
             match require_runtime_success(status) {
                 Ok(()) => assert_eq!(code, 0),
                 Err(error) => {
-                    assert_eq!(code, 7);
                     assert_eq!(
                         crate::application::classify_error(&error),
-                        crate::application::EmpackExitCode::General
+                        if code == 130 {
+                            crate::application::EmpackExitCode::Interrupted
+                        } else {
+                            crate::application::EmpackExitCode::General
+                        }
                     );
-                    assert_eq!(
-                        format!("{error:#}"),
-                        format!("Instance runtime exited with {status}")
-                    );
+                    assert!(format!("{error:#}").contains(&status.to_string()));
                 }
             }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signalled_runtime_retains_signal_and_interrupt_classification() {
+        use std::os::unix::process::ExitStatusExt;
+        for signal in [libc::SIGINT, libc::SIGTERM] {
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", &format!("kill -{signal} $$")])
+                .status()
+                .unwrap();
+            assert_eq!(status.signal(), Some(signal));
+            let error = require_runtime_success(status).unwrap_err();
+            let retained = error
+                .downcast_ref::<crate::application::process_runtime::RuntimeExit>()
+                .unwrap();
+            assert_eq!(retained.0, status);
+            assert_eq!(
+                crate::application::classify_error(&error),
+                if signal == libc::SIGINT {
+                    crate::application::EmpackExitCode::Interrupted
+                } else {
+                    crate::application::EmpackExitCode::General
+                }
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_runtime_control_status_is_not_an_arbitrary_failure() {
+        use std::os::windows::process::ExitStatusExt;
+        for (raw, expected) in [
+            (0xC000_013A, crate::application::EmpackExitCode::Interrupted),
+            (0xC000_0005, crate::application::EmpackExitCode::General),
+        ] {
+            let error =
+                require_runtime_success(std::process::ExitStatus::from_raw(raw)).unwrap_err();
+            assert_eq!(crate::application::classify_error(&error), expected);
         }
     }
 }

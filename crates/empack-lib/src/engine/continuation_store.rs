@@ -75,7 +75,7 @@ impl Kind {
         match self {
             Self::Import => schema == 1,
             Self::Synchronization => schema == 2,
-            Self::Instance => schema == 2,
+            Self::Instance => schema == 3,
         }
     }
     fn directory(self) -> &'static str {

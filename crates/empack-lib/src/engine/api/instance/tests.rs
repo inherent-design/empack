@@ -94,10 +94,21 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     }
 }
 async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) -> InstanceRecord {
+    apply_with_versions(engine, root, request).await.0
+}
+async fn apply_with_versions(
+    engine: &Engine,
+    root: &Path,
+    request: InstallInstanceRequest,
+) -> (InstanceRecord, String, String) {
     let Preparation::Ready(prepared) = engine.prepare(root.to_owned(), request).await.unwrap()
     else {
         panic!("input required")
     };
+    let OperationPreview::Instance(view) = prepared.view() else {
+        panic!("unexpected preview")
+    };
+    let preview_version = view.release_version.clone();
     let grant = ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
@@ -110,7 +121,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
     let record = match &*outcome {
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
             receipt,
-        ))) => receipt.record.clone(),
+        ))) => (receipt.record.clone(), receipt.release_version.clone()),
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(e)) => {
             panic!("failed: {e:#}")
         }
@@ -122,7 +133,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
     drop(outcome);
     engine.release_completed(operation.id());
     drop(operation);
-    record
+    (record.0, preview_version, record.1)
 }
 #[tokio::test]
 async fn install_update_repair_and_rollback_preserve_seeds_and_unowned_data() {
@@ -911,11 +922,14 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
     let (engine, _) = super::super::tests::engine(state.path().join("state"));
     let original = || {
         let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
-        input.action = InstanceAction::Prepare;
+        input.action = InstanceAction::Ensure;
         input
     };
     let a = apply(&engine, root.path(), original()).await;
     let next = request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
+    let mut document = next.release.release().document().clone();
+    document.version = "2".into();
+    let next = replace_document(next, document);
     let b = apply(&engine, root.path(), next).await;
     assert_ne!(a.release, b.release);
     let old_consumer = || {
@@ -923,8 +937,11 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
         input.supplied.clear();
         input
     };
-    let kept = apply(&engine, root.path(), old_consumer()).await;
+    let (kept, preview_version, receipt_version) =
+        apply_with_versions(&engine, root.path(), old_consumer()).await;
     assert_eq!(kept, b);
+    assert_eq!(preview_version, "2");
+    assert_eq!(receipt_version, "2");
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"B");
     let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
     let mut wrong = old_consumer();
@@ -1919,6 +1936,110 @@ async fn required_subscription_is_captured_and_late_revocation_prevents_installa
 }
 
 #[tokio::test]
+async fn prism_read_only_profile_tolerates_launcher_saves_but_rejects_component_changes() {
+    for change in [
+        "replacement",
+        "cache",
+        "game",
+        "extra",
+        "disabled",
+        "missing",
+        "unknown",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let (engine, _) = super::super::tests::engine(host.path().join("state"));
+        let input = || {
+            let mut input = request(&[("options", "options.txt", b"seed", FilePolicy::Seed)]);
+            input.layout = Some(InstanceLayout::Prism);
+            input
+        };
+        apply(&engine, root.path(), input()).await;
+        let options = root.path().join(".minecraft/options.txt");
+        fs::write(&options, b"player settings").unwrap();
+        let profile_path = root.path().join("mmc-pack.json");
+        let mut profile: serde_json::Value =
+            serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+        profile["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"uid":"user.component", "version":"1"}));
+        fs::write(&profile_path, serde_json::to_vec(&profile).unwrap()).unwrap();
+        let Preparation::Ready(prepared) = engine
+            .prepare(root.path().to_owned(), input())
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            replacement: prepared.view().replacement(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            run_runtime: false,
+        };
+        match change {
+            "replacement" => {}
+            "cache" => {
+                profile["components"][0]["cachedName"] = serde_json::json!("Minecraft 雪");
+                profile["components"][0]["cachedRequires"] =
+                    serde_json::json!([{"uid":"org.lwjgl3", "suggests":"3.3.3"}]);
+            }
+            "game" => profile["components"][0]["version"] = serde_json::json!("1.21.2"),
+            "extra" => profile["components"][1]["version"] = serde_json::json!("2"),
+            "disabled" => profile["components"][0]["disabled"] = serde_json::json!(true),
+            "missing" => {
+                profile["components"].as_array_mut().unwrap().remove(0);
+            }
+            "unknown" => profile["components"][0]["unknownSetting"] = serde_json::json!(true),
+            _ => unreachable!(),
+        }
+        let bytes = if change == "replacement" {
+            fs::read(&profile_path).unwrap()
+        } else {
+            serde_json::to_vec_pretty(&profile).unwrap()
+        };
+        let temporary = root.path().join("profile-save.tmp");
+        fs::write(&temporary, &bytes).unwrap();
+        fs::rename(temporary, &profile_path).unwrap();
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        let outcome = operation.wait().await;
+        if matches!(change, "replacement" | "cache") {
+            assert!(
+                matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+                ),
+                "{change}: unexpected operation outcome"
+            );
+        } else {
+            let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) =
+                &*outcome
+            else {
+                panic!("{change}: unexpected operation outcome")
+            };
+            assert_eq!(
+                error
+                    .downcast_ref::<crate::engine::diagnostics::Diagnostic>()
+                    .unwrap()
+                    .code,
+                crate::engine::diagnostics::DiagnosticCode::StaleSnapshot,
+                "{change}: {error:#}"
+            );
+        }
+        assert_eq!(
+            fs::read(&profile_path).unwrap(),
+            bytes,
+            "{change}: profile was rewritten"
+        );
+        assert_eq!(fs::read(&options).unwrap(), b"player settings");
+        drop(outcome);
+        assert!(engine.release_completed(operation.id()));
+    }
+}
+
+#[tokio::test]
 async fn prism_runtime_and_content_publish_together_and_keep_extra_components() {
     use super::super::tests::inventory as snapshot;
     use crate::engine::diagnostics::{Diagnostic, DiagnosticCode};
@@ -2011,7 +2132,7 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
     );
     let current = snapshot(root.path());
     let mut original_launcher = initial();
-    original_launcher.action = InstanceAction::Prepare;
+    original_launcher.action = InstanceAction::Ensure;
     original_launcher.supplied.clear();
     assert_eq!(
         apply(&engine, root.path(), original_launcher).await.release,
@@ -2069,7 +2190,7 @@ async fn server_release_updates_runtime_and_rolls_back_without_touching_user_dat
         b"runtime B"
     );
     let mut original = a();
-    original.action = InstanceAction::Prepare;
+    original.action = InstanceAction::Ensure;
     original.supplied.clear();
     assert_eq!(
         apply(&engine, root.path(), original).await.release,
@@ -2512,7 +2633,7 @@ async fn instance_inspection_and_preparation_use_the_associated_root_key() {
         bytes
     );
     let mut prepare = input();
-    prepare.action = InstanceAction::Prepare;
+    prepare.action = InstanceAction::Ensure;
     let prepared = apply(&engine, root.path(), prepare).await;
     assert_eq!(prepared.root, prior_key);
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
@@ -2582,6 +2703,7 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         ("a", "mods/a.jar", b"A", FilePolicy::Managed),
         ("b", "mods/b.jar", b"B", FilePolicy::Managed),
     ]);
+    input.action = InstanceAction::Ensure;
     input.supplied.remove("b");
     let Preparation::NeedsInput(pending) =
         engine.prepare(root.path().to_owned(), input).await.unwrap()
@@ -2595,10 +2717,13 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         .find(|p| p.extension().is_some_and(|s| s == "json"))
         .unwrap();
     let current = fs::read(&path).unwrap();
+    let current_record: serde_json::Value = serde_json::from_slice(&current).unwrap();
+    assert_eq!(current_record["schema"], 3);
+    assert_eq!(current_record["recipe"]["action"], "ensure");
     let supplied = state.path().join("b.jar");
     fs::write(&supplied, b"B").unwrap();
     let inputs = || BTreeMap::from([("b".into(), supplied.clone())]);
-    for schema in [0, 1, 3] {
+    for schema in [0, 1, 2, 4] {
         let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
         wire["schema"] = schema.into();
         let bytes = serde_json::to_vec(&wire).unwrap();
@@ -2611,6 +2736,21 @@ async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
         assert!(
             format!("{error:#}").contains("Unsupported pending operation schema"),
             "{error:#}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+    for schema in [2, 3] {
+        let mut obsolete = current_record.clone();
+        obsolete["schema"] = schema.into();
+        obsolete["recipe"]["action"] = "prepare".into();
+        let bytes = serde_json::to_vec(&obsolete).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert!(
+            engine
+                .resume_saved_instance(root.path().to_owned(), inputs(), None)
+                .await
+                .is_err()
         );
         assert_eq!(fs::read(&path).unwrap(), bytes);
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);

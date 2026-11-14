@@ -5,7 +5,7 @@ use super::{
         verify_stream,
     },
     resources::ResourceRequest,
-    runtime::WorkScope,
+    runtime::{WorkProgress, WorkScope},
 };
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
@@ -345,6 +345,7 @@ impl HttpAcquisition {
             .context("Download deadline overflow")?;
         let deadline = deadline.min(budget.deadline);
         ensure!(Instant::now() < deadline, TransferError::Deadline);
+        scope.report_progress(WorkProgress::CheckingContentCache);
         if let Some(content) = self
             .cached(scope, &expected, evidence, initial, limits, budget)
             .await?
@@ -409,8 +410,12 @@ impl HttpAcquisition {
                     deadline,
                     &mut budget.received,
                     &cancel,
+                    scope,
                 )
                 .await;
+            if transfer.is_ok() {
+                scope.report_progress(WorkProgress::VerifyingContent);
+            }
             // Pump owns the only sender. It is now closed on success or failure, unblocking reads.
             if transfer.is_err() {
                 cancel.cancel();
@@ -447,6 +452,7 @@ impl HttpAcquisition {
         }
         Err(last.context("No download alternatives")?)
     }
+    #[allow(clippy::too_many_arguments)] // One transfer retains its original budget, deadline and cancellation owner.
     async fn pump(
         &self,
         mut url: Url,
@@ -455,7 +461,12 @@ impl HttpAcquisition {
         deadline: Instant,
         received: &mut u64,
         cancel: &Cancellation,
+        scope: &WorkScope,
     ) -> Result<()> {
+        scope.report_progress(WorkProgress::Downloading {
+            received_bytes: 0,
+            total_bytes: None,
+        });
         let transfer = async {
             let mut redirects = 0;
             let (mut response, request_attempt) = loop {
@@ -524,6 +535,7 @@ impl HttpAcquisition {
                         && len <= limits.transfer_bytes.saturating_sub(*received)),
                 TransferError::ByteLimit
             );
+            let total_bytes = response.content_length();
             let mut file_bytes = 0u64;
             while let Some(chunk) = response
                 .chunk()
@@ -540,6 +552,10 @@ impl HttpAcquisition {
                     *received <= limits.transfer_bytes && file_bytes <= limits.file_bytes,
                     TransferError::ByteLimit
                 );
+                scope.report_progress(WorkProgress::Downloading {
+                    received_bytes: file_bytes,
+                    total_bytes,
+                });
                 for part in chunk.chunks(CHUNK_BYTES) {
                     sender
                         .send(part.to_vec())

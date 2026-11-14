@@ -165,13 +165,67 @@ class NativeSmokeContracts(unittest.TestCase):
         self.assertFalse(result.success)
 
     def test_only_exact_saved_restricted_obligations_allow_manual_downloads(self):
-        diagnostic = ('Import input "provider:curseforge:42:456:mod.jar": RestrictedDownload\n'
-                      'Import continuation was saved\n1 content obligations need explicit input')
+        diagnostic = ('Missing import file "provider:curseforge:42:456:mod.jar": download it manually; after saving, use pending resume ID --file=SELECTOR=PATH\n'
+                      'Import was saved.\nImport needs 1 file')
         self.assertEqual(smoke.pending_import_associations(diagnostic), [("provider:curseforge:42:456:mod.jar", 42, 456)])
-        for bad in (diagnostic.replace("was saved", "failed"), diagnostic.replace("1 content", "2 content"),
-                    diagnostic.replace("RestrictedDownload", "UnsupportedTransport"), "Download deadline elapsed"):
+        for bad in (diagnostic.replace("was saved", "failed"), diagnostic.replace("needs 1 file", "needs 2 files"),
+                    diagnostic.replace("download it manually", "this download method is not supported"), "Download deadline elapsed"):
             with self.subTest(bad=bad), self.assertRaises(RuntimeError):
                 smoke.pending_import_associations(bad)
+
+    def test_saved_import_uses_public_id_and_refuses_a_mutating_preview(self):
+        selector = "provider:curseforge:42:456:mod.jar"
+        diagnostic = f'Missing import file "{selector}": download it manually; supply a local file\nImport was saved.\nImport needs 1 file'
+        for mutating in (False, True):
+            with self.subTest(mutating_preview=mutating), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                layout = smoke.RuntimeLayout(base, base / "packs", base / "projects", base / "cache", base / "report.json")
+                layout.ensure_dirs()
+                project = base / "Imported Ω 日本"
+                record = layout.cache_dir / "host-state/pending-imports/private-record-name.json"
+                public_id = "a" * 64
+                phases = []
+
+                def command(_binary, args, _layout, **_options):
+                    if args[0] == "init":
+                        record.parent.mkdir(parents=True)
+                        record.write_bytes(b"saved import")
+                        return smoke.CommandResult(exit_code=1, stdout=diagnostic)
+                    self.assertEqual(args[args.index("--workdir") + 1], str(project))
+                    if "list" in args:
+                        self.assertIn("--json", args)
+                        report = {"schema": 1, "root": str(project), "operations": [
+                            {"kind": "import", "state": "unverified", "id": public_id}]}
+                        return smoke.CommandResult(success=True, exit_code=0, stdout=json.dumps(report))
+                    self.assertEqual(args[args.index("resume") + 1], public_id)
+                    association = args[args.index("--file") + 1]
+                    key, path = association.split("=", 1)
+                    self.assertEqual(key, selector)
+                    self.assertEqual(Path(path).read_bytes(), b"fixture payload")
+                    self.assertIn("--exclude-auxiliary", args)
+                    if "--dry-run" in args:
+                        phases.append("preview")
+                        if mutating:
+                            record.write_bytes(b"changed unexpectedly")
+                    else:
+                        phases.append("apply")
+                        record.unlink()
+                        project.mkdir()
+                    return smoke.CommandResult(success=True, exit_code=0)
+
+                with patch.object(smoke, "run_empack_command", side_effect=command), patch.object(smoke, "urlopen", return_value=io.BytesIO(b"fixture payload")):
+                    if mutating:
+                        with self.assertRaisesRegex(RuntimeError, "preview failed or changed state"):
+                            smoke.run_curated_import(base / "empack", base / "source.zip", project, layout, "fixture", False)
+                        self.assertEqual(phases, ["preview"])
+                        self.assertFalse(project.exists())
+                    else:
+                        result, continued = smoke.run_curated_import(base / "empack", base / "source.zip", project, layout, "fixture", False)
+                        self.assertTrue(result["success"])
+                        self.assertTrue(continued)
+                        self.assertEqual(phases, ["preview", "apply"])
+                        self.assertTrue(project.is_dir())
+                        self.assertFalse(record.exists())
 
     def test_relative_executable_is_bound_before_child_workdir_changes(self):
         with tempfile.TemporaryDirectory() as root:

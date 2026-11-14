@@ -322,6 +322,19 @@ fn explicit_ids_wrong_owners_and_malformed_files_fail_before_resolution() {
         )
         .is_err()
     );
+    let mut version = mr_version();
+    version["dependencies"][0]["file_name"] = json!("../escape.jar");
+    let error = modrinth::selection(
+        modrinth::project(&bytes(&mr_project())).unwrap(),
+        &pin(ProviderKind::Modrinth),
+        &bytes(&version),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(
+        error.downcast_ref::<ProviderRecordProblem>().unwrap().field,
+        "dependencies[].file_name"
+    );
     let mut file = cf_file();
     file["data"]["modId"] = json!(999);
     assert!(

@@ -10,6 +10,9 @@ use std::{
 };
 
 const DETACH_ATTEMPTS: usize = 5;
+// Final cleanup must also allow Disk Arbitration to settle after an unmount.
+// Keep this separate from the short operation/exhaustion contract below.
+const CLEANUP_DETACH_ATTEMPTS: usize = 10;
 
 #[derive(Debug)]
 struct CommandFailure {
@@ -199,13 +202,18 @@ impl ApfsFixture {
         self.detach_with_busy(image, || Ok(()))
     }
 
-    fn detach_with_busy(
+    fn detach_with_busy(&self, image: usize, on_busy: impl FnMut() -> Result<()>) -> Result<()> {
+        self.detach_with_attempts(image, DETACH_ATTEMPTS, on_busy)
+    }
+
+    fn detach_with_attempts(
         &self,
         image: usize,
+        attempts: usize,
         mut on_busy: impl FnMut() -> Result<()>,
     ) -> Result<()> {
         let started = Instant::now();
-        for attempt in 1..=DETACH_ATTEMPTS {
+        for attempt in 1..=attempts {
             // Every request is authorized by a fresh backing-to-device mapping.
             // A device returned by a failed attempt is never reused as authority.
             let Some((_, device)) = self
@@ -226,7 +234,7 @@ impl ApfsFixture {
                 return Ok(());
             };
             let mut arguments = vec!["detach".as_ref(), "-verbose".as_ref()];
-            if attempt == DETACH_ATTEMPTS {
+            if attempt == attempts {
                 // lsof cannot explain a kernel/Disk Arbitration refusal after
                 // unmount. Retain the native trace on the last owned request.
                 arguments.push("-debug".as_ref());
@@ -263,10 +271,10 @@ impl ApfsFixture {
                         );
                         return Ok(());
                     }
-                    if attempt == 1 || attempt == DETACH_ATTEMPTS || !is_busy(&error) {
+                    if attempt == 1 || attempt == attempts || !is_busy(&error) {
                         self.report_open_files(image);
                     }
-                    if !is_busy(&error) || attempt == DETACH_ATTEMPTS {
+                    if !is_busy(&error) || attempt == attempts {
                         return Err(error).with_context(|| {
                             format!(
                                 "Owned image detach failed after {attempt} attempts in {:?}",
@@ -280,8 +288,9 @@ impl ApfsFixture {
                     );
                     on_busy()?;
                     // Unmount completion need not make the backing immediately
-                    // ejectable. Space the same five ownership-checked requests.
-                    std::thread::sleep(Duration::from_millis(200 << (attempt - 1)));
+                    // ejectable. Space ownership-checked requests without an
+                    // exponentially growing delay in the final cleanup budget.
+                    std::thread::sleep(Duration::from_millis(200 << (attempt - 1).min(3)));
                 }
             }
         }
@@ -420,7 +429,8 @@ impl ApfsFixture {
                 .owned()?
                 .iter()
                 .any(|(path, _)| path == &self.images[image])
-                && let Err(error) = self.detach(image)
+                && let Err(error) =
+                    self.detach_with_attempts(image, CLEANUP_DETACH_ATTEMPTS, || Ok(()))
             {
                 failures.push(format!("{error:#}"));
             }
@@ -619,6 +629,33 @@ mod tests {
             "After dropping fixture reader: pid {pid}, descriptor {descriptor}, expected device {:#x}, inode {}; descriptor-only observation:\n{observation}",
             held_identity.dev(),
             held_identity.ino()
+        );
+        volume.finish()?;
+
+        // Final fixture retirement can outlast the short operation retry
+        // budget, just as Disk Arbitration can remain busy after unmount.
+        // Keep a real holder through that budget, then release it cooperatively.
+        // Its deliberate hold must not consume the cleanup allowance: after
+        // release, permit the same settlement requests as ordinary cleanup.
+        let volume = ApfsFixture::new()?;
+        let mut held = Some(fs::File::create(
+            volume.root().join("delayed-retirement.txt"),
+        )?);
+        let mut busy = 0;
+        volume.detach_with_attempts(0, DETACH_ATTEMPTS + CLEANUP_DETACH_ATTEMPTS, || {
+            busy += 1;
+            if busy == DETACH_ATTEMPTS {
+                drop(held.take());
+            }
+            Ok(())
+        })?;
+        assert!(busy >= DETACH_ATTEMPTS);
+        assert!(held.is_none());
+        assert!(
+            !volume
+                .owned()?
+                .iter()
+                .any(|(path, _)| path == &volume.images[0])
         );
         volume.finish()
     }

@@ -4,6 +4,8 @@ use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
 
+mod help;
+
 /// Provider version stability policy, independent of a published pack channel.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
 pub enum CliReleasePolicy {
@@ -43,11 +45,8 @@ pub struct MigrationArgs {
     /// Replace a provider root: KEY=modrinth:PROJECT_ID or KEY=curseforge:PROJECT_ID
     #[arg(long = "replace", value_name = "KEY=PROVIDER:ID")]
     pub replacements: Vec<String>,
-    /// Resolve and show the candidate without publishing or saving pending work
-    #[arg(long)]
-    pub plan: bool,
-    /// Print a structured candidate report (requires --plan)
-    #[arg(long, requires = "plan")]
+    /// Print a structured native preview (requires --dry-run)
+    #[arg(long, requires = "dry_run")]
     pub json: bool,
     /// Acquire referenced content; missing files can be resumed through pending
     #[arg(long)]
@@ -87,13 +86,18 @@ Export for a launcher: empack --workdir my-pack build modrinth
 
 Author commands use empack.yml and empack.lock.
 Instance commands manage a separate installed game directory.
-Author update selects dependency versions; instance update applies a published pack release.
+Author update checks dependency versions; instance update checks published pack releases.
+Both preview by default; add --apply to apply the selected changes.
 Neither command updates the empack executable. Use empack status to inspect a workspace.
 Use --dry-run before a command to preview changes.
 Run empack <command> --help for its options.")]
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
+    /// Internal bootstrap interoperability probe; does not load a project or execute work.
+    #[arg(long, hide = true, exclusive = true)]
+    pub bootstrap_protocol: bool,
+
     /// Global configuration options
     #[command(flatten)]
     pub config: AppConfig,
@@ -118,7 +122,17 @@ impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
         let dotenv = super::loader::load_dotenv_files();
-        let cli = Cli::parse();
+        let cli = match Cli::try_parse() {
+            Ok(cli) => cli,
+            Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
+                print!(
+                    "{}",
+                    crate::terminal::display_text(&help::group_root_commands(&error.to_string()))
+                );
+                std::process::exit(0);
+            }
+            Err(error) => error.exit(),
+        };
         dotenv?;
         Ok(Self {
             app_config: cli.config,
@@ -143,18 +157,41 @@ impl CliConfig {
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
+        let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+        // Interoperability is an executable property, independent of user
+        // configuration. In particular, clap's exclusive flag also conflicts
+        // with configuration supplied through environment variables.
+        if args.len() == 2 && args[1] == "--bootstrap-protocol" {
+            return Ok(CliLoad::Display("empack-bootstrap/1\n".into()));
+        }
         match Cli::try_parse_from(args) {
+            Ok(cli) if cli.bootstrap_protocol => {
+                if cli.command.is_some() {
+                    return Err(ConfigError::ParseError {
+                        value: "command line".into(),
+                        reason: "--bootstrap-protocol cannot be combined with a command".into(),
+                    });
+                }
+                Ok(CliLoad::Display("empack-bootstrap/1\n".into()))
+            }
             Ok(cli) => Ok(CliLoad::Ready(Box::new(Self {
                 app_config: cli.config,
                 command: cli.command,
             }))),
             Err(error) => match error.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    Ok(CliLoad::Display(error.to_string()))
+                    // Clap's plain display removes ANSI styling, but inherited
+                    // values can still contain active directional controls.
+                    Ok(CliLoad::Display(
+                        crate::terminal::display_text(&help::group_root_commands(
+                            &error.to_string(),
+                        ))
+                        .into_owned(),
+                    ))
                 }
                 _ => Err(ConfigError::ParseError {
                     value: "command line".to_string(),
-                    reason: error.to_string(),
+                    reason: help::group_root_commands(&error.to_string()),
                 }),
             },
         }
@@ -168,7 +205,7 @@ impl CliConfig {
     {
         let cli = Cli::try_parse_from(args).map_err(|e| ConfigError::ParseError {
             value: "command line".to_string(),
-            reason: e.to_string(),
+            reason: help::group_root_commands(&e.to_string()),
         })?;
         Ok(Self {
             app_config: cli.config,
@@ -177,9 +214,47 @@ impl CliConfig {
     }
 }
 
+/// Select and preview dependency updates; application is explicit.
+#[derive(Args, Debug, Default, Clone)]
+pub struct UpdateArgs {
+    /// Existing dependency keys; select these or --all
+    #[arg(
+        value_name = "DEPENDENCY",
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
+    pub dependencies: Vec<String>,
+    /// Attempt updates for every explicit dependency; retain unrelated locked libraries
+    #[arg(long)]
+    pub all: bool,
+    /// Apply the reviewed update; without this flag only prepare a preview
+    #[arg(long)]
+    pub apply: bool,
+    /// Print the prepared proposal as JSON; application is a separate invocation
+    #[arg(long, conflicts_with_all = ["apply", "details"])]
+    pub json: bool,
+    /// Include catalog observations and exact version information
+    #[arg(long)]
+    pub details: bool,
+    /// Hide progress on stderr
+    #[arg(long)]
+    pub quiet: bool,
+    /// Deliberately change selected provider pins: KEY=VERSION_ID
+    #[arg(long = "pin", value_name = "KEY=ID")]
+    pub pins: Vec<String>,
+    /// Choose observed versions interactively and preview explicit pin changes
+    #[arg(long, conflicts_with_all = ["all", "pins", "json"])]
+    pub select: bool,
+    /// Version preference; exact author pins remain exact
+    #[arg(long, value_enum)]
+    pub release_policy: Option<CliReleasePolicy>,
+    /// Apply validated independent groups and report any blocked groups
+    #[arg(long)]
+    pub continue_independent: bool,
+}
+
 /// Arguments for the `init` subcommand.
 #[derive(Args, Debug, Default, Clone)]
-#[command(group(clap::ArgGroup::new("import_origin").args(["from_source", "continue_import"]).multiple(false)))]
 pub struct InitArgs {
     /// Target directory for the modpack project
     #[arg(help = "Directory for the modpack project (created if needed)")]
@@ -211,7 +286,7 @@ pub struct InitArgs {
     pub mc_version: Option<String>,
 
     /// Preferred recipient Java major; defaults to the selected runtime's recommendation.
-    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Preferred Java major within the runtime policy (default: highest admitted major)")]
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Java major for this pack, such as 21 (default: newest supported major)")]
     pub java: Option<u16>,
 
     /// Author name
@@ -264,26 +339,22 @@ pub struct InitArgs {
     #[arg(long = "from", value_name = "SOURCE")]
     pub from_source: Option<String>,
 
-    /// Resume the saved source archive and verified associations for this destination.
-    #[arg(long = "continue", conflicts_with = "from_source")]
-    pub continue_import: bool,
-
     /// Default for optional imported files; participation remains optional.
-    #[arg(long, requires = "import_origin", value_name = "BOOL")]
+    #[arg(long, requires = "from_source", value_name = "BOOL")]
     pub import_optional_default: Option<bool>,
 
     /// Explicitly exclude archive members outside recognized content namespaces.
-    #[arg(long, requires = "import_origin")]
+    #[arg(long, requires = "from_source")]
     pub exclude_auxiliary: bool,
 
     /// Retain imported downloads as local files instead of durable URL references.
-    #[arg(long, requires = "import_origin")]
+    #[arg(long, requires = "from_source")]
     pub import_local_files: bool,
 
     /// Associate a selected file with one exact imported download obligation.
     #[arg(
         long = "import-file",
-        requires = "import_origin",
+        requires = "from_source",
         value_name = "SELECTOR=PATH"
     )]
     pub import_files: Vec<String>,
@@ -294,8 +365,8 @@ pub struct InitArgs {
 #[command(after_help = "Consumers:
   modrinth    Modrinth archive with exact references and overrides
   curseforge  CurseForge client ZIP with exact references and overrides
-  prism       Launcher instance; bundled pack content by default
-  server      Prepared server runtime; bundled pack content by default
+  prism       Launcher instance using the selected delivery profile
+  server      Prepared server runtime using the selected delivery profile
   empack      Exact native release and immutable assets
 
 Without selectors, use build.default from empack.yml.
@@ -313,18 +384,18 @@ All requested outputs are verified before combined publication.
 Examples:
   empack build --dry-run modrinth prism
   empack build prism server --delivery references
-  empack build --continue")]
+  empack pending list")]
 pub struct BuildArgs {
     /// Select complete authored profiles; repeat to build several together
-    #[arg(long = "profile", value_name = "NAME", conflicts_with_all = ["targets", "ad_hoc", "continue_build"])]
+    #[arg(long = "profile", value_name = "NAME", conflicts_with_all = ["targets", "ad_hoc"])]
     pub profiles: Vec<String>,
 
     /// Create consumer recipes from built-in defaults instead of configured profiles
-    #[arg(long, requires = "targets", conflicts_with = "continue_build")]
+    #[arg(long, requires = "targets")]
     pub ad_hoc: bool,
 
     /// Show effective profiles, overrides and recipient requirements without building
-    #[arg(long, conflicts_with_all = ["continue_build", "open_downloads", "wait_downloads", "associate_downloads"])]
+    #[arg(long, conflicts_with_all = ["open_downloads", "wait_downloads"])]
     pub explain: bool,
 
     /// Emit the effective build explanation as versioned JSON
@@ -335,30 +406,21 @@ pub struct BuildArgs {
     #[arg(
         help = "Consumers with a unique configured profile (or use --ad-hoc)",
         value_name = "CONSUMERS",
-        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"],
-        conflicts_with = "continue_build"
+        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"]
     )]
     pub targets: Vec<String>,
 
     /// How dependency bytes reach the consumer; independent of update authority
-    #[arg(long, value_parser = ["references", "bundled"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["references", "bundled"])]
     pub delivery: Option<String>,
 
     /// Environment to project; each consumer validates the selected side
-    #[arg(long, value_parser = ["client", "server", "both"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["client", "server", "both"])]
     pub environment: Option<String>,
 
     /// Who may select future releases; requires a bound platform or publisher association
-    #[arg(long, value_parser = ["snapshot", "platform", "empack"], conflicts_with = "continue_build")]
+    #[arg(long, value_parser = ["snapshot", "platform", "empack"])]
     pub updates: Option<String>,
-
-    /// Continue a previously blocked restricted-mod build
-    #[arg(
-        long = "continue",
-        help = "Resume a saved build after supplying missing downloads",
-        conflicts_with = "clean"
-    )]
-    pub continue_build: bool,
 
     /// Remove obsolete artifacts when the verified build is published
     #[arg(
@@ -369,7 +431,7 @@ pub struct BuildArgs {
     pub clean: bool,
 
     /// Archive format override for distributions; mrpack and curseforge always use ZIP
-    #[arg(long, value_enum, conflicts_with = "continue_build")]
+    #[arg(long, value_enum)]
     pub format: Option<CliArchiveFormat>,
 
     /// Directory to scan for manually downloaded restricted mods
@@ -384,28 +446,16 @@ pub struct BuildArgs {
     #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
     pub wait_downloads: Option<u64>,
 
-    /// Explicitly associate a local download with a pending filename
-    #[arg(
-        long = "associate-download",
-        value_name = "FILENAME=PATH",
-        requires = "continue_build"
-    )]
-    pub associate_downloads: Vec<String>,
-
     /// Use authored defaults for optional files in materialized distributions.
-    #[arg(long, conflicts_with = "continue_build")]
+    #[arg(long)]
     pub optional_defaults: bool,
 
     /// Decide one optional choice explicitly.
-    #[arg(
-        long = "optional",
-        value_name = "CHOICE=true|false",
-        conflicts_with = "continue_build"
-    )]
+    #[arg(long = "optional", value_name = "CHOICE=true|false")]
     pub optional_choices: Vec<String>,
 
     /// Allow reference archives to omit optional choice keys, defaults and descriptions.
-    #[arg(long, conflicts_with = "continue_build")]
+    #[arg(long)]
     pub allow_optional_metadata_loss: bool,
 }
 
@@ -417,13 +467,13 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Default, clap::Args)]
 pub struct InstanceConflictArgs {
-    /// Keep edited bytes as an explicit local deviation (release-relative path)
+    /// Keep your file as a local override; use the path shown in the conflict options
     #[arg(long = "preserve", value_name = "PATH")]
     pub preserve: Vec<String>,
-    /// Replace an exact conflicting file with selected release content, or retire it
+    /// Use the release version of a conflicting file, or remove it if no longer included
     #[arg(long = "replace", value_name = "PATH")]
     pub replace: Vec<String>,
-    /// Apply a separately prepared merge result as a local deviation
+    /// Use your prepared merged file as a local override
     #[arg(long = "merge", value_name = "PATH=FILE")]
     pub merge: Vec<String>,
 }
@@ -436,8 +486,25 @@ pub enum ReleaseCommand {
         #[arg(long)]
         key_file: PathBuf,
     },
-    /// Verify hosted immutable content, then publish a signed channel pointer
-    PublishChannel {
+    /// Create signed channel files for staged releases
+    Channel {
+        #[command(subcommand)]
+        command: ReleaseChannelCommand,
+    },
+    /// Stage signed immutable release files under `dist/releases/<release-id>/`
+    Stage {
+        /// Extracted native export containing release.json and its selected assets
+        source: PathBuf,
+        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum ReleaseChannelCommand {
+    /// Verify hosted immutable content, then create a local signed channel file
+    Create {
         /// Exact release ID printed by release stage
         release: String,
         /// Channel name used by subscribers
@@ -456,26 +523,12 @@ pub enum ReleaseCommand {
         #[arg(long = "previous-key")]
         previous_keys: Vec<String>,
     },
-    /// Stage signed immutable release files under `dist/releases/<release-id>/`
-    Stage {
-        /// Extracted native export containing release.json and its selected assets
-        source: PathBuf,
-        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
-        #[arg(long = "key-file", required = true)]
-        keys: Vec<PathBuf>,
-    },
 }
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
-    /// Resume an exact pending release with verified manual file associations.
-    Continue {
-        /// Associate exact missing content with its release file key
-        #[arg(long = "file", value_name = "KEY=PATH")]
-        files: Vec<String>,
-    },
-    /// Discard a selected pending instance recipe; keep the completed installation.
-    DiscardPending,
+    /// Verify installed managed content and saved ownership without repairing files
+    Check(InstanceCheckArgs),
     /// Clear interrupted runtime evidence only after all remaining processes have stopped
     RecoverRuntime {
         #[arg(long, required = true)]
@@ -499,14 +552,17 @@ pub enum InstanceCommand {
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
-    /// Apply the exact signed release selected by the saved authenticated channel observation
+    /// Check publisher updates; use --apply to accept and install the selected release
     Update {
-        /// Check and approve a fresh channel observation before separately approving installation
+        /// Accept the verified offer and apply the prepared installation after approval
         #[arg(long)]
-        check: bool,
+        apply: bool,
+        /// Read a signed channel offer from this file instead of fetching the enrolled URL
+        #[arg(long, value_name = "FILE", conflicts_with = "release")]
+        channel_file: Option<PathBuf>,
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
-        /// Local signed release envelope; omit to fetch the saved channel's exact release
+        /// Local signed release envelope using the saved offer; omit to check the current channel
         release: Option<std::path::PathBuf>,
         /// Infer the installed environment; first installation defaults to client
         #[arg(long, value_parser = ["client", "server"])]
@@ -550,8 +606,7 @@ pub enum InstanceCommand {
         revoke_all: bool,
     },
     /// Verify a signed channel envelope and save its anti-replay floor without installing content
-    #[command(name = "check-updates", visible_alias = "observe-channel")]
-    ObserveChannel {
+    CheckUpdates {
         /// Local signed envelope; omit to fetch the enrolled HTTPS channel
         envelope: Option<std::path::PathBuf>,
     },
@@ -601,7 +656,7 @@ pub enum InstanceCommand {
     },
 
     /// Install the initial release or repair the active release without reverting updates
-    Prepare {
+    Ensure {
         /// Require an explicitly enrolled, non-revoked publisher for this pack
         #[arg(long)]
         require_subscription: bool,
@@ -650,7 +705,9 @@ pub enum InstanceCommand {
     },
 }
 
-#[derive(Debug, Clone, Args, Default)]
+/// Explicit choices for interpreting a retained import. Initialization environment
+/// defaults do not become arguments to unrelated pending build/sync/instance work.
+#[derive(Debug, Clone, Args, Default, PartialEq, Eq)]
 pub struct PendingImportOptions {
     /// Import only: choose defaults without making optional files mandatory
     #[arg(long, value_name = "BOOL")]
@@ -658,6 +715,42 @@ pub struct PendingImportOptions {
     /// Import only: retain downloaded bytes locally instead of persisting their source URL
     #[arg(long)]
     pub import_local_files: bool,
+    /// Import only: exclude archive members outside recognized content folders
+    #[arg(long)]
+    pub exclude_auxiliary: bool,
+    /// Import only: replace managed project content after preparing and approving the import
+    #[arg(long)]
+    pub replace_project: bool,
+    /// Import only: choose a loader declared by the archive
+    #[arg(long)]
+    pub modloader: Option<String>,
+    /// Import only: select one of the archive's declared loader versions
+    #[arg(long)]
+    pub loader_version: Option<String>,
+    /// Import only: confirm the archive's Minecraft version; cannot change it
+    #[arg(long)]
+    pub mc_version: Option<String>,
+    /// Import only: preferred Java major within the runtime's supported policy
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..))]
+    pub java: Option<u16>,
+    /// Import only: author name
+    #[arg(long)]
+    pub author: Option<String>,
+    /// Import only: modpack display name
+    #[arg(long)]
+    pub pack_name: Option<String>,
+    /// Import only: modpack version
+    #[arg(long)]
+    pub pack_version: Option<String>,
+    /// Import only: data pack folder relative to the pack root
+    #[arg(long)]
+    pub datapack_folder: Option<String>,
+    /// Import only: parent folder for world directories, relative to the pack root
+    #[arg(long)]
+    pub world_folder: Option<String>,
+    /// Import only: additional accepted Minecraft versions
+    #[arg(long, value_delimiter = ',')]
+    pub game_versions: Option<Vec<String>>,
 }
 
 /// Inspect and continue the existing workflow-specific saved inputs in one selected root.
@@ -680,13 +773,16 @@ pub enum PendingCommand {
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
         #[command(flatten)]
-        import_options: PendingImportOptions,
+        import_options: Box<PendingImportOptions>,
         /// Scan direct regular children using original digests; candidates are reverified on resume
         #[arg(long)]
         downloads_dir: Option<PathBuf>,
         /// Explicitly resolve and open permitted exact provider pages; never during preview
         #[arg(long)]
         open_downloads: bool,
+        /// Wait for missing saved-build downloads, then request fresh approval
+        #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
+        wait_downloads: Option<u64>,
     },
     /// Discard only this unchanged saved recipe; preserve downloads, content and recovery data
     Discard { id: String },
@@ -695,11 +791,6 @@ pub enum PendingCommand {
 /// Read-only authoring inspection; never resolves or rewrites dependencies.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ManifestCommand {
-    /// Validate both author documents and report whether the lock satisfies them
-    Check {
-        #[arg(long)]
-        json: bool,
-    },
     /// Show effective intent, policy, bindings and recorded identity for a logical key
     Explain {
         dependency: String,
@@ -713,9 +804,65 @@ pub enum ManifestCommand {
     },
 }
 
+/// Verify the current project; never select updates or repair files.
+#[derive(Debug, Clone, Default, Args)]
+pub struct CheckArgs {
+    /// Validate author files and any present lock, without reading content or providers
+    #[arg(long, conflicts_with = "online")]
+    pub documents: bool,
+    /// Also check fresh provider metadata for every exact locked provider selection
+    #[arg(long)]
+    pub online: bool,
+    /// Include successful checks and all unverified evidence
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit a structured report, including useful findings before a failed check
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
+/// Local installed-content checks, without repair, downloads or runtime execution.
+#[derive(Debug, Clone, Default, Args)]
+pub struct InstanceCheckArgs {
+    /// Show successful checks and player-owned entries
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit one structured report, including useful findings before failure
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
+/// Native host information; no project or state directory is required.
+#[derive(Debug, Clone, Default, Args)]
+pub struct DoctorArgs {
+    /// Probe this local Java executable; relative paths use the invocation directory
+    #[arg(long)]
+    pub java: Option<PathBuf>,
+    /// Probe Java and compare it with empack's policy for this exact Minecraft version
+    #[arg(long)]
+    pub minecraft: Option<String>,
+    /// Include executable/build information and native capability details
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit a structured host report, including unsuccessful requested checks
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary probe progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Check current authoring, recorded relationships and applicable local content
+    Check(CheckArgs),
     /// Inspect authoring intent and its exact lock without network access
     Manifest {
         #[command(subcommand)]
@@ -754,20 +901,17 @@ pub enum Commands {
     #[command(
         after_help = "Select an existing directory with empack --workdir INSTANCE instance <command>.
 Create an empty directory before the first installation.
-Use install for a local snapshot; subscribe, check-updates and update for a signed channel.
+Use install for a local snapshot; subscribe then update --apply for a signed channel.
 First installation defaults to client; choose --side server for a server.
-Updates infer the installed side/layout. update --check checks before applying."
+Updates infer the installed side/layout; omit --apply to preview without saving an offer or installing files."
     )]
     Instance {
         #[command(subcommand)]
         command: InstanceCommand,
     },
 
-    /// Check tool dependencies and show setup guidance
-    Requirements,
-
-    /// Show version information
-    Version,
+    /// Inspect this binary and local tools; explicit Java/runtime options run a version probe
+    Doctor(DoctorArgs),
 
     /// Create a project or import a modpack archive
     Init(InitArgs),
@@ -777,46 +921,13 @@ Updates infer the installed side/layout. update --check checks before applying."
         /// Acquire and verify all remote references before publishing the complete batch
         #[arg(long)]
         materialize: bool,
-        /// Resume exact saved selections and verified manual downloads
-        #[arg(long = "continue", conflicts_with = "materialize")]
-        continue_sync: bool,
-        /// Associate a local file with the exact dependency/slot printed by sync
-        #[arg(
-            long = "file",
-            value_name = "DEPENDENCY/SLOT=PATH",
-            requires = "continue_sync"
-        )]
-        files: Vec<String>,
     },
 
     /// Plan or apply a runtime migration without editing live intent first
     Migrate(MigrationArgs),
 
-    /// Assess provider versions without changing the author workspace
-    Outdated {
-        /// Return a failing exit status after reporting incomplete assessment
-        #[arg(long)]
-        strict: bool,
-        /// Emit versioned evidence and joint dependency assessment as JSON
-        #[arg(long)]
-        json: bool,
-        /// Provider version policy; independent of pack subscription channels
-        #[arg(long, value_enum)]
-        release_policy: Option<CliReleasePolicy>,
-    },
-
-    /// Deliberately refresh selected author dependency resolutions
-    Update {
-        /// Provider version policy; exact author pins remain exact
-        #[arg(long, value_enum)]
-        release_policy: Option<CliReleasePolicy>,
-        /// After catalog resolution succeeds, publish independent groups and report preparation failures
-        #[arg(long)]
-        continue_independent: bool,
-        /// Exact logical keys from empack.yml or empack.lock
-        #[arg(required = true)]
-        dependencies: Vec<String>,
-    },
+    /// Preview dependency updates; use --apply to apply the reviewed changes
+    Update(UpdateArgs),
 
     /// Accept verified installed changes without rewriting payloads
     Adopt {
@@ -833,22 +944,21 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Build verified distribution archives
     Build(BuildArgs),
 
-    /// Add projects to the modpack
+    /// Add a new dependency; use update to change an existing selection
+    #[command(
+        after_help = "To change an existing dependency, run empack update DEPENDENCY to preview it, then add --apply to apply the change."
+    )]
     Add {
         /// Publish verified independent groups after resolution; report blocked groups as failure
         #[arg(long)]
         continue_independent: bool,
         /// Mod names, URLs, or project IDs to add
-        #[arg(help = "Names, provider URLs/IDs, HTTPS files, or local paths")]
-        mods: Vec<String>,
-
-        /// Update an existing selection of the same identity
         #[arg(
-            short,
-            long,
-            help = "Update an existing selection of the same identity"
+            required = true,
+            value_name = "SOURCE",
+            help = "Names, provider URLs/IDs, HTTPS files, or local paths"
         )]
-        force: bool,
+        mods: Vec<String>,
 
         /// Search platform preference
         #[arg(
@@ -882,19 +992,15 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Remove projects from the modpack
     #[command(alias = "rm")]
     Remove {
-        /// Mod names to remove
-        #[arg(help = "Dependency keys, titles, or provider-qualified IDs")]
+        /// Exact logical dependency keys to remove
+        #[arg(
+            required = true,
+            value_name = "DEPENDENCY",
+            help = "Exact logical dependency keys"
+        )]
         mods: Vec<String>,
 
-        /// Remove dependencies as well
-        #[arg(
-            short,
-            long,
-            help = "Reserved: automatic orphan cleanup requires complete dependency metadata"
-        )]
-        deps: bool,
-
-        /// Remove authoring roots while retaining their exact installed selections.
+        /// Remove direct dependencies from empack.yml; keep installed files.
         #[arg(long)]
         forget: bool,
 
@@ -987,12 +1093,16 @@ impl Commands {
         matches!(
             self,
             Self::Status { json: true, .. }
-                | Self::Outdated { json: true, .. }
+                | Self::Check(CheckArgs { json: true, .. })
+                | Self::Doctor(DoctorArgs { json: true, .. })
+                | Self::Instance {
+                    command: InstanceCommand::Check(InstanceCheckArgs { json: true, .. })
+                }
+                | Self::Update(UpdateArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })
                 | Self::Manifest {
-                    command: ManifestCommand::Check { json: true }
-                        | ManifestCommand::Diff { json: true }
+                    command: ManifestCommand::Diff { json: true }
                         | ManifestCommand::Explain { json: true, .. },
                 }
                 | Self::Pending {
@@ -1009,8 +1119,7 @@ impl Commands {
                 false
             }
             Commands::Recover { .. } => false,
-            Commands::Requirements | Commands::Status { .. } => false,
-            Commands::Version => false,
+            Commands::Check(_) | Commands::Doctor(_) | Commands::Status { .. } => false,
             Commands::Init(..) => false,
             Commands::Sync { .. }
             | Commands::Manifest { .. }
@@ -1018,9 +1127,8 @@ impl Commands {
             | Commands::Unpin { .. } => true,
             Commands::Build(..) => true,
             Commands::Add { .. }
-            | Commands::Update { .. }
+            | Commands::Update(_)
             | Commands::Adopt { .. }
-            | Commands::Outdated { .. }
             | Commands::Migrate(_) => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
@@ -1032,8 +1140,7 @@ impl Commands {
         match self {
             Commands::Instance { .. } | Commands::Release { .. } | Commands::Pending { .. } => 1,
             Commands::Recover { .. } => 0,
-            Commands::Requirements | Commands::Status { .. } => 0,
-            Commands::Version => 0,
+            Commands::Check(_) | Commands::Doctor(_) | Commands::Status { .. } => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. }
@@ -1041,9 +1148,8 @@ impl Commands {
             | Commands::Pin { .. }
             | Commands::Unpin { .. } => 5,
             Commands::Add { .. }
-            | Commands::Update { .. }
+            | Commands::Update(_)
             | Commands::Adopt { .. }
-            | Commands::Outdated { .. }
             | Commands::Migrate(_) => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,
@@ -1070,6 +1176,8 @@ mod tests {
                 "--downloads-dir",
                 "/tmp/downloads",
                 "--open-downloads",
+                "--wait-downloads",
+                "1",
             ],
             vec![
                 "empack",
@@ -1084,6 +1192,83 @@ mod tests {
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }
+        let parsed = Cli::try_parse_from([
+            "empack",
+            "pending",
+            "resume",
+            "abcdef",
+            "--replace-project",
+            "--exclude-auxiliary",
+            "--java",
+            "21",
+            "--modloader",
+            "fabric",
+            "--loader-version",
+            "0.16.14",
+            "--mc-version",
+            "1.21.1",
+            "--world-folder",
+            "saves",
+            "--datapack-folder",
+            "datapacks",
+            "--pack-name",
+            "Pack Ω 日本",
+            "--pack-version",
+            "2",
+            "--author",
+            "Tester",
+            "--game-versions",
+            "1.21.1,1.21.2",
+        ])
+        .unwrap();
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { import_options, .. },
+        }) = parsed.command
+        else {
+            panic!("expected pending resume")
+        };
+        assert_eq!(import_options.java, Some(21));
+        assert_eq!(import_options.pack_name.as_deref(), Some("Pack Ω 日本"));
+        assert_eq!(
+            import_options.game_versions,
+            Some(vec!["1.21.1".into(), "1.21.2".into()])
+        );
+        assert!(import_options.replace_project && import_options.exclude_auxiliary);
+        assert!(
+            Cli::try_parse_from(["empack", "pending", "resume", "abcdef", "--java", "7"]).is_err()
+        );
+        for args in [
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--wait-downloads",
+                "1",
+            ],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--downloads-dir",
+                "/tmp/downloads",
+                "--wait-downloads",
+                "0",
+            ],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--downloads-dir",
+                "/tmp/downloads",
+                "--wait-downloads",
+                "3601",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
         assert!(Cli::try_parse_from(["empack", "pending", "discard"]).is_err());
         assert!(Cli::try_parse_from(["empack", "pending", "list", "--open-downloads"]).is_err());
     }
@@ -1094,29 +1279,58 @@ mod tests {
         assert!(
             Cli::try_parse_from(["empack", "release", "init", "--key-file", "private/key"]).is_ok()
         );
-        for command in ["check-updates", "observe-channel"] {
-            assert!(matches!(
-                Cli::try_parse_from(["empack", "instance", command])
-                    .unwrap()
-                    .command,
-                Some(Commands::Instance {
-                    command: InstanceCommand::ObserveChannel { envelope: None }
-                })
-            ));
+        for arguments in [
+            vec!["empack", "release", "publish-channel"],
+            vec!["empack", "release", "channel"],
+            vec!["empack", "release", "channel", "create"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
         }
+        assert!(matches!(Cli::try_parse_from([
+            "empack", "release", "channel", "create", "release-id", "--channel", "stable",
+            "--base-url", "https://packs.example.org/", "--sequence", "2", "--key-file", "private/key",
+            "--previous-key", "old-public-key",
+        ]).unwrap().command,
+            Some(Commands::Release { command: ReleaseCommand::Channel { command: ReleaseChannelCommand::Create {
+                release, channel, base_url, sequence: 2, keys, previous_keys,
+            } } }) if release == "release-id" && channel == "stable" && base_url == "https://packs.example.org/" && keys == vec![PathBuf::from("private/key")] && previous_keys == vec!["old-public-key"]
+        ));
         assert!(matches!(
-            Cli::try_parse_from(["empack", "instance", "update", "--check"])
+            Cli::try_parse_from(["empack", "instance", "check-updates"])
                 .unwrap()
                 .command,
             Some(Commands::Instance {
-                command: InstanceCommand::Update {
-                    check: true,
-                    side: None,
-                    layout: None,
-                    ..
-                }
+                command: InstanceCommand::CheckUpdates { envelope: None }
             })
         ));
+        assert!(Cli::try_parse_from(["empack", "instance", "observe-channel"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "instance", "update", "--check"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "update",
+                "local-release.json",
+                "--channel-file",
+                "offer.json"
+            ])
+            .is_err()
+        );
+        assert!(
+            matches!(Cli::try_parse_from(["empack", "instance", "update", "--channel-file", "offer.json"]).unwrap().command,
+            Some(Commands::Instance { command: InstanceCommand::Update { apply: false, channel_file: Some(path), .. } }) if path.as_path() == std::path::Path::new("offer.json"))
+        );
+
+        for (flags, expected) in [
+            (vec![], false),
+            (vec!["--yes"], false),
+            (vec!["--apply"], true),
+        ] {
+            let mut arguments = vec!["empack", "instance", "update"];
+            arguments.extend(flags);
+            assert!(matches!(Cli::try_parse_from(arguments).unwrap().command,
+                Some(Commands::Instance { command: InstanceCommand::Update { apply, .. } }) if apply == expected));
+        }
     }
 
     #[test]
@@ -1127,11 +1341,11 @@ mod tests {
             "empack --workdir my-pack build modrinth",
             "empack build prism --optional-defaults",
             "empack build server --optional CHOICE=true",
-            "empack build --continue --associate-download FILENAME=/tmp/download.jar",
+            "empack pending resume abcdef --file locked:mod:main=/tmp/download.jar",
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
-            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release channel create RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
         ] {
             Cli::try_parse_from(command.split_whitespace())
                 .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));
@@ -1261,27 +1475,38 @@ mod tests {
     }
 
     #[test]
-    fn sync_continuation_requires_exact_file_association_mode() {
-        assert!(Cli::try_parse_from(["empack", "sync", "--file", "one/primary=file"]).is_err());
-        assert!(Cli::try_parse_from(["empack", "sync", "--continue", "--materialize"]).is_err());
+    fn retired_workflow_continuation_commands_report_usage() {
+        for arguments in [
+            vec!["empack", "sync", "--continue"],
+            vec!["empack", "sync", "--file", "one/primary=file"],
+            vec!["empack", "sync", "--continue", "--materialize"],
+        ] {
+            let error = Cli::try_parse_from(arguments).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+        }
+        for command in ["continue", "discard-pending", "prepare"] {
+            assert_eq!(
+                Cli::try_parse_from(["empack", "instance", command])
+                    .unwrap_err()
+                    .kind(),
+                clap::error::ErrorKind::InvalidSubcommand,
+            );
+        }
         let cli = Cli::try_parse_from([
             "empack",
-            "sync",
-            "--continue",
+            "pending",
+            "resume",
+            "abcdef",
             "--file",
             "one/primary=some=file",
         ])
         .unwrap();
-        let Some(Commands::Sync {
-            materialize,
-            continue_sync,
-            files,
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { files, .. },
         }) = cli.command
         else {
-            panic!("not synchronization");
+            panic!("not pending resume");
         };
-        assert!(continue_sync);
-        assert!(!materialize);
         assert_eq!(files, ["one/primary=some=file"]);
     }
 
@@ -1311,29 +1536,44 @@ mod tests {
     }
 
     #[test]
-    fn import_continuation_accepts_decisions_and_excludes_a_new_source() {
+    fn pending_import_accepts_decisions_and_retired_init_continue_refuses() {
         let cli = Cli::try_parse_from([
             "empack",
-            "init",
-            "--continue",
-            "--import-file",
+            "pending",
+            "resume",
+            "abcdef",
+            "--file",
             "exact=file.jar",
             "--import-optional-default",
             "false",
             "--import-local-files",
             "--exclude-auxiliary",
-            "destination",
         ])
         .unwrap();
-        let Some(Commands::Init(args)) = cli.command else {
-            panic!("not initialization")
+        let Some(Commands::Pending {
+            command:
+                PendingCommand::Resume {
+                    files,
+                    import_options,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("not pending resume");
         };
-        assert!(args.continue_import);
-        assert_eq!(args.dir.as_deref(), Some("destination"));
-        assert_eq!(args.import_files, ["exact=file.jar"]);
-        assert!(
-            Cli::try_parse_from(["empack", "init", "--continue", "--from", "archive.zip"]).is_err()
-        );
+        assert_eq!(files, ["exact=file.jar"]);
+        assert_eq!(import_options.import_optional_default, Some(false));
+        assert!(import_options.import_local_files);
+        assert!(import_options.exclude_auxiliary);
+        for args in [
+            vec!["empack", "init", "--continue"],
+            vec!["empack", "init", "--continue", "--from", "archive.zip"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(args).unwrap_err().kind(),
+                clap::error::ErrorKind::UnknownArgument
+            );
+        }
         for flag in ["--import-local-files", "--exclude-auxiliary"] {
             assert!(Cli::try_parse_from(["empack", "init", flag]).is_err());
         }
@@ -1358,34 +1598,16 @@ mod tests {
 
     #[test]
     fn commands_surface_metadata_matches_expected_values() {
-        assert!(!Commands::Requirements.requires_modpack());
-        assert!(!Commands::Version.requires_modpack());
-        assert!(
-            Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![]
-            }
-            .requires_modpack()
-        );
+        assert!(!Commands::Doctor(DoctorArgs::default()).requires_modpack());
+        assert!(Commands::Sync { materialize: false }.requires_modpack());
         assert!(Commands::Build(BuildArgs::default()).requires_modpack());
-        assert_eq!(Commands::Requirements.execution_order(), 0);
-        assert_eq!(Commands::Version.execution_order(), 0);
+        assert_eq!(Commands::Doctor(DoctorArgs::default()).execution_order(), 0);
         assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
         assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
-        assert_eq!(
-            Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![]
-            }
-            .execution_order(),
-            5
-        );
+        assert_eq!(Commands::Sync { materialize: false }.execution_order(), 5);
         assert_eq!(
             Commands::Add {
                 mods: vec![],
-                force: false,
                 platform: None,
                 project_type: None,
                 version_id: None,
@@ -1400,7 +1622,6 @@ mod tests {
         assert_eq!(
             Commands::Remove {
                 mods: vec![],
-                deps: false,
                 forget: false,
                 acknowledge_unknown: false,
             }
@@ -1414,7 +1635,6 @@ mod tests {
     fn build_args_default_matches_expected_defaults() {
         let args = BuildArgs::default();
         assert!(args.targets.is_empty());
-        assert!(!args.continue_build);
         assert!(!args.clean);
         assert_eq!(args.format, None);
         assert_eq!(args.downloads_dir, None);
@@ -1483,16 +1703,74 @@ mod tests {
 
     #[test]
     fn cli_load_for_process_from_returns_display_for_help() {
-        let result = CliConfig::load_for_process_from(["empack", "--help"])
-            .expect("help should not be treated as a parse failure");
-
-        match result {
-            CliLoad::Display(message) => {
-                assert!(message.contains("Author, distribute and update Minecraft packs"));
-                assert!(message.contains("Usage:"));
+        let _cli_env = crate::test_support::isolate_cli_env();
+        let mut graph = Cli::command();
+        graph.build();
+        for args in [["empack", "--help"], ["empack", "-h"], ["empack", "help"]] {
+            let CliLoad::Display(message) = CliConfig::load_for_process_from(args)
+                .expect("help should not be treated as a parse failure")
+            else {
+                panic!("help should return a display payload");
+            };
+            assert!(message.contains("Author, distribute and update Minecraft packs"));
+            assert!(message.contains("Usage:"));
+            let headings = ["Author:", "Install:", "Publish:", "Tools:"]
+                .map(|heading| message.find(&format!("\n{heading}\n")).unwrap());
+            assert!(headings.windows(2).all(|pair| pair[0] < pair[1]));
+            for command in graph
+                .get_subcommands()
+                .filter(|command| !command.is_hide_set())
+            {
+                assert_eq!(
+                    message
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("  "))
+                        .filter(|row| !row.starts_with(char::is_whitespace))
+                        .filter(
+                            |row| row.split_ascii_whitespace().next() == Some(command.get_name())
+                        )
+                        .count(),
+                    1,
+                    "{} must remain visible exactly once in grouped help",
+                    command.get_name()
+                );
             }
-            CliLoad::Ready(_) => panic!("help should return a display payload"),
         }
+        // Reordering preserves the parser's descriptions, aliases and wrapping,
+        // including narrow help; only the command section headings change.
+        for width in [40, 100] {
+            for long in [false, true] {
+                let mut command = Cli::command().term_width(width);
+                let original = if long {
+                    command.render_long_help()
+                } else {
+                    command.render_help()
+                }
+                .to_string();
+                let grouped = help::group_root_commands(&original);
+                assert!(grouped.contains("\nPublish:\n"));
+                let content = |text: &str| {
+                    let mut lines: Vec<_> = text
+                        .lines()
+                        .filter(|line| !line.is_empty())
+                        .filter(|line| {
+                            !matches!(
+                                *line,
+                                "Commands:" | "Author:" | "Install:" | "Publish:" | "Tools:"
+                            )
+                        })
+                        .map(str::to_owned)
+                        .collect();
+                    lines.sort();
+                    lines
+                };
+                assert_eq!(content(&original), content(&grouped));
+            }
+        }
+        let nested = Cli::try_parse_from(["empack", "instance", "--help"])
+            .unwrap_err()
+            .to_string();
+        assert_eq!(help::group_root_commands(&nested), nested);
     }
 
     #[test]
@@ -1515,31 +1793,36 @@ mod tests {
     }
 
     #[test]
-    fn cli_command_graph_exposes_build_continue_contract() {
+    fn cli_command_graph_exposes_build_and_pending_assistance_contract() {
         let command = Cli::command();
         let build = command
             .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "build")
-            .expect("build subcommand");
-
-        let continue_arg = build
+            .find(|c| c.get_name() == "build")
+            .unwrap();
+        assert!(!build.get_arguments().any(|a| matches!(
+            a.get_id().as_str(),
+            "continue_build" | "associate_downloads"
+        )));
+        let downloads = build
             .get_arguments()
-            .find(|arg| arg.get_id().as_str() == "continue_build")
-            .expect("build --continue arg");
-        assert_eq!(continue_arg.get_long(), Some("continue"));
-
-        let downloads_arg = build
-            .get_arguments()
-            .find(|arg| arg.get_id().as_str() == "downloads_dir")
-            .expect("build --downloads-dir arg");
-        assert_eq!(downloads_arg.get_long(), Some("downloads-dir"));
+            .find(|a| a.get_id() == "downloads_dir")
+            .unwrap();
+        assert_eq!(downloads.get_long(), Some("downloads-dir"));
         assert_eq!(
-            downloads_arg
-                .get_env()
-                .map(|value| value.to_string_lossy().to_string())
-                .as_deref(),
+            downloads.get_env().and_then(|v| v.to_str()),
             Some("EMPACK_DOWNLOADS_DIR")
         );
+        let pending = command
+            .get_subcommands()
+            .find(|c| c.get_name() == "pending")
+            .unwrap();
+        let resume = pending
+            .get_subcommands()
+            .find(|c| c.get_name() == "resume")
+            .unwrap();
+        for key in ["files", "downloads_dir", "wait_downloads", "open_downloads"] {
+            assert!(resume.get_arguments().any(|a| a.get_id() == key), "{key}");
+        }
     }
 
     #[test]
@@ -1557,99 +1840,83 @@ mod tests {
     }
 
     #[test]
-    fn cli_config_load_from_rejects_build_continue_with_targets() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "prism"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with targets should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--continue"));
-    }
-
-    #[test]
-    fn cli_config_load_from_rejects_build_continue_with_clean() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "--clean"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with clean should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--clean"));
-    }
-
-    #[test]
-    fn cli_config_load_from_rejects_build_continue_with_format() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "--format", "tar.gz"]);
-
-        let err = match result {
-            Ok(_) => panic!("continue build with format should fail at parse time"),
-            Err(err) => err,
-        };
-        let rendered = err.to_string();
-        assert!(rendered.contains("cannot be used with"));
-        assert!(rendered.contains("--format"));
-    }
-
-    #[test]
-    fn cli_config_load_from_parses_build_continue_with_downloads_dir() {
-        let config = CliConfig::load_from([
-            "empack",
-            "build",
-            "--continue",
-            "--downloads-dir",
-            "/tmp/downloads",
-        ])
-        .expect("parse continue build");
-
-        let Some(Commands::Build(args)) = config.command else {
-            panic!("expected build command");
-        };
-
-        assert!(args.continue_build);
-        assert!(args.targets.is_empty());
-        assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/downloads"));
-    }
-
-    #[test]
-    fn explicit_download_association_requires_continuation() {
-        assert!(
-            CliConfig::load_from([
+    fn retired_build_continuation_flags_report_usage() {
+        for args in [
+            vec!["empack", "build", "--continue"],
+            vec!["empack", "build", "--continue", "prism"],
+            vec!["empack", "build", "--continue", "--clean"],
+            vec!["empack", "build", "--continue", "--format", "tar.gz"],
+            vec![
                 "empack",
                 "build",
                 "--associate-download",
-                "mod.jar=chosen.jar"
-            ])
-            .is_err()
-        );
-        let parsed = CliConfig::load_from([
+                "mod.jar=chosen.jar",
+            ],
+            vec!["empack", "pending", "resume", "abcdef", "--clean"],
+            vec![
+                "empack", "pending", "resume", "abcdef", "--format", "tar.gz",
+            ],
+            vec!["empack", "pending", "resume", "abcdef", "prism"],
+        ] {
+            let error = CliConfig::load_from(args)
+                .err()
+                .expect("retired flags and saved recipe changes must refuse");
+            assert!(error.to_string().contains("unexpected"), "{error}");
+        }
+    }
+
+    #[test]
+    fn pending_resume_parses_download_directory() {
+        let config = CliConfig::load_from([
             "empack",
-            "build",
-            "--continue",
-            "--associate-download",
-            "mod.jar=chosen.jar",
+            "pending",
+            "resume",
+            "abcdef",
+            "--downloads-dir",
+            "/tmp/downloads",
         ])
         .unwrap();
-        let Some(Commands::Build(args)) = parsed.command else {
-            panic!("expected build");
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { downloads_dir, .. },
+        }) = config.command
+        else {
+            panic!("expected pending resume")
         };
-        assert_eq!(args.associate_downloads, ["mod.jar=chosen.jar"]);
+        assert_eq!(
+            downloads_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/downloads"))
+        );
+    }
+
+    #[test]
+    fn pending_resume_parses_exact_file_associations() {
+        let config = CliConfig::load_from([
+            "empack",
+            "pending",
+            "resume",
+            "abcdef",
+            "--file",
+            "locked:mod:main=chosen.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Pending {
+            command: PendingCommand::Resume { files, .. },
+        }) = config.command
+        else {
+            panic!("expected pending resume")
+        };
+        assert_eq!(files, ["locked:mod:main=chosen.jar"]);
     }
 
     #[test]
     fn cli_config_load_from_supports_remove_alias() {
         let config = CliConfig::load_from(["empack", "rm", "sodium"]).expect("parse remove alias");
 
-        let Some(Commands::Remove { mods, deps, .. }) = config.command else {
+        let Some(Commands::Remove { mods, .. }) = config.command else {
             panic!("expected remove command");
         };
 
         assert_eq!(mods, vec!["sodium"]);
-        assert!(!deps);
     }
 
     #[test]
@@ -1732,6 +1999,58 @@ fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
 #[cfg(test)]
 mod consumer_cli_tests {
     use super::*;
+    #[test]
+    fn update_requires_one_scope_and_explicit_apply() {
+        for arguments in [
+            vec!["empack", "update"],
+            vec!["empack", "update", "--all", "sodium"],
+            vec!["empack", "update", "--all", "--select"],
+            vec![
+                "empack",
+                "update",
+                "sodium",
+                "--select",
+                "--pin",
+                "sodium=Version1",
+            ],
+            vec!["empack", "update", "sodium", "--select", "--json"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+        // Environment-backed flags must be checked by value in the command handler.
+        // Clap presence conflicts would also reject EMPACK_DRY_RUN=false.
+        let both =
+            Cli::try_parse_from(["empack", "update", "--all", "--apply", "--dry-run"]).unwrap();
+        assert!(both.config.dry_run);
+        assert!(matches!(
+            both.command,
+            Some(Commands::Update(UpdateArgs { apply: true, .. }))
+        ));
+        let cli = Cli::try_parse_from(["empack", "update", "--all", "--yes"]).unwrap();
+        let Some(Commands::Update(options)) = cli.command else {
+            panic!("expected update");
+        };
+        assert!(options.all);
+        assert!(!options.apply, "--yes must never imply application");
+        assert!(options.dependencies.is_empty());
+        let selected = Cli::try_parse_from(["empack", "update", "sodium", "--select"]).unwrap();
+        assert!(matches!(
+            selected.command,
+            Some(Commands::Update(UpdateArgs {
+                select: true,
+                apply: false,
+                ..
+            }))
+        ));
+        let cli =
+            Cli::try_parse_from(["empack", "update", "sodium", "lithium", "--apply"]).unwrap();
+        let Some(Commands::Update(options)) = cli.command else {
+            panic!("expected update");
+        };
+        assert!(!options.all);
+        assert!(options.apply);
+        assert_eq!(options.dependencies, ["sodium", "lithium"]);
+    }
     #[test]
     fn consumer_delivery_is_explicit_and_cannot_change_a_continuation() {
         let config = CliConfig::load_from([

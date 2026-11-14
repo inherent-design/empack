@@ -44,6 +44,8 @@ pub(super) struct MissingInstanceInputs(pub Vec<InstanceInputRequirement>);
 pub struct InstancePreview {
     pub plan: PlanId,
     pub record: InstanceRecord,
+    /// Human version of the effective release, including the active release retained by ensure.
+    pub release_version: String,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
     pub downloads: Vec<String>,
@@ -52,6 +54,7 @@ pub struct InstancePreview {
 pub struct InstanceReceipt {
     pub plan: PlanId,
     pub record: InstanceRecord,
+    pub release_version: String,
     pub publication: PublicationReceipt,
 }
 pub(super) struct PreparedInstanceOperation {
@@ -143,6 +146,7 @@ pub(super) async fn prepare(
                 .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
         ),
         record: planned.record.clone(),
+        release_version: planned.release_version.clone(),
         replacement: project_change::summary(&planned.files)?,
         files: planned.files.clone(),
     };
@@ -251,16 +255,20 @@ async fn execute(
     }
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
+    let progress = scope.progress_reporter();
     let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
+        progress(WorkProgress::StagingInstanceFiles);
         let _reservation = reservation;
         let instance =
             prepared
                 .instance
                 .stage(&prepared.content, &BTreeMap::new(), None, &cancel)?;
+        progress(WorkProgress::PublishingChanges);
         let (publication, record) =
             instance.publish(&Publisher::open(&config.state_root)?, &cancel)?;
         Ok::<_, anyhow::Error>(InstanceReceipt {
             plan: prepared.view.plan,
+            release_version: prepared.view.release_version,
             publication,
             record,
         })

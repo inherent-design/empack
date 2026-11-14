@@ -3,7 +3,7 @@ use anyhow::Result;
 use empack_lib::{
     application::{
         AppConfig, BuildArgs, Commands, InitArgs,
-        cli::{CliArchiveFormat, CliProjectType},
+        cli::{CliArchiveFormat, CliProjectType, UpdateArgs},
         commands::execute_command_with_session,
         session_mocks::{
             MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
@@ -81,7 +81,6 @@ impl Project {
 fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
     Commands::Add {
         mods: names.iter().map(|value| (*value).into()).collect(),
-        force: false,
         platform: None,
         project_type: kind,
         version_id: None,
@@ -94,7 +93,6 @@ fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
 fn remove(names: &[&str], forget: bool, acknowledge_unknown: bool) -> Commands {
     Commands::Remove {
         mods: names.iter().map(|value| (*value).into()).collect(),
-        deps: false,
         forget,
         acknowledge_unknown,
     }
@@ -162,13 +160,7 @@ async fn direct_content_matrix_preserves_selected_kind_destination_and_sync() ->
         );
         let before = project.snapshot();
         for _ in 0..2 {
-            project
-                .run(Commands::Sync {
-                    materialize: false,
-                    continue_sync: false,
-                    files: vec![],
-                })
-                .await?;
+            project.run(Commands::Sync { materialize: false }).await?;
         }
         assert_eq!(project.snapshot(), before);
     }
@@ -186,11 +178,7 @@ async fn preview_matrix_never_mutates_project_or_runs_backend() -> Result<()> {
     let commands = [
         add(&["fixture.jar"], None),
         remove(&["fixture"], false, false),
-        Commands::Sync {
-            materialize: false,
-            continue_sync: false,
-            files: vec![],
-        },
+        Commands::Sync { materialize: false },
         build("modrinth"),
         Commands::Clean {
             targets: vec!["builds".into()],
@@ -232,13 +220,7 @@ async fn removal_batches_demote_without_erasing_and_require_unknown_acknowledgme
     project.run(remove(&["first"], true, false)).await?;
     assert_eq!(project.roots(), 1);
     assert!(project.path().join("pack/mods/first.jar").exists());
-    project
-        .run(Commands::Sync {
-            materialize: false,
-            continue_sync: false,
-            files: vec![],
-        })
-        .await?;
+    project.run(Commands::Sync { materialize: false }).await?;
     assert!(project.path().join("pack/mods/first.jar").exists());
     let before = project.snapshot();
     assert!(project.run(remove(&["first"], false, false)).await.is_err());
@@ -295,15 +277,21 @@ async fn client_full_archives_contain_current_content_for_every_format() -> Resu
     Ok(())
 }
 #[tokio::test]
-async fn build_continue_missing_state_and_unknown_clean_scope_preserve_files() -> Result<()> {
+async fn pending_missing_state_and_unknown_clean_scope_preserve_files() -> Result<()> {
     let project = Project::new();
     project.initialize("none", None).await?;
     let before = project.snapshot();
     for command in [
-        Commands::Build(BuildArgs {
-            continue_build: true,
-            ..Default::default()
-        }),
+        Commands::Pending {
+            command: empack_lib::application::cli::PendingCommand::Resume {
+                id: "abcdef".into(),
+                files: vec![],
+                downloads_dir: None,
+                wait_downloads: None,
+                open_downloads: false,
+                import_options: Default::default(),
+            },
+        },
         Commands::Clean {
             targets: vec!["builds".into(), "unknown".into()],
         },
@@ -339,10 +327,13 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     let bytes = fs::read(project.root.path().join("fixture.jar"))?;
     fs::write(project.path().join("pack/mods/fixture.jar"), &bytes)?;
     let changed = project.snapshot();
-    let update = || Commands::Update {
-        release_policy: Default::default(),
-        continue_independent: false,
-        dependencies: vec!["fixture".into()],
+    let update = || {
+        Commands::Update(UpdateArgs {
+            release_policy: Default::default(),
+            continue_independent: false,
+            dependencies: vec!["fixture".into()],
+            ..Default::default()
+        })
     };
     // Updating cannot authorize overwriting externally changed source bytes.
     assert!(
@@ -360,11 +351,12 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert_eq!(project.snapshot(), changed);
     assert!(
         project
-            .run(Commands::Update {
+            .run(Commands::Update(UpdateArgs {
                 release_policy: Default::default(),
                 continue_independent: false,
-                dependencies: vec!["fixture".into(), "missing".into()]
-            })
+                dependencies: vec!["fixture".into(), "missing".into()],
+                ..Default::default()
+            }))
             .await
             .is_err()
     );
@@ -378,13 +370,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert_ne!(fs::read(project.path().join("empack.lock"))?, old_lock);
     let updated = project.snapshot();
     for _ in 0..2 {
-        project
-            .run(Commands::Sync {
-                materialize: false,
-                continue_sync: false,
-                files: vec![],
-            })
-            .await?;
+        project.run(Commands::Sync { materialize: false }).await?;
     }
     assert_eq!(project.snapshot(), updated);
     project.run(remove(&["fixture"], true, false)).await?;

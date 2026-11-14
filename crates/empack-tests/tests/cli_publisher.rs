@@ -195,7 +195,8 @@ impl Publisher {
             .timeout(Duration::from_secs(90))
             .args([
                 "release",
-                "publish-channel",
+                "channel",
+                "create",
                 self.release(label)["id"].as_str().unwrap(),
                 "--channel",
                 "stable",
@@ -391,7 +392,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .arg("--yes")
         .assert()
         .success()
-        .stdout(contains("upload this channel file last"));
+        .stdout(contains("upload this file last"));
     let first = fixture.pointer("a", 1);
     let player = TestProject::new();
     let game = player.dir().join("game");
@@ -426,10 +427,20 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .assert()
         .success();
     assert!(!game.exists(), "enrollment and observation cannot install");
+    // No channel is hosted at this immutable fixture URL. The default fresh
+    // check must fail, rather than silently using the locally recorded offer.
+    let before_missing_channel = snapshot(player.dir());
+    command()
+        .args(["--yes", "instance", "update", "--apply"])
+        .assert()
+        .code(4)
+        .stderr(contains("Download was not found"));
+    assert_eq!(snapshot(player.dir()), before_missing_channel);
     // Only the signed channel is supplied locally. No local release or assets
     // argument may substitute for fetching the immutable HTTPS fixture.
     command()
-        .args(["--yes", "instance", "update"])
+        .args(["--yes", "instance", "update", "--apply", "--channel-file"])
+        .arg(&channel)
         .assert()
         .success();
     let assert_installed = |label: &str| {
@@ -438,7 +449,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
             .args(["instance", "inspect"])
             .assert()
             .success()
-            .stdout(contains(format!("release {id};")));
+            .stdout(contains(format!("Release: {id}")));
         assert_eq!(
             fs::read(player.dir().join(format!(".empack/releases/{id}.json"))).unwrap(),
             fs::read(fixture.input(label).join("release.json")).unwrap()
@@ -471,7 +482,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
     fs::write(player.dir().join("player notes.txt"), b"retain player work").unwrap();
     let played = snapshot(&game);
     for (variant, previous, diagnostic) in [
-        ("good", None, "PublisherAuthenticationFailed"),
+        ("good", None, "No enrolled publisher signed this envelope"),
         (
             "wrong-envelope",
             Some("a"),
@@ -513,7 +524,8 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .arg(fixture.public("a"))
         .assert()
         .success()
-        .stdout(contains("Published channel stable"));
+        .stdout(contains("Created signed channel stable"))
+        .stdout(contains("upload this file last"));
     let second = fixture.pointer("b", 2);
     assert_ne!(first, second);
     offline_command(player.dir())
@@ -523,7 +535,8 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .success();
     for _ in 0..2 {
         command()
-            .args(["--yes", "instance", "update"])
+            .args(["--yes", "instance", "update", "--apply", "--channel-file"])
+            .arg(&channel)
             .assert()
             .success();
         assert_installed("b");

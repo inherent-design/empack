@@ -16,12 +16,13 @@ fn init_test_logger() -> &'static Logger {
 
     LOGGER_INIT.get_or_init(|| {
         let config = test_logger_config();
-        let logger = Logger::init(config.clone()).expect("logger should initialize");
+        let progress = std::sync::Arc::new(indicatif::MultiProgress::new());
+        let logger = Logger::init(config.clone(), progress.clone()).expect("logger should initialize");
         assert!(Logger::is_initialized());
         assert!(Logger::global().is_some());
         assert!(std::ptr::eq(Logger::global().unwrap(), logger));
 
-        let second = Logger::init(config);
+        let second = Logger::init(config, progress);
         assert!(matches!(second, Err(LoggerError::AlreadyInitialized)));
     });
 

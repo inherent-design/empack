@@ -115,7 +115,7 @@ pub fn export_prepare(targets: &[&str], live: bool) {
             command()
                 .arg("--workdir")
                 .arg(instance.path())
-                .args(["--yes", "instance", "prepare"])
+                .args(["--yes", "instance", "ensure"])
                 .arg(&descriptor)
                 .args([
                     "--sha256",

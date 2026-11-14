@@ -4,6 +4,7 @@
 //! terminal-capability-aware styling.
 
 use super::styling::StyleManager;
+use crate::terminal::display_line;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::time::Duration;
 
@@ -35,26 +36,13 @@ impl<'a> ProgressDisplay<'a> {
     /// progress.finish("Downloaded 25 mods");
     /// ```
     pub fn bar(&self, total: u64) -> ProgressTracker<'_> {
-        let pb = ProgressBar::new(total);
+        self.bar_on(total, ProgressDrawTarget::stderr())
+    }
 
-        // Use terminal-appropriate progress style
-        let style = if self.styling.has_unicode() {
-            // Unicode-capable terminal
-            ProgressStyle::with_template(
-                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
-            )
-            .unwrap()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .progress_chars("█▉▊▋▌▍▎▏  ")
-        } else {
-            // ASCII-only terminal
-            ProgressStyle::with_template("{spinner} {msg} [{wide_bar}] {pos}/{len} ({eta})")
-                .unwrap()
-                .tick_strings(&["-", "\\", "|", "/"])
-                .progress_chars("##-")
-        };
+    pub(crate) fn bar_on(&self, total: u64, target: ProgressDrawTarget) -> ProgressTracker<'_> {
+        let pb = ProgressBar::with_draw_target(Some(total), target);
 
-        pb.set_style(style);
+        pb.set_style(bar_style(self.styling, true));
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -74,22 +62,18 @@ impl<'a> ProgressDisplay<'a> {
     /// spinner.finish("Dependencies resolved");
     /// ```
     pub fn spinner(&self, message: &str) -> ProgressTracker<'_> {
-        let pb = ProgressBar::new_spinner();
+        self.spinner_on(message, ProgressDrawTarget::stderr())
+    }
 
-        let style = if self.styling.has_unicode() {
-            // Unicode spinner
-            ProgressStyle::with_template("{spinner:.green} {msg}")
-                .unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        } else {
-            // ASCII spinner
-            ProgressStyle::with_template("{spinner} {msg}")
-                .unwrap()
-                .tick_strings(&["-", "\\", "|", "/"])
-        };
+    pub(crate) fn spinner_on(
+        &self,
+        message: &str,
+        target: ProgressDrawTarget,
+    ) -> ProgressTracker<'_> {
+        let pb = ProgressBar::with_draw_target(None, target);
 
-        pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_style(spinner_style(self.styling));
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -129,13 +113,13 @@ impl<'a> ProgressTracker<'a> {
 
     /// Update the message
     pub fn set_message(&self, message: &str) {
-        self.bar.set_message(message.to_string());
+        self.bar.set_message(display_line(message).into_owned());
     }
 
     /// Update message with current item info
     pub fn tick(&self, item: &str) {
         self.bar.tick();
-        self.bar.set_message(item.to_string());
+        self.bar.set_message(display_line(item).into_owned());
     }
 
     /// Finish with success message
@@ -185,22 +169,8 @@ impl<'a> MultiProgressTracker<'a> {
 
         let pb = self.multi.add(ProgressBar::new(total));
 
-        let style = if self.styling.has_unicode() {
-            ProgressStyle::with_template(
-                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len}",
-            )
-            .unwrap()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .progress_chars("█▉▊▋▌▍▎▏  ")
-        } else {
-            ProgressStyle::with_template("{spinner} {msg} [{wide_bar}] {pos}/{len}")
-                .unwrap()
-                .tick_strings(&["-", "\\", "|", "/"])
-                .progress_chars("##-")
-        };
-
-        pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_style(bar_style(self.styling, false));
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -214,18 +184,8 @@ impl<'a> MultiProgressTracker<'a> {
 
         let pb = self.multi.add(ProgressBar::new_spinner());
 
-        let style = if self.styling.has_unicode() {
-            ProgressStyle::with_template("{spinner:.green} {msg}")
-                .unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        } else {
-            ProgressStyle::with_template("{spinner} {msg}")
-                .unwrap()
-                .tick_strings(&["-", "\\", "|", "/"])
-        };
-
-        pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_style(spinner_style(self.styling));
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -234,5 +194,44 @@ impl<'a> MultiProgressTracker<'a> {
     /// Clear all progress bars
     pub fn clear(&self) {
         self.multi.clear().unwrap_or(());
+    }
+}
+
+// Template dotted styles consult console's process-global stdout policy. The
+// session's selected palette already owns color for this progress destination.
+fn spinner_style(styling: &StyleManager) -> ProgressStyle {
+    let palette = styling.primitives();
+    ProgressStyle::with_template(&format!(
+        "{}{{spinner}}{} {{msg}}",
+        palette.success, palette.reset
+    ))
+    .unwrap()
+    .tick_strings(spinner_frames(styling))
+}
+
+fn bar_style(styling: &StyleManager, show_eta: bool) -> ProgressStyle {
+    let palette = styling.primitives();
+    ProgressStyle::with_template(&format!(
+        "{}{{spinner}}{} {{msg}} [{}{{wide_bar}}{}] {{pos}}/{{len}}{}",
+        palette.success,
+        palette.reset,
+        palette.info,
+        palette.reset,
+        if show_eta { " ({eta})" } else { "" }
+    ))
+    .unwrap()
+    .tick_strings(spinner_frames(styling))
+    .progress_chars(if styling.has_unicode() {
+        "█▉▊▋▌▍▎▏  "
+    } else {
+        "##-"
+    })
+}
+
+fn spinner_frames(styling: &StyleManager) -> &'static [&'static str] {
+    if styling.has_unicode() {
+        &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    } else {
+        &["-", "\\", "|", "/"]
     }
 }

@@ -312,8 +312,9 @@ impl VerifiedImportContent {
                         expected,
                     )
                 };
-            let selection_policy = if let Some(pin) = &selection {
-                DependencySelection::ProviderPin(pin.selection.clone())
+            // The archive fixes the initial lock selection, not a future author hold.
+            let selection_policy = if selection.is_some() {
+                DependencySelection::Automatic
             } else if let Some(digests) = &expected.digests {
                 DependencySelection::ContentAssertions(digests.clone())
             } else {

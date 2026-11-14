@@ -18,6 +18,49 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::write(file, bytes).unwrap();
 }
 
+fn invocation_bytes(prepare: bool, subscribed: bool, release: &str) -> Vec<u8> {
+    let file = super::super::bootstrap::invocation(
+        prepare,
+        false,
+        subscribed,
+        release,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    file.content.lease().open().read_to_end(&mut bytes).unwrap();
+    bytes
+}
+fn put_invocations(root: &Path, release: &str) {
+    for (file, prepare) in [
+        (super::super::bootstrap::PREPARE, true),
+        (super::super::bootstrap::LAUNCH, false),
+    ] {
+        put(root, file, &invocation_bytes(prepare, false, release));
+    }
+}
+
+// Script-only fixture: the actual JAR/parser/native boundary is exercised by
+// packaged bootstrap and CLI tests. This adapter supplies the captured static
+// vector without pretending that game Java itself understands bootstrap flags.
+#[cfg(unix)]
+const SCRIPT_JAVA: &[u8] = br#"#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+if args[:2] == ['-Dfile.encoding=UTF-8', '-jar']:
+    assert args[3] == '--invocation-file'
+    record = pathlib.Path(args[4]).resolve()
+    data = json.loads(record.read_text(encoding='utf-8'))
+    tail = args[5:]
+    if tail:
+        assert tail.pop(0) == '--' and data['append_arguments']
+    os.chdir(record.parent.parent)
+    engine = os.environ.get('EMPACK_TEST_ENGINE', 'empack')
+    os.execvp(engine, [engine, *data['arguments'], *tail])
+pathlib.Path('server-arguments').write_text(''.join(value+'\n' for value in args), encoding='utf-8')
+sys.exit(int(os.environ.get('EMPACK_TEST_RUNTIME_STATUS', '0')))
+"#;
+
 /// Component setup for executable tests of the unmodified generated entry points.
 /// The ordinary product never reads this marker or selects this private driver.
 #[test]
@@ -30,12 +73,14 @@ fn generated_server_entrypoint_fixture() {
     let input: serde_json::Value = serde_json::from_slice(&fs::read(marker).unwrap()).unwrap();
     let managed = input["managed"].as_bool().unwrap();
     let digest = input["release_sha256"].as_str().unwrap();
-    let release = managed.then_some(digest);
+    if managed {
+        put_invocations(&root, digest);
+    }
     let java = crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap();
     let launch = ServerLaunch::Jar(path("server.jar").unwrap());
     for (name, bytes) in [
-        ("install_pack.sh", install_script(release)),
-        ("install_pack.bat", install_batch(release)),
+        ("install_pack.sh", install_script(managed)),
+        ("install_pack.bat", install_batch(managed)),
         (
             "start.sh",
             runtime_script(&launch, managed, false, ServerInterface::Console, &java),
@@ -158,6 +203,10 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             assert!(!build.uses_user_configuration());
             let expected = build.inventory().clone();
             assert_eq!(
+                expected.contains_key(&path(super::super::bootstrap::PATH).unwrap()),
+                lightweight
+            );
+            assert_eq!(
                 expected.contains_key(&path("game/server.jar").unwrap()),
                 !lightweight
             );
@@ -205,7 +254,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                         !name.starts_with("start_gui"),
                         "{name}"
                     );
-                    assert_eq!(value.contains("instance launch --server"), lightweight);
+                    assert_eq!(value.contains("launch.json"), lightweight);
                 }
                 value.clear();
                 if !lightweight {
@@ -240,7 +289,21 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                     .unwrap()
                     .read_to_string(&mut value)
                     .unwrap();
-                assert_eq!(value.contains("instance prepare"), lightweight);
+                assert_eq!(value.contains("prepare.json"), lightweight);
+                if lightweight {
+                    let prepare: serde_json::Value = serde_json::from_reader(
+                        zip.by_name(super::super::bootstrap::PREPARE).unwrap(),
+                    )
+                    .unwrap();
+                    assert!(
+                        prepare["arguments"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|value| value == "ensure")
+                    );
+                    assert_eq!(prepare["append_arguments"], false);
+                }
                 assert!(!value.contains("eula=true"));
                 if lightweight {
                     use crate::engine::{
@@ -290,7 +353,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                             side: InstanceSide::Server,
                             layout: Some(InstanceLayout::Game),
                             choices: vec![],
-                            action: InstanceAction::Prepare,
+                            action: InstanceAction::Ensure,
                         },
                         RecoveryReader::new(host.path().join("instance-state")),
                         SnapshotLimits::default(),
@@ -456,7 +519,7 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
     put(
         root.path(),
         "install_pack.sh",
-        install_script(None).as_bytes(),
+        install_script(false).as_bytes(),
     );
     assert!(
         std::process::Command::new("bash")
@@ -608,16 +671,17 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
     fs::create_dir(root.path().join("game")).unwrap();
 
     let id = "a".repeat(64);
+    put_invocations(root.path(), &id);
     put(
         root.path(),
         "install_pack.sh",
-        install_script(Some(&id)).as_bytes(),
+        install_script(true).as_bytes(),
     );
     put(
         root.path(),
         "bin/empack",
         br##"#!/bin/sh
-if [ "$5" = prepare ]; then
+if [ "$5" = ensure ]; then
   printf '%s\n' "$@" > "$EMPACK_TEST_ARGS"
   exit "$EMPACK_TEST_INSTALL_STATUS"
 fi
@@ -631,11 +695,7 @@ shift
 exec "$program" -jar server.jar "$@"
 "##,
     );
-    put(
-        root.path(),
-        "java space/bin/java",
-        b"#!/bin/sh\nprintf '%s\n' \"$@\" > server-arguments\nexit \"$EMPACK_TEST_RUNTIME_STATUS\"\n",
-    );
+    put(root.path(), "java space/bin/java", SCRIPT_JAVA);
     for name in ["bin/empack", "java space/bin/java"] {
         fs::set_permissions(root.path().join(name), fs::Permissions::from_mode(0o700)).unwrap();
     }
@@ -669,6 +729,7 @@ exec "$program" -jar server.jar "$@"
                 .env("JAVA_HOME", root.path().join("java space"))
                 .env("PATH", &paths)
                 .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
+                .env("EMPACK_TEST_ENGINE", root.path().join("bin/empack"))
                 .env("EMPACK_NO_PAUSE", "1")
                 .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
                 .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
@@ -681,9 +742,7 @@ exec "$program" -jar server.jar "$@"
             assert_eq!(arguments.exists(), code == 0);
             let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
             let expected = format!(
-                "--workdir\n{}\n--yes\ninstance\nprepare\n{}/.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n",
-                root.path().display(),
-                root.path().display()
+                "--workdir\n.\n--yes\ninstance\nensure\n.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n"
             );
             assert_eq!(selected, expected);
             if code == 0 {
@@ -692,8 +751,7 @@ exec "$program" -jar server.jar "$@"
                 assert_eq!(
                     launch,
                     format!(
-                        "--workdir\n{}\n--yes\ninstance\nlaunch\n--server\n--\n{}\n{argument}an argument\n",
-                        root.path().display(),
+                        "--workdir\n.\n--yes\ninstance\nlaunch\n--server\n--\n{}\n{argument}an argument\n",
                         root.path().join("java space/bin/java").display()
                     )
                 );
@@ -712,8 +770,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     fs::create_dir(root.path().join("game")).unwrap();
 
     // CALL lets a batch fixture return like the empack executable it replaces.
-    let install = install_batch(Some(&"a".repeat(64)))
-        .replace("empack --workdir", "call fake-empack.cmd --workdir");
+    let install = install_batch(true).replace(
+        &super::super::bootstrap::server(super::super::bootstrap::PREPARE, true),
+        "call fake-empack.cmd --workdir . --yes instance ensure dummy --layout game --side server",
+    );
     put(root.path(), "install_pack.bat", install.as_bytes());
     put(
         root.path(),
@@ -738,7 +798,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
                 true,
                 interface,
             )
-            .replace("empack --workdir", "call fake-empack.cmd --workdir")
+            .replace(
+                &super::super::bootstrap::server(super::super::bootstrap::LAUNCH, true),
+                "call fake-empack.cmd --workdir . --yes instance launch --server",
+            )
             .as_bytes(),
         );
         for code in [0, 7] {
@@ -757,7 +820,7 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
             assert_eq!(status.code(), Some(code));
             assert_eq!(args.exists(), code == 0);
             let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
-            assert!(arguments.contains("instance prepare"));
+            assert!(arguments.contains("instance ensure"));
             assert!(arguments.contains("--layout game --side server"));
             if code == 0 {
                 let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
@@ -829,34 +892,37 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
 
 #[test]
 fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
-    let recipe = Recipe::SERVER_BUNDLED
-        .with_update_authority(empack_core::distribution::UpdateAuthority::Empack)
-        .unwrap();
+    for prepare in [true, false] {
+        let record: serde_json::Value =
+            serde_json::from_slice(&invocation_bytes(prepare, true, "digest")).unwrap();
+        let arguments = record["arguments"].as_array().unwrap();
+        assert!(arguments.iter().any(|value| value
+            == if prepare {
+                "--require-subscription"
+            } else {
+                "--check-updates"
+            }));
+        assert_eq!(record["append_arguments"], !prepare);
+    }
     for interface in [ServerInterface::Console, ServerInterface::Gui] {
         for windows in [false, true] {
-            let launch = consumer_script(
-                runtime_start(
-                    &ServerLaunch::Jar(path("server.jar").unwrap()),
-                    true,
-                    windows,
-                    interface,
-                ),
-                recipe,
+            let launch = runtime_start(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                true,
+                windows,
+                interface,
             );
-            assert!(launch.contains("instance launch --server --check-updates --"));
+            assert!(launch.contains("launch.json"));
+            let install = if windows {
+                install_batch(true)
+            } else {
+                install_script(true)
+            };
+            assert!(install.contains("prepare.json"));
             if windows {
                 assert!(!launch.replace("\r\n", "").contains('\n'));
                 assert!(launch.contains("\r\necho Server stopped. If Minecraft requested EULA acceptance, review game\\eula.txt before restarting.\r\n"));
             }
-            let install = consumer_script(
-                if windows {
-                    install_batch(Some("digest"))
-                } else {
-                    install_script(Some("digest"))
-                },
-                recipe,
-            );
-            assert!(install.contains("--side server --require-subscription"));
         }
     }
 }
@@ -872,7 +938,7 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
     put(
         root.path(),
         "install_pack.bat",
-        install_batch(None).as_bytes(),
+        install_batch(false).as_bytes(),
     );
     let output = std::process::Command::new("cmd")
         .args(["/d", "/c", "install_pack.bat"])
@@ -965,8 +1031,8 @@ fn windows_entry_points_keep_console_and_return_status() {
         start_batch(true, ServerInterface::Console),
         start_batch(false, ServerInterface::Gui),
         start_batch(true, ServerInterface::Gui),
-        install_batch(None),
-        install_batch(Some(&"a".repeat(64))),
+        install_batch(false),
+        install_batch(true),
     ] {
         assert!(script.contains("if not defined EMPACK_NO_PAUSE pause\r\nexit /b %_EMPACK_EXIT%"));
         assert!(script.contains("DisableDelayedExpansion"));
@@ -1246,6 +1312,12 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                     fs::Permissions::from_mode(0o755),
                 )
                 .unwrap();
+                put(extracted.path(), "bin/java", SCRIPT_JAVA);
+                fs::set_permissions(
+                    extracted.path().join("bin/java"),
+                    fs::Permissions::from_mode(0o755),
+                )
+                .unwrap();
                 let search =
                     std::env::join_paths(std::iter::once(extracted.path().join("bin")).chain(
                         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
@@ -1256,6 +1328,7 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                         let log = extracted.path().join("calls.txt");
                         fs::write(&log, b"").unwrap();
                         let output = std::process::Command::new(extracted.path().join(name))
+                            .env_remove("JAVA_HOME")
                             .env("PATH", &search)
                             .env("EMPACK_TEST_LOG", &log)
                             .env("EMPACK_TEST_EXIT", status.to_string())
@@ -1267,10 +1340,10 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                             "{output:?}"
                         );
                         let calls = fs::read_to_string(log).unwrap();
-                        assert!(calls.contains("instance prepare"));
+                        assert!(calls.contains("instance ensure"));
                         if name != "install_pack.sh" {
                             assert!(
-                                calls.find("instance prepare").unwrap()
+                                calls.find("instance ensure").unwrap()
                                     < calls.find("instance launch").unwrap()
                             );
                             assert_eq!(calls.contains("nogui"), name == "start.sh");

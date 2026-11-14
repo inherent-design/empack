@@ -93,6 +93,13 @@ fn test_style_manager_format_methods() {
 
     let info = styling.format_info("note");
     assert!(info.contains("note"), "Info message should contain text");
+    // Data supplied by providers or files must not become terminal commands.
+    let plain = StyleManager::new(&TerminalCapabilities::minimal());
+    for value in ["\u{1b}]52;c;YQ==\u{7}", "\u{1b}[2J", "\u{009b}2J", "\u{202e}spoof"] {
+        assert!(!plain.format_warning(value).contains(value), "active terminal control survived rendering");
+    }
+    assert!(plain.format_info("日本語 café العربية").contains("日本語 café العربية"));
+    assert!(plain.format_warning("first\nsecond").contains("first\\nsecond"));
 }
 
 #[test]
@@ -206,6 +213,8 @@ fn test_structured_display_rendering_paths() {
         .row(&["very-long-tool-name", "v1", "this row will be truncated"])
         .max_width(24)
         .render();
+    // Byte truncation used to panic inside a multibyte provider title.
+    structured.table().row(&["日本語"]).max_width(5).render();
 }
 
 #[test]
@@ -213,7 +222,7 @@ fn test_live_display_provider_delegation() {
     let caps = create_test_capabilities();
     let display = Display::new(caps);
 
-    let provider = LiveDisplayProvider::new().with_capabilities(display.capabilities().clone());
+    let provider = LiveDisplayProvider::new().with_stream_capabilities(display.capabilities().clone(), display.capabilities().clone());
     let default_provider = LiveDisplayProvider::default();
     let shared = Arc::new(MultiProgress::new());
     let arc_provider = LiveDisplayProvider::new_with_arc(shared);

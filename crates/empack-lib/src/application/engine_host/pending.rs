@@ -1,7 +1,7 @@
 //! Shared selectors delegate to the existing workflow hosts and exact cleanup handles.
 use super::*;
 use crate::{
-    application::{BuildArgs, InitArgs, cli::PendingCommand},
+    application::{InitArgs, cli::PendingCommand},
     engine::pending::{PendingKind, PendingOperation, PendingReport},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,11 +29,13 @@ async fn report(
     })
     .await
 }
-fn show(session: &dyn Session, view: &PendingReport, json: bool) -> Result<()> {
+mod text;
+
+fn show(session: &dyn Session, view: &PendingReport, json: bool, details: bool) -> Result<()> {
     session.display().status().message(&if json {
-        serde_json::to_string_pretty(view)?
+        crate::terminal::json_text(view)?
     } else {
-        view.text()
+        text::render(view, details)
     });
     Ok(())
 }
@@ -43,7 +45,7 @@ pub(in crate::application) async fn dispatch(
 ) -> Result<()> {
     let view = report(session).await?;
     match command {
-        PendingCommand::List { json } => show(session, &view, json),
+        PendingCommand::List { json } => show(session, &view, json, false),
         PendingCommand::Show { id, json } => {
             let selected = view.select(&id)?.clone();
             show(
@@ -54,6 +56,7 @@ pub(in crate::application) async fn dispatch(
                     operations: vec![selected],
                 },
                 json,
+                true,
             )
         }
         PendingCommand::Discard { id } => {
@@ -66,6 +69,7 @@ pub(in crate::application) async fn dispatch(
             files,
             downloads_dir,
             open_downloads,
+            wait_downloads,
             import_options,
         } => {
             let selected = view.select(&id)?.clone();
@@ -76,7 +80,8 @@ pub(in crate::application) async fn dispatch(
                 files,
                 downloads_dir,
                 open_downloads,
-                import_options,
+                wait_downloads,
+                *import_options,
             )
             .await
         }
@@ -122,6 +127,7 @@ async fn resume(
     files: Vec<String>,
     downloads: Option<PathBuf>,
     open: bool,
+    wait_seconds: Option<u64>,
     import_options: crate::application::cli::PendingImportOptions,
 ) -> Result<()> {
     ensure!(
@@ -129,46 +135,27 @@ async fn resume(
         "Selected pending operation is stale; retain it for inspection or explicitly discard it"
     );
     ensure!(
-        selected.kind == PendingKind::Import
-            || (import_options.import_optional_default.is_none()
-                && !import_options.import_local_files),
-        "Import options require a pending import"
+        selected.kind == PendingKind::Import || import_options == Default::default(),
+        crate::application::cli::CommandInputRequired("Import options require a pending import")
     );
-    let mut files = associations(&selected, files)?;
-    if selected.kind == PendingKind::Build {
-        let dry = session.config().app_config().dry_run;
-        let downloads = if dry { None } else { downloads };
-        return build::continue_build_selected(
-            session,
-            &BuildArgs {
-                continue_build: true,
-                associate_downloads: files
-                    .into_iter()
-                    .map(|(key, path)| format!("{key}={path}"))
-                    .collect(),
-                downloads_dir: downloads
-                    .map(|path| {
-                        path.to_str()
-                            .map(str::to_owned)
-                            .context("Downloads directory must be UTF-8")
-                    })
-                    .transpose()?,
-                open_downloads: open && !dry,
-                ..Default::default()
-            },
-            Some(&selected.id),
-        )
-        .await;
+    if wait_seconds.is_some() {
+        ensure!(
+            selected.kind == PendingKind::Build,
+            crate::application::cli::CommandInputRequired(
+                "Automatic download waiting is available for saved builds; supply --file associations for this saved operation"
+            )
+        );
     }
-    if !session.config().app_config().dry_run {
+    let mut files = associations(&selected, files)?;
+    if selected.kind != PendingKind::Build && !session.config().app_config().dry_run {
         let verified = if selected.kind == PendingKind::Sync && (downloads.is_some() || open) {
             cli::retained_sync_input_keys(session, &selected.id).await?
         } else {
             BTreeSet::new()
         };
-        if let Some(downloads) = downloads {
+        if let Some(downloads) = downloads.as_ref() {
             let (invocation, _) = project_path(session)?;
-            let downloads = absolute(&invocation, &downloads);
+            let downloads = absolute(&invocation, downloads);
             let requirements = selected
                 .inputs
                 .iter()
@@ -230,49 +217,67 @@ async fn resume(
             build::browser::open_pins(session, pins, &mut BTreeSet::new(), None).await?;
         }
     }
-    let files = files
-        .into_iter()
-        .map(|(key, path)| format!("{key}={path}"))
-        .collect();
+    let file_args = |files: BTreeMap<String, String>| -> Vec<String> {
+        files
+            .into_iter()
+            .map(|(key, path)| format!("{key}={path}"))
+            .collect()
+    };
     match selected.kind {
         PendingKind::Build => {
-            build::continue_build_selected(
+            build::resume_saved(
                 session,
-                &BuildArgs {
-                    continue_build: true,
-                    associate_downloads: files,
-                    ..Default::default()
+                &selected.id,
+                build::BuildResumeOptions {
+                    files,
+                    downloads,
+                    wait_seconds,
+                    open_downloads: open,
                 },
-                Some(&selected.id),
             )
             .await
         }
         PendingKind::Import => {
-            cli::initialize_selected(
+            cli::resume_saved_import(
                 session,
                 &InitArgs {
-                    continue_import: true,
-                    import_files: files,
+                    import_files: file_args(files),
                     import_optional_default: import_options.import_optional_default,
                     import_local_files: import_options.import_local_files,
+                    exclude_auxiliary: import_options.exclude_auxiliary,
+                    force: import_options.replace_project,
+                    modloader: import_options.modloader,
+                    loader_version: import_options.loader_version,
+                    mc_version: import_options.mc_version,
+                    java: import_options.java,
+                    author: import_options.author,
+                    pack_name: import_options.pack_name,
+                    pack_version: import_options.pack_version,
+                    datapack_folder: import_options.datapack_folder,
+                    world_folder: import_options.world_folder,
+                    game_versions: import_options.game_versions,
                     ..Default::default()
                 },
-                Some(selected.id),
+                &selected.id,
             )
             .await
         }
         PendingKind::Sync => {
-            cli::resume_synchronization_selected(session, files, selected.id).await
+            cli::resume_synchronization_selected(session, file_args(files), selected.id).await
         }
         PendingKind::Instance => {
-            instance::resume_instance_selected(session, files, Some(&selected.id)).await
+            instance::resume_instance_selected(session, file_args(files), &selected.id).await
         }
     }
 }
 async fn discard(session: &dyn Session, selected: PendingOperation) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
-    session.display().status().info(&format!("Discard {:?} recipe {}; retained content, downloads, completed installations and recovery journals remain",selected.kind,selected.id));
+    session.display().status().info(&format!(
+        "Discard saved {} {}? Downloaded files, installed packs and recovery records will be kept.",
+        text::kind(selected.kind),
+        selected.id
+    ));
     match selected.kind {
         PendingKind::Build | PendingKind::Instance => {
             let engine = engine(session.config().app_config(), &invocation)?;

@@ -1,6 +1,9 @@
 //! Verify connected groups separately and publish one coherent successful candidate.
 use super::*;
-use crate::engine::{addition::independent::independent_components, project::ProjectRevision};
+use crate::engine::{
+    addition::independent::{BatchPartition, independent_components},
+    project::ProjectRevision,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum BatchPolicy {
@@ -11,7 +14,9 @@ pub enum BatchPolicy {
 #[derive(Clone)]
 pub enum DependencyBatchChange {
     Add(ExistingDependencyPolicy),
-    Update,
+    Update {
+        pins: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
+    },
 }
 #[derive(Clone)]
 pub struct DependencyBatchItem {
@@ -36,13 +41,29 @@ pub struct DependencyBatchReport {
     /// Logical roots at each original request position.
     pub requested: Vec<Vec<DependencyKey>>,
     pub policy: BatchPolicy,
+    /// Incomplete declared dependency evidence that prevents splitting the request.
+    pub independence_unverified: Vec<DependencyKey>,
     /// Groups actually admitted to the one verified publication candidate.
     pub successful: Vec<Vec<usize>>,
     pub blocked: Vec<BlockedBatchGroup>,
 }
-#[derive(Debug, thiserror::Error)]
-#[error("Dependency batch incomplete: {} successful groups, {} blocked groups", .0.successful.len(), .0.blocked.len())]
+#[derive(Debug)]
 pub struct DependencyBatchIncomplete(pub DependencyBatchReport);
+impl std::fmt::Display for DependencyBatchIncomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Dependency batch incomplete: {} successful groups, {} blocked groups",
+            self.0.successful.len(),
+            self.0.blocked.len()
+        )?;
+        if !self.0.independence_unverified.is_empty() {
+            f.write_str("; dependency information is incomplete, so these changes cannot be applied separately")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for DependencyBatchIncomplete {}
 
 pub(in crate::engine::api) async fn prepare_batch(
     project: ProjectTarget,
@@ -111,8 +132,19 @@ pub(in crate::engine::api) async fn prepare_batch(
                     "Batch replacement selection contains an unrequested dependency"
                 );
             }
+            if let DependencyBatchChange::Update { pins } = &request.change {
+                ensure!(
+                    pins.keys()
+                        .all(|key| current.intent().roots.contains_key(key)
+                            && groups.iter().any(|group| group.roots().contains_key(key))),
+                    "Exact update pins must name requested provider author roots"
+                );
+            }
             let components = match request.policy {
-                BatchPolicy::AllRequested => vec![(0..groups.len()).collect()],
+                BatchPolicy::AllRequested => BatchPartition {
+                    components: vec![(0..groups.len()).collect()],
+                    incomplete_dependencies: BTreeSet::new(),
+                },
                 BatchPolicy::ContinueIndependent => independent_components(&current, &groups)?,
             };
             cancel.check()?;
@@ -129,16 +161,18 @@ pub(in crate::engine::api) async fn prepare_batch(
             .map(|item| item.group.roots().keys().cloned().collect())
             .collect(),
         policy: request.policy,
+        independence_unverified: components.incomplete_dependencies.into_iter().collect(),
         successful: vec![],
         blocked: vec![],
     };
     let (kind, existing) = match request.change {
         DependencyBatchChange::Add(policy) => (DependencyChange::Add, policy),
-        DependencyBatchChange::Update => (
-            DependencyChange::Update,
+        DependencyBatchChange::Update { pins } => (
+            DependencyChange::Update(pins),
             ExistingDependencyPolicy::UpdateSameIdentity,
         ),
     };
+    let components = components.components;
     let single_component = components.len() == 1;
     // Combining and native staging are read-only. No component owns a publisher.
     for component in components {
@@ -151,7 +185,8 @@ pub(in crate::engine::api) async fn prepare_batch(
                 revision,
                 &existing,
             )?;
-            prepare_change(project.clone(), merged, kind, config, scope).await
+            let selected_kind = scoped_change(&kind, &merged.group);
+            prepare_change(project.clone(), merged, selected_kind, config, scope).await
         }
         .await;
         match result {
@@ -199,11 +234,23 @@ pub(in crate::engine::api) async fn prepare_batch(
     )?;
     // Recompute once against the same document generation. This catches cross-component
     // invariants and retains failed groups' existing intent, placements and exact selections.
+    let kind = scoped_change(&kind, &request.group);
     let prepared = prepare_change(project, request, kind, config, scope).await?;
     Ok(prepared.map(|mut prepared| {
         prepared.view.batch = Some(report);
         prepared
     }))
+}
+fn scoped_change(kind: &DependencyChange, group: &AdditionGroup) -> DependencyChange {
+    match kind {
+        DependencyChange::Update(pins) => DependencyChange::Update(
+            pins.iter()
+                .filter(|(key, _)| group.roots().contains_key(*key))
+                .map(|(key, pin)| (key.clone(), pin.clone()))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 fn merge(
     current: &ResolvedProject,

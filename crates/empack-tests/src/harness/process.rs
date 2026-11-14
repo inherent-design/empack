@@ -3,6 +3,20 @@ use std::process::{Command, Output};
 
 use crate::fixtures::WorkflowProjectFixture;
 
+/// Resolve the host JVM before a fixture places its own `java` first on PATH.
+pub fn java_bin() -> PathBuf {
+    let name = if cfg!(windows) { "java.exe" } else { "java" };
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        let program = PathBuf::from(home).join("bin").join(name);
+        assert!(program.is_file(), "JAVA_HOME must select an available JVM");
+        return program;
+    }
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| directory.join(name))
+        .find(|program| program.is_absolute() && program.is_file())
+        .expect("Bootstrap integration requires a JVM on PATH or at JAVA_HOME")
+}
+
 /// Resolve the empack binary path.
 ///
 /// Checks in order:
@@ -217,10 +231,8 @@ fn configure_environment(
     // Do not precreate state/cache: inspection and help tests need to observe
     // whether the product creates them. Every project gets independent paths.
     let home = workdir.join(".harness-home");
-    cmd.env("TMPDIR", workdir)
-        .env("TMP", workdir)
-        .env("TEMP", workdir)
-        .env("HOME", &home)
+    command_temp_dir(cmd, workdir);
+    cmd.env("HOME", &home)
         .env("USERPROFILE", &home)
         .env("APPDATA", home.join("roaming"))
         .env("LOCALAPPDATA", home.join("local"))
@@ -233,6 +245,13 @@ fn configure_environment(
         .env("LANG", "C")
         .env("LC_ALL", "C")
         .env("TZ", "UTC");
+}
+
+/// Select owned process scratch independently of an author/instance snapshot.
+pub fn command_temp_dir(command: &mut Command, directory: &Path) {
+    for key in ["TMPDIR", "TMP", "TEMP"] {
+        command.env(key, directory);
+    }
 }
 
 /// Return early from a test when Java is not in PATH.
@@ -430,7 +449,7 @@ pub fn expected_cli_version() -> String {
 pub fn expected_automation_version() -> String {
     let version = expected_cli_version();
     if version == "0.0.0-dev" {
-        "0.8.4-beta".to_owned()
+        "0.8.5-beta".to_owned()
     } else {
         version
     }
@@ -675,14 +694,8 @@ pub fn assert_pending_import_lifecycle(
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        diagnostic.contains("content obligations need explicit input"),
-        "{diagnostic}"
-    );
-    assert!(
-        diagnostic.contains("Import continuation was saved"),
-        "{diagnostic}"
-    );
+    assert!(diagnostic.contains("Import needs"), "{diagnostic}");
+    assert!(diagnostic.contains("Import was saved"), "{diagnostic}");
     let target_path = workdir.join(target);
     assert!(
         !target_path.exists(),
@@ -710,9 +723,27 @@ pub fn assert_pending_import_lifecycle(
         std::fs::metadata(&archive).unwrap().len(),
         record["archive_bytes"].as_u64().unwrap()
     );
+    let listed = empack_cmd(workdir)
+        .env("EMPACK_STATE_DIR", state)
+        .args(["--workdir", target, "pending", "list", "--json"])
+        .output()
+        .unwrap();
+    assert!(listed.status.success(), "{listed:?}");
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let operations = listed["operations"].as_array().unwrap();
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0]["kind"], "import");
+    let pending_id = operations[0]["id"].as_str().unwrap();
     let preview = empack_cmd(workdir)
         .env("EMPACK_STATE_DIR", state)
-        .args(["init", "--continue", "--dry-run", target])
+        .args([
+            "--workdir",
+            target,
+            "--dry-run",
+            "pending",
+            "resume",
+            pending_id,
+        ])
         .output()
         .unwrap();
     assert!(!preview.status.success());
@@ -721,10 +752,7 @@ pub fn assert_pending_import_lifecycle(
         String::from_utf8_lossy(&preview.stdout),
         String::from_utf8_lossy(&preview.stderr)
     );
-    assert!(
-        diagnostic.contains("content obligations need explicit input"),
-        "{diagnostic}"
-    );
+    assert!(diagnostic.contains("Import needs"), "{diagnostic}");
     assert_eq!(std::fs::read(&records[0]).unwrap(), original);
     assert!(!target_path.exists());
     for dry in [true, false] {

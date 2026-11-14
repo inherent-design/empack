@@ -720,6 +720,14 @@
       ]
     },
     {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_saved_import_uses_public_id_and_refuses_a_mutating_preview",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_relative_executable_is_bound_before_child_workdir_changes",
       "boundary": "H",
       "requirements": [
@@ -1972,6 +1980,8 @@
     {"id": "python::test_java_policy.JavaPolicyRefresh.test_corrupt_or_ambiguous_profiles_do_not_produce_policy", "boundary": "U", "requirements": ["UX-073"]},
     {"id": "python::test_java_policy.JavaPolicyRefresh.test_history_and_sparse_support_do_not_invent_compatibility", "boundary": "U", "requirements": ["UX-073"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements", "boundary": "U", "requirements": ["UX-088"]},
-    {"id": "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases", "boundary": "U", "requirements": ["UX-088"]}
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases", "boundary": "U", "requirements": ["UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations", "boundary": "U", "requirements": ["UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]}
   ]
 }

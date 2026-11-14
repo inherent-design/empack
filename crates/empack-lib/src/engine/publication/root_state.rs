@@ -3,6 +3,35 @@ use super::*;
 const ASSOCIATION: &str = "root-identity.json";
 const ASSOCIATION_LIMIT: u64 = 1024;
 const LOOKUP_ENTRIES: usize = 4096;
+
+/// Coordinates for records we cannot safely associate with a project. They grant
+/// no read, adoption or recovery authority over the records themselves.
+#[derive(Debug)]
+pub struct UnassociatedState {
+    pub project: std::path::PathBuf,
+    pub records: Vec<std::path::PathBuf>,
+}
+impl std::fmt::Display for UnassociatedState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Saved operations cannot be matched safely to this project"
+        )?;
+        writeln!(f, "Project: {:?}", self.project)?;
+        for path in self.records.iter().take(3) {
+            writeln!(f, "Missing directory identity: {path:?}")?;
+        }
+        if self.records.len() > 3 {
+            writeln!(
+                f,
+                "And {} more saved record directories",
+                self.records.len() - 3
+            )?;
+        }
+        f.write_str("Keep these records; they may contain unfinished changes. Use the empack version that created them to inspect that work before retrying; this version cannot adopt them safely.")
+    }
+}
+impl std::error::Error for UnassociatedState {}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Association {
@@ -78,7 +107,7 @@ impl Publisher {
             .context("Invalid native root key")?;
         let suffix = format!("-{suffix}");
         let mut selected = None;
-        let mut unresolved = false;
+        let mut unresolved = Vec::new();
         for (index, entry) in self.host.entries()?.enumerate() {
             ensure!(
                 index < LOOKUP_ENTRIES,
@@ -98,7 +127,13 @@ impl Publisher {
                 .open_dir_nofollow(name)
                 .with_context(|| format!("Cannot inspect native state directory {name}"))?;
             native::reject_reparse(&directory.try_clone()?.into_std_file())?;
-            match read(&directory)? {
+            let association = read(&directory).with_context(|| {
+                format!(
+                    "Cannot read saved operation association {:?}",
+                    self.location.join(name).join(ASSOCIATION)
+                )
+            })?;
+            match association {
                 Some(association) => {
                     if !matches(&association, name, root)? {
                         ensure!(
@@ -125,14 +160,18 @@ impl Publisher {
                         }
                     }
                     if name != current || !empty {
-                        unresolved = true;
+                        unresolved.push(self.location.join(name));
                     }
                 }
             }
         }
+        unresolved.sort();
         ensure!(
-            !unresolved,
-            "Incompatible native state may belong to this root but lacks persistent identity evidence; preserve it; this empack version cannot adopt its ownership evidence"
+            unresolved.is_empty(),
+            UnassociatedState {
+                project: root.selected().into(),
+                records: unresolved,
+            }
         );
         root.check_binding()?;
         Ok(selected)

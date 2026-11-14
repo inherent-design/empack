@@ -44,6 +44,8 @@ pub struct AddPreview {
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub existing_roots: BTreeSet<DependencyKey>,
     pub changed_selections: BTreeSet<DependencyKey>,
+    /// Explicit update pins changed, replacing automatic preferences; separate from installed selections.
+    pub author_pin_changes: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
     pub existing: ExistingDependencyPolicy,
     pub replaced: BTreeMap<DependencyKey, LockedDependency>,
     pub incomplete_evidence: Vec<DependencyKey>,
@@ -64,8 +66,10 @@ pub struct AddReceipt {
     pub references: BTreeSet<LockedFileKey>,
 }
 /// Exact replacement selections for explicitly requested installed identities. Resolution hosts
-/// supply the group; the engine preserves current authoring intent, including explicit pins.
+/// supply the group; the engine preserves authoring except explicitly requested pin changes.
 pub struct UpdateRequest {
+    /// Explicit new author pins, validated against the requested resolved selections.
+    pub pins: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
     pub source_revision: Option<crate::engine::project::ProjectRevision>,
     pub group: AdditionGroup,
     pub content: DependencyContents,
@@ -78,6 +82,8 @@ pub struct UpdatePreview {
     pub selected: BTreeSet<DependencyKey>,
     /// Selected roots whose exact pin or manual content assertions changed.
     pub changed_selections: BTreeSet<DependencyKey>,
+    /// Explicit update pins changed, replacing automatic preferences; separate from installed selections.
+    pub author_pin_changes: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
     /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
@@ -90,6 +96,7 @@ impl From<&AddPreview> for UpdatePreview {
             bindings: value.bindings.clone(),
             selected: value.existing_roots.clone(),
             changed_selections: value.changed_selections.clone(),
+            author_pin_changes: value.author_pin_changes.clone(),
             files: value.files.clone(),
             batch: value.batch.clone(),
             references: value.references.clone(),
@@ -103,6 +110,8 @@ pub struct UpdateReceipt {
     pub selected: BTreeSet<DependencyKey>,
     /// Selected roots whose exact pin or manual content assertions changed.
     pub changed_selections: BTreeSet<DependencyKey>,
+    /// Explicit update pins changed, replacing automatic preferences; separate from installed selections.
+    pub author_pin_changes: BTreeMap<DependencyKey, empack_core::identity::PinSelector>,
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
@@ -141,10 +150,10 @@ pub struct AdoptObservedReceipt {
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum DependencyChange {
     Add,
-    Update,
+    Update(BTreeMap<DependencyKey, empack_core::identity::PinSelector>),
     Adopt,
 }
 pub(super) struct PreparedAdditionOperation {
@@ -185,7 +194,7 @@ pub(super) async fn prepare_update(
             content: request.content,
             existing: ExistingDependencyPolicy::UpdateSameIdentity,
         },
-        DependencyChange::Update,
+        DependencyChange::Update(request.pins),
         config,
         scope,
     )
@@ -225,6 +234,11 @@ async fn prepare_change(
     let state = config.state_root.clone();
     let limits = config.snapshot;
     let policy = request.existing.clone();
+    let adopt = matches!(&kind, DependencyChange::Adopt);
+    let requested_pins = match &kind {
+        DependencyChange::Update(pins) => pins.clone(),
+        _ => BTreeMap::new(),
+    };
     let work = scope.spawn_blocking(config.resources.capture, config.resources.prepared, move |cancel| {
         let reader = ProjectReader::new(RecoveryReader::new(state));
         let snapshot = match kind {
@@ -236,22 +250,23 @@ async fn prepare_change(
             _ => reader.capture_addition(&project, &request.group, limits, &cancel)?,
         };
         snapshot.require_revision(request.source_revision)?;
+        let author_pin_changes = requested_pins.into_iter().filter(|(key, pin)| snapshot.workspace().intent().intent().roots.get(key).is_some_and(|root| root.selection != empack_core::model::DependencySelection::ProviderPin(pin.clone()))).collect::<BTreeMap<_, _>>();
         let planned = match kind {
             DependencyChange::Add => match &request.existing {
                 ExistingDependencyPolicy::ReplaceSelected(selection) => native_addition::plan_replacement(snapshot, &request.group, request.content, selection, &cancel)?,
                 _ => native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?,
             },
-            DependencyChange::Update => native_addition::plan_update(snapshot, &request.group, request.content, &cancel)?,
+            DependencyChange::Update(pins) => native_addition::plan_update(snapshot, &request.group, request.content, &pins, &cancel)?,
             DependencyChange::Adopt => native_addition::plan_adoption(snapshot, &request.group, &cancel)?,
         };
         ensure!(request.existing != ExistingDependencyPolicy::RejectExisting || planned.candidate().plan().existing_roots().is_empty(), "Requested dependency already exists; updating the same identity requires explicit authorization");
-        Ok::<_, anyhow::Error>(planned)
+        Ok::<_, anyhow::Error>((planned, author_pin_changes))
     })?;
     let planned = scope.accept(work.wait().await?)?.transpose()?;
-    let (resources, retained) = project_change::resources(planned.bytes()?, config)?;
+    let (resources, retained) = project_change::resources(planned.0.bytes()?, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
-        let (planned, _reservation) = planned.into_parts();
-        let adoption = if matches!(kind, DependencyChange::Adopt) {
+        let ((planned, author_pin_changes), _reservation) = planned.into_parts();
+        let adoption = if adopt {
             let next = planned.candidate().project().lock();
             planned
                 .candidate()
@@ -331,6 +346,7 @@ async fn prepare_change(
             bindings: addition.candidate().plan().bindings().clone(),
             existing_roots: addition.candidate().plan().existing_roots().clone(),
             changed_selections,
+            author_pin_changes,
             replaced: addition.candidate().plan().replaced().clone(),
             incomplete_evidence: addition.candidate().plan().incomplete_evidence().to_vec(),
             existing: policy,
@@ -390,12 +406,14 @@ pub(super) async fn run_update(
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let selected = prepared.view.existing_roots.clone();
     let changed_selections = prepared.view.changed_selections.clone();
+    let author_pin_changes = prepared.view.author_pin_changes.clone();
     let convert = |receipt: Box<RetainedOutput<AddReceipt>>| {
         ExecutionReceipt::Update(Box::new(receipt.map(|value| UpdateReceipt {
             batch: value.batch,
             plan: value.plan,
             selected,
             changed_selections,
+            author_pin_changes,
             publication: value.publication,
             project: value.project,
             bindings: value.bindings,
@@ -460,9 +478,11 @@ async fn execute(
         })?;
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
+    let progress = scope.progress_reporter();
     let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
         cancel.check()?;
         let (prepared, _reservation) = prepared.into_parts();
+        progress(WorkProgress::PublishingChanges);
         let receipt = prepared
             .addition
             .publish(&Publisher::open(&config.state_root)?, &cancel)?;

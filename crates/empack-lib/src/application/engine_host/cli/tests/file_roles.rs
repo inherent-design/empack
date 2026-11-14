@@ -472,9 +472,11 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     let before = crate::test_support::file_bytes(&root.path().join("project"));
     update::update_with_services(
         &session(root.path(), true),
-        vec![key.as_str().into()],
-        None,
-        BatchPolicy::AllRequested,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec![key.as_str().into()],
+            apply: false,
+            ..Default::default()
+        },
         services(),
     )
     .await
@@ -487,9 +489,11 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     let bindings = fs::read(root.path().join("project/empack.bindings.yml")).unwrap();
     update::update_with_services(
         &session(root.path(), false),
-        vec![key.as_str().into()],
-        None,
-        BatchPolicy::AllRequested,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec![key.as_str().into()],
+            apply: true,
+            ..Default::default()
+        },
         services(),
     )
     .await

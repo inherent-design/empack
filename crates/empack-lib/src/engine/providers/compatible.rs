@@ -68,7 +68,7 @@ impl ProviderResolution {
                 .iter()
                 .any(|value| value == game.as_str()))
                 && loader_matches(
-                    self,
+                    &self.loaders,
                     &CompatibleRequest {
                         project: self.pin.project.clone(),
                         kind,
@@ -100,18 +100,38 @@ pub struct CatalogAssessment {
     pub observed_records: usize,
     _pages: Vec<RetainedOutput<Page>>,
 }
+#[derive(Clone, Copy)]
+pub(super) enum CatalogScanMode {
+    Resolve,
+    Observe,
+    Choose,
+}
+impl CatalogAssessment {
+    /// Runtime-eligible observations from a complete bounded choice scan. An exact
+    /// deliberate pin may override release preference, but never runtime admission.
+    pub(super) fn choices(&self) -> Vec<SelectionObservation> {
+        let mut choices: Vec<_> = self._pages.iter().flat_map(|page| &page.choices).collect();
+        choices.sort_by(|a, b| a.0.cmp(&b.0));
+        choices
+            .into_iter()
+            .map(|(_, observation)| observation.clone())
+            .collect()
+    }
+}
 struct CatalogScan {
     pages: Vec<RetainedOutput<Page>>,
     best: Option<(usize, usize)>,
     count: usize,
     budget: transport::RequestBudget,
 }
+type SelectionRank = (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin);
 type ObservationRank = (usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin);
 struct Candidate {
     selected: CompatibleSelection,
-    rank: (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin),
+    rank: SelectionRank,
 }
 struct Page {
+    choices: Vec<(SelectionRank, SelectionObservation)>,
     candidates: Vec<Candidate>,
     policy_observation: Option<SelectionObservation>,
     compatible: Option<(ObservationRank, SelectionObservation)>,
@@ -160,7 +180,14 @@ impl ProviderCatalog {
         transport::RequestBudget,
     )> {
         let mut scan = self
-            .scan_catalog(scope, request, limits, budget, false)
+            .scan_catalog(
+                scope,
+                request,
+                limits,
+                budget,
+                CatalogScanMode::Resolve,
+                None,
+            )
             .await?;
         let (page, candidate) = scan.best.ok_or(CatalogError::NoCompatibleSelection)?;
         Ok((
@@ -183,6 +210,8 @@ impl ProviderCatalog {
             request,
             limits,
             transport::RequestBudget::new(limits.catalog)?,
+            None,
+            CatalogScanMode::Observe,
         )
         .await
         .map(|value| value.0)
@@ -193,9 +222,11 @@ impl ProviderCatalog {
         request: CompatibleRequest,
         limits: SelectionLimits,
         budget: transport::RequestBudget,
+        progress: Option<&(dyn Fn(usize) + Sync)>,
+        mode: CatalogScanMode,
     ) -> Result<(CatalogAssessment, transport::RequestBudget)> {
         let scan = self
-            .scan_catalog(scope, request, limits, budget, true)
+            .scan_catalog(scope, request, limits, budget, mode, progress)
             .await?;
         let permitted = scan
             .best
@@ -229,7 +260,8 @@ impl ProviderCatalog {
         request: CompatibleRequest,
         limits: SelectionLimits,
         budget: transport::RequestBudget,
-        all_versions: bool,
+        mode: CatalogScanMode,
+        progress: Option<&(dyn Fn(usize) + Sync)>,
     ) -> Result<CatalogScan> {
         ensure!(
             limits.candidates > 0 && limits.pages > 0,
@@ -274,7 +306,7 @@ impl ProviderCatalog {
             .filter(|value| unique_games.insert(value.clone()))
             .collect();
         // CurseForge accepts one gameVersion filter. Modrinth accepts the whole explicit list.
-        let queries = if all_versions {
+        let queries = if !matches!(mode, CatalogScanMode::Resolve) {
             vec![Vec::new()]
         } else {
             match &request.project {
@@ -322,8 +354,9 @@ impl ProviderCatalog {
                     retained,
                     move |cancel| {
                         let ((bytes, budget), _permit) = raw.into_parts();
-                        let page =
-                            parse_page(&project, &request, &bytes, index, remaining, &cancel)?;
+                        let page = parse_page(
+                            mode, &project, &request, &bytes, index, remaining, &cancel,
+                        )?;
                         Ok::<_, anyhow::Error>((page, budget))
                     },
                 )?;
@@ -335,16 +368,30 @@ impl ProviderCatalog {
                 });
                 budget = next_budget.expect("parsed page returns its budget");
                 count = count.checked_add(page.count).ok_or(CatalogError::Limit)?;
+                if let Some(progress) = progress {
+                    progress(count);
+                }
                 if let Some(previous) = total {
-                    ensure!(page.total == Some(previous), CatalogError::InvalidRecord);
+                    ensure!(
+                        page.total == Some(previous),
+                        record_error("pagination.totalCount", RecordInvariant::Pagination)
+                    );
                 }
                 total = page.total;
                 let next = page.next;
                 let page_index = pages.len();
                 for (pin, fingerprint) in &page.seen {
-                    ensure!(query_seen.insert(pin.clone()), CatalogError::InvalidRecord);
+                    ensure!(
+                        query_seen.insert(pin.clone()),
+                        record_error("id", RecordInvariant::UniqueSelection)
+                            .context(selection_context(pin))
+                    );
                     if let Some(previous) = seen.insert(pin.clone(), *fingerprint) {
-                        ensure!(previous == *fingerprint, CatalogError::InvalidRecord);
+                        ensure!(
+                            previous == *fingerprint,
+                            record_error("id", RecordInvariant::ConsistentSelection)
+                                .context(selection_context(pin))
+                        );
                     }
                 }
                 // Keep admitted pages alive through comparison; never select from a truncated list.
@@ -456,6 +503,7 @@ struct CurseForgePage {
     pagination: Pagination,
 }
 fn parse_page(
+    mode: CatalogScanMode,
     project: &CanonicalProject,
     request: &CompatibleRequest,
     bytes: &[u8],
@@ -478,11 +526,11 @@ fn parse_page(
                     && pagination.result_count == page.data.len()
                     && page.data.len() <= pagination.page_size
                     && end <= pagination.total_count,
-                CatalogError::InvalidRecord
+                record_error("pagination", RecordInvariant::Pagination)
             );
             ensure!(
                 !page.data.is_empty() || end == pagination.total_count,
-                CatalogError::InvalidRecord
+                record_error("pagination", RecordInvariant::Pagination)
             );
             (
                 page.data,
@@ -493,6 +541,7 @@ fn parse_page(
     };
     ensure!(values.len() <= maximum, CatalogError::Limit);
     let count = values.len();
+    let mut choices = Vec::new();
     let mut candidates = Vec::new();
     let mut policy_observation = None;
     let mut compatible: Option<(ObservationRank, SelectionObservation)> = None;
@@ -502,12 +551,20 @@ fn parse_page(
         cancel.check()?;
         let (pin, published, channel, available) = match &project.id {
             ProviderProjectId::Modrinth(_) => {
-                let pin = project.id.parse_pin(text_field(&value, "id")?)?;
+                let pin = project
+                    .id
+                    .parse_pin(text_field(&value, "id")?)
+                    .map_err(|_| record_error("id", RecordInvariant::CanonicalIdentity))?;
                 let channel = match text_field(&value, "version_type")? {
                     "release" => ReleaseChannel::Release,
                     "beta" => ReleaseChannel::Beta,
                     "alpha" => ReleaseChannel::Alpha,
-                    _ => return Err(CatalogError::InvalidRecord.into()),
+                    _ => {
+                        return Err(record_error(
+                            "version_type",
+                            RecordInvariant::RecognizedValue,
+                        ));
+                    }
                 };
                 let status = text_field(&value, "status")?;
                 ensure!(
@@ -515,7 +572,7 @@ fn parse_page(
                         status,
                         "listed" | "archived" | "draft" | "unlisted" | "scheduled" | "unknown"
                     ),
-                    CatalogError::InvalidRecord
+                    record_error("status", RecordInvariant::RecognizedValue)
                 );
                 (
                     pin,
@@ -528,13 +585,21 @@ fn parse_page(
                 let id = value
                     .get("id")
                     .and_then(Value::as_u64)
-                    .ok_or(CatalogError::InvalidRecord)?;
-                let pin = project.id.parse_pin(&id.to_string())?;
+                    .ok_or_else(|| record_error("id", RecordInvariant::JsonType))?;
+                let pin = project
+                    .id
+                    .parse_pin(&id.to_string())
+                    .map_err(|_| record_error("id", RecordInvariant::CanonicalIdentity))?;
                 let channel = match value.get("releaseType").and_then(Value::as_u64) {
                     Some(1) => ReleaseChannel::Release,
                     Some(2) => ReleaseChannel::Beta,
                     Some(3) => ReleaseChannel::Alpha,
-                    _ => return Err(CatalogError::InvalidRecord.into()),
+                    _ => {
+                        return Err(record_error(
+                            "releaseType",
+                            RecordInvariant::RecognizedValue,
+                        ));
+                    }
                 };
                 (
                     pin,
@@ -543,7 +608,7 @@ fn parse_page(
                     value
                         .get("isAvailable")
                         .and_then(Value::as_bool)
-                        .ok_or(CatalogError::InvalidRecord)?,
+                        .ok_or_else(|| record_error("isAvailable", RecordInvariant::JsonType))?,
                 )
             }
         };
@@ -551,22 +616,36 @@ fn parse_page(
             project: project.id.clone(),
             selection: pin,
         };
-        let date =
-            OffsetDateTime::parse(&published, &Rfc3339).map_err(|_| CatalogError::InvalidRecord)?;
+        let date = OffsetDateTime::parse(&published, &Rfc3339).map_err(|_| {
+            record_error(
+                if matches!(project.id, ProviderProjectId::Modrinth(_)) {
+                    "date_published"
+                } else {
+                    "fileDate"
+                },
+                RecordInvariant::Timestamp,
+            )
+        })?;
         let fingerprint = fingerprint(&project.id, &value)?;
         seen.push((pin.clone(), fingerprint));
         // Unavailable records remain identity observations, not downloadable selections.
         // Providers may omit their payload evidence; that cannot poison an eligible sibling.
-        let owned = match &project.id {
-            ProviderProjectId::Modrinth(id) => {
-                value.get("project_id").and_then(Value::as_str) == Some(id.as_str())
-            }
+        match &project.id {
+            ProviderProjectId::Modrinth(id) => ensure!(
+                value.get("project_id").and_then(Value::as_str) == Some(id.as_str()),
+                identity_error("project_id").context(selection_context(&pin))
+            ),
             ProviderProjectId::CurseForge(id) => {
-                value.get("modId").and_then(Value::as_u64) == Some(id.get())
-                    && value.get("gameId").and_then(Value::as_u64) == Some(432)
+                ensure!(
+                    value.get("modId").and_then(Value::as_u64) == Some(id.get()),
+                    identity_error("modId").context(selection_context(&pin))
+                );
+                ensure!(
+                    value.get("gameId").and_then(Value::as_u64) == Some(432),
+                    identity_error("gameId").context(selection_context(&pin))
+                );
             }
-        };
-        ensure!(owned, CatalogError::Identity);
+        }
         if !available {
             continue;
         }
@@ -580,23 +659,11 @@ fn parse_page(
                 .and_then(Value::as_str)
                 .map(str::to_owned),
         };
-        let resolution = match &project.id {
-            ProviderProjectId::Modrinth(_) => {
-                modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)
-                    .with_context(|| {
-                        format!(
-                            "Invalid Modrinth version {} in project {}",
-                            ObservedVersion::from_pin(&pin).selection,
-                            project.id
-                        )
-                    })?
-            }
-            ProviderProjectId::CurseForge(_) => curseforge::selection(
-                project.clone(),
-                &pin,
-                &serde_json::to_vec(&serde_json::json!({"data":value}))?,
-            )?,
-        };
+        // Catalog identity/runtime metadata is evidence even for other game
+        // versions. File-placement admission belongs to eligible candidates and
+        // exact selection, not an unrelated historical payload.
+        let metadata =
+            version_environment(project, &value).with_context(|| selection_context(&pin))?;
         let rank = (0, std::cmp::Reverse(date), pin.clone());
         if upstream.as_ref().is_none_or(|previous| rank < previous.0) {
             upstream = Some((rank, observation.clone()));
@@ -605,18 +672,41 @@ fn parse_page(
             .game_versions
             .as_slice()
             .iter()
-            .position(|game| resolution.game_versions.iter().any(|v| v == game.as_str()))
+            .position(|game| metadata.game_versions.iter().any(|v| v == game.as_str()))
         else {
             continue;
         };
-        if !resolution.kinds.as_slice().contains(&request.kind)
-            || !loader_matches(&resolution, request)
+        if !metadata.kinds.as_slice().contains(&request.kind)
+            || !loader_matches(&metadata.loaders, request)
         {
             continue;
         }
+        let resolution = match &project.id {
+            ProviderProjectId::Modrinth(_) => {
+                modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)
+            }
+            ProviderProjectId::CurseForge(_) => curseforge::selection(
+                project.clone(),
+                &pin,
+                &serde_json::to_vec(&serde_json::json!({"data":value}))?,
+            ),
+        }?;
         let rank = (game, std::cmp::Reverse(date), pin.clone());
         if compatible.as_ref().is_none_or(|previous| rank < previous.0) {
             compatible = Some((rank, observation.clone()));
+        }
+        if matches!(mode, CatalogScanMode::Choose) {
+            let preference = match (request.releases, channel) {
+                (
+                    ReleasePolicy::PreferStable | ReleasePolicy::StableOnly,
+                    ReleaseChannel::Beta | ReleaseChannel::Alpha,
+                ) => 1,
+                _ => 0,
+            };
+            choices.push((
+                (preference, game, std::cmp::Reverse(date), pin.clone()),
+                observation.clone(),
+            ));
         }
         let channel_rank = match (request.releases, channel) {
             (ReleasePolicy::StableOnly, ReleaseChannel::Beta | ReleaseChannel::Alpha) => continue,
@@ -643,6 +733,7 @@ fn parse_page(
         }
     }
     Ok(Page {
+        choices,
         candidates,
         policy_observation,
         compatible,
@@ -668,14 +759,51 @@ fn project_storage(project: &CanonicalProject) -> Result<u64> {
             .ok_or_else(|| CatalogError::Limit.into())
     })
 }
-fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
+fn text_field<'a>(value: &'a Value, name: &'static str) -> Result<&'a str> {
     value
         .get(name)
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::Error::from(CatalogError::InvalidRecord))
-        .with_context(|| format!("Invalid provider field {name}"))
+        .ok_or_else(|| record_error(name, RecordInvariant::JsonType))
 }
-pub(super) fn loader_matches(resolution: &ProviderResolution, request: &CompatibleRequest) -> bool {
+struct VersionEnvironment {
+    kinds: NonEmpty<ContentKind>,
+    game_versions: Vec<String>,
+    loaders: Vec<String>,
+}
+fn version_environment(project: &CanonicalProject, value: &Value) -> Result<VersionEnvironment> {
+    let strings = |field: &'static str| -> Result<Vec<String>> {
+        value
+            .get(field)
+            .and_then(Value::as_array)
+            .ok_or_else(|| record_error(field, RecordInvariant::JsonType))?
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| record_error(field, RecordInvariant::JsonType))
+            })
+            .collect()
+    };
+    let (game_versions, loaders) = match project.id {
+        ProviderProjectId::Modrinth(_) => (strings("game_versions")?, strings("loaders")?),
+        ProviderProjectId::CurseForge(_) => {
+            let versions = strings("gameVersions")?;
+            let loaders = curseforge::loader_labels(&versions);
+            (versions, loaders)
+        }
+    };
+    let kinds = if matches!(project.id, ProviderProjectId::Modrinth(_)) {
+        modrinth::version_kinds(project, &loaders)?
+    } else {
+        project.kinds.clone()
+    };
+    Ok(VersionEnvironment {
+        kinds,
+        game_versions,
+        loaders,
+    })
+}
+pub(super) fn loader_matches(loaders: &[String], request: &CompatibleRequest) -> bool {
     match request.kind {
         ContentKind::Mod => {
             let loader = match request.loader {
@@ -685,7 +813,7 @@ pub(super) fn loader_matches(resolution: &ProviderResolution, request: &Compatib
                 LoaderKind::Forge => "forge",
                 LoaderKind::NeoForge => "neoforge",
             };
-            resolution.loaders.iter().any(|value| value == loader)
+            loaders.iter().any(|value| value == loader)
         }
         // Game-specific files are not rejected merely because the pack uses a mod loader.
         // Shader backend/environment facts remain visible for the planner's placement decisions.

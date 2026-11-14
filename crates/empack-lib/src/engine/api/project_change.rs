@@ -274,12 +274,14 @@ async fn execute(
     let mut publication_resources = config.resources.assembly;
     publication_resources.scratch_bytes =
         publication_resources.scratch_bytes.max(publication_bytes);
+    let progress = scope.progress_reporter();
     let work = scope.spawn_blocking(
         publication_resources,
         config.resources.receipt,
         move |cancel| {
             cancel.check()?;
             let (prepared, _reservation) = prepared.into_parts();
+            progress(WorkProgress::PublishingChanges);
             let receipt = prepared
                 .replacement
                 .publish(&Publisher::open(&config.state_root)?, &cancel)?;

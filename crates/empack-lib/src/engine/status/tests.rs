@@ -105,7 +105,6 @@ fn status_reports_native_instance_version_side_and_root_binding() {
         assert_eq!(instance.version.as_deref(), Some("2.3.0"));
         assert_eq!(instance.game_directory.as_deref(), Some(layout.directory()));
         assert!(instance.update_owner.starts_with("snapshot"));
-        assert!(value.text().contains("fixture-pack 2.3.0"));
         assert!(!state.exists());
         let path = root.path().join(".empack/instance.json");
         let mut record: InstanceRecord = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -133,8 +132,8 @@ fn status_reports_pending_presence_without_validating_or_rewriting_it() {
         }
     }
     for (kind, next, completed_instance) in [
-        (Kind::Import, ["init", "--continue"], false),
-        (Kind::Instance, ["instance", "continue"], true),
+        (Kind::Import, ["pending", "list"], false),
+        (Kind::Instance, ["pending", "list"], true),
     ] {
         let parent = tempfile::tempdir().unwrap();
         let root = parent.path().join("project");

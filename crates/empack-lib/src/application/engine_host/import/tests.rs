@@ -722,9 +722,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         ImportLimits::default(),
     )
     .await;
-    assert!(
-        format!("{:#}", result.unwrap_err()).contains("content obligations need explicit input")
-    );
+    assert!(format!("{:#}", result.unwrap_err()).contains("Import needs"));
     assert!(!root.path().join("project").exists());
     let records = || {
         fs::read_dir(root.path().join("state/pending-imports"))
@@ -735,6 +733,17 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     };
     assert_eq!(records().len(), 1);
     let saved_path = records().pop().unwrap();
+    let saved_id = crate::engine::pending::inspect(
+        &root.path().join("state"),
+        &root.path().join("project"),
+        &Default::default(),
+    )
+    .unwrap()
+    .operations
+    .into_iter()
+    .find(|operation| operation.kind == crate::engine::pending::PendingKind::Import)
+    .unwrap()
+    .id;
     let pending_tree = crate::test_support::file_bytes(root.path());
     super::super::clean(&session(root.path(), true, true), &["import".into()])
         .await
@@ -751,9 +760,21 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         filename: "fixture.jar".into(),
     };
     let before_resume = crate::test_support::file_bytes(root.path());
+    let mismatched = import_with_services(
+        &session(root.path(), true, false),
+        request(ImportSource::Saved("0".repeat(64)), false),
+        |_| panic!("changed saved identity must not reach conversion"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{mismatched:#}").contains("Selected pending import changed"));
+    assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
     let preview = import_with_services(
         &session(root.path(), true, true),
-        request(ImportSource::Saved, false),
+        request(ImportSource::Saved(saved_id.clone()), false),
         |_| panic!("pending preview must not convert"),
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         HttpAcquisition::for_loopback_tests(),
@@ -762,7 +783,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     .await;
     assert!(preview.is_err());
     assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
-    let mut wrong = request(ImportSource::Saved, false);
+    let mut wrong = request(ImportSource::Saved(saved_id.clone()), false);
     wrong.supplied.insert(key.clone(), observed(b"changed"));
     let wrong = import_with_services(
         &session(root.path(), true, false),
@@ -779,7 +800,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         "wrong supplied bytes created an import destination"
     );
     assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
-    let mut selected = request(ImportSource::Saved, false);
+    let mut selected = request(ImportSource::Saved(saved_id.clone()), false);
     selected.supplied.insert(key.clone(), observed(b"payload"));
     let decide = |content: &VerifiedImportContent| -> Result<ImportCandidateOptions> {
         assert_eq!(content.content().len(), 3);
@@ -841,7 +862,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     // Supplying restricted bytes grants no permission to discard their provider
     // identity. Neither a local-file nor URL conversion may publish the draft.
     for persistence in [ImportPersistence::Local, ImportPersistence::Url] {
-        let mut invalid = request(ImportSource::Saved, false);
+        let mut invalid = request(ImportSource::Saved(saved_id.clone()), false);
         invalid.supplied.insert(key.clone(), observed(b"payload"));
         let rejected = import_with_services(
             &session(root.path(), true, false),
@@ -1224,9 +1245,22 @@ async fn restricted_provider_archive_accepts_only_matching_explicit_manual_bytes
 }
 
 #[tokio::test]
-async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
+async fn shared_pending_import_preserves_interpretation_and_replacement_choices() {
     use crate::application::cli::PendingCommand;
     let root = tempfile::tempdir().unwrap();
+    crate::application::engine_host::initialize(
+        &session(root.path(), true, false),
+        &crate::application::InitArgs {
+            mc_version: Some("1.21.1".into()),
+            modloader: Some("none".into()),
+            pack_name: Some("Existing".into()),
+            pack_version: Some("1".into()),
+            author: Some("Tester".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let manifest = json!({"formatVersion":1,"game":"minecraft","name":"Imported","versionId":"1","dependencies":{"minecraft":"1.21.1"},"files":[{
         "path":"config/example.txt", "fileSize":7, "downloads":["http://example.invalid/manual"],
         "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(sha2::Sha512::digest(b"payload").into()).hex()},
@@ -1237,18 +1271,18 @@ async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
         archive_with_manifest(
             "modrinth.index.json",
             &serde_json::to_vec(&manifest).unwrap(),
-            &[],
+            &[("author-notes.txt", b"retain source; explicit exclusion")],
         ),
     )
     .unwrap();
     let error = import(
         &session(root.path(), true, false),
-        request(local("source.mrpack"), false),
+        request(local("source.mrpack"), true),
         decisions,
     )
     .await
     .unwrap_err();
-    assert!(format!("{error:#}").contains("content obligations need explicit input"));
+    assert!(format!("{error:#}").contains("Import needs"));
     fs::remove_file(root.path().join("source.mrpack")).unwrap();
     let view = crate::engine::pending::inspect(
         &root.path().join("state"),
@@ -1262,21 +1296,115 @@ async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
     );
     assert!(!view.operations[0].requirements_complete);
     fs::write(root.path().join("selected.bin"), b"payload").unwrap();
-    crate::application::engine_host::pending::dispatch(
+    let options = crate::application::cli::PendingImportOptions {
+        import_local_files: true,
+        exclude_auxiliary: true,
+        replace_project: true,
+        mc_version: Some("1.21.1".into()),
+        modloader: Some("none".into()),
+        java: Some(21),
+        pack_name: Some("Resumed Ω 日本".into()),
+        pack_version: Some("2".into()),
+        author: Some("Tester".into()),
+        world_folder: Some("saves".into()),
+        datapack_folder: Some("datapacks".into()),
+        game_versions: Some(vec!["1.21.2".into()]),
+        ..Default::default()
+    };
+    let command = |options| PendingCommand::Resume {
+        import_options: Box::new(options),
+        id: view.operations[0].id.clone(),
+        files: vec!["declared:0=selected.bin".into()],
+        downloads_dir: None,
+        wait_downloads: None,
+        open_downloads: false,
+    };
+    let before = crate::test_support::file_bytes(root.path());
+    let mut wait = command(options.clone());
+    let PendingCommand::Resume {
+        wait_downloads,
+        downloads_dir,
+        open_downloads,
+        ..
+    } = &mut wait
+    else {
+        unreachable!()
+    };
+    *wait_downloads = Some(1);
+    *downloads_dir = Some("nonexistent-downloads".into());
+    *open_downloads = true;
+    let error = crate::application::engine_host::pending::dispatch(
         &session(root.path(), true, false),
-        PendingCommand::Resume {
-            import_options: crate::application::cli::PendingImportOptions {
-                import_local_files: true,
-                ..Default::default()
-            },
-            id: view.operations[0].id.clone(),
-            files: vec!["declared:0=selected.bin".into()],
-            downloads_dir: None,
-            open_downloads: false,
-        },
+        wait,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Usage
+    );
+    assert!(
+        format!("{error:#}").contains("available for saved builds"),
+        "{error:#}"
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    let mut without_replacement = options.clone();
+    without_replacement.replace_project = false;
+    let error = crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        command(without_replacement),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("replacement requires an explicit decision"),
+        "{error:#}"
+    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, true),
+        command(options.clone()),
     )
     .await
     .unwrap();
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), false, false),
+        command(options.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        command(options),
+    )
+    .await
+    .unwrap();
+    let project = read(&root.path().join("project"));
+    assert_eq!(project.intent().metadata.name, "Resumed Ω 日本");
+    assert_eq!(project.intent().metadata.version, "2");
+    assert_eq!(project.intent().metadata.authors, ["Tester"]);
+    assert_eq!(project.intent().runtime.java_major, 21);
+    assert_eq!(project.intent().runtime.minecraft.as_str(), "1.21.1");
+    assert_eq!(
+        project
+            .intent()
+            .runtime
+            .acceptable_versions
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+        ["1.21.2"]
+    );
+    assert_eq!(
+        project.intent().layout[&ContentKind::World].as_str(),
+        "saves"
+    );
+    assert_eq!(
+        project.intent().layout[&ContentKind::DataPack].as_str(),
+        "datapacks"
+    );
     assert_eq!(
         fs::read(root.path().join("project/pack/config/example.txt")).unwrap(),
         b"payload"

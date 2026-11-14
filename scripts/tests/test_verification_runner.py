@@ -551,6 +551,15 @@ class AttemptPolicy(unittest.TestCase):
                     f'[package]\nname = "{name}"\nversion.workspace = true\nedition = "2024"\n' + dependency)
             (root / "empack/src/main.rs").write_text(
                 'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }\n')
+            from test_product_build import fixture_bootstrap
+            (root / "bootstrap/src/main").mkdir(parents=True)
+            for name in ("pom.xml", "mise.toml"):
+                (root / "bootstrap" / name).write_text("synthetic input")
+            fixture_bootstrap(root)
+            from verification.evidence import sha256
+            digest = sha256(root / "bootstrap/target/empack-bootstrap.jar")
+            (root / "empack-lib/build.rs").write_text(
+                'fn main() { println!("cargo:rustc-env=EMPACK_BOOTSTRAP_SHA256=' + digest + '"); }')
             import subprocess
             lock = subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, capture_output=True, text=True)
             self.assertEqual(lock.returncode, 0, lock.stderr)
@@ -558,10 +567,13 @@ class AttemptPolicy(unittest.TestCase):
             attempt.mkdir()
             args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,
                                    product_features="default", product_profile="release", suites=["cli"])
+            target_base = root / "shared build space Ω"
             with patch("verify.ROOT", root):
-                artifact = product(args, attempt, dict(os.environ), "fixture-host")
+                artifact = product(args, attempt, dict(os.environ, CARGO_TARGET_DIR=str(target_base)), "fixture-host")
             self.assertEqual(artifact["profile"], "release")
             self.assertEqual(Path(artifact["path"]).parent.name, "release")
+            self.assertEqual(Path(artifact["path"]).parent.parent.parent, (target_base / "verification-product").resolve())
+            self.assertFalse((root / "target").exists(), "configured target must not create another build tree")
             self.assertEqual(artifact["version"], "1.2.3")
             self.assertIn("release", (attempt / "product-build.log").read_text())
             self.assertEqual((attempt / "product-version.log").read_text().strip(), "empack 1.2.3")

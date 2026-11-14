@@ -40,11 +40,13 @@ fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
             .unwrap(),
         root.canonicalize().unwrap()
     );
-    assert!(outputs[1].contains("Metadata inspection only; content bytes have not been verified."));
-    // Both renderings must retain findings and actionable argument sequences.
+    // Human output keeps actionable findings; machine-only codes remain in JSON.
     for finding in report["findings"].as_array().unwrap() {
-        assert!(outputs[1].contains(finding["code"].as_str().unwrap()));
-        assert!(outputs[1].contains(finding["message"].as_str().unwrap()));
+        let code = finding["code"].as_str().unwrap();
+        if !matches!(code, "context-not-ready" | "lock-not-current") {
+            assert!(outputs[1].contains(finding["message"].as_str().unwrap()));
+        }
+        assert!(!outputs[1].contains(&format!("{code}:")));
         let next: Vec<_> = finding["next"]
             .as_array()
             .unwrap()
@@ -52,10 +54,7 @@ fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
             .map(|part| part.as_str().unwrap())
             .collect();
         if !next.is_empty() {
-            assert!(outputs[1].contains(&format!(
-                "Next in this workspace: empack {}",
-                next.join(" ")
-            )));
+            assert!(outputs[1].contains(&format!("Next: empack {}", next.join(" "))));
         }
     }
     (report, outputs.remove(1))
@@ -120,7 +119,7 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             assert!(contexts.is_empty());
             assert!(report["selected"].is_null());
             assert!(finding(&report, "workspace-empty"));
-            assert!(text.contains("Next in this workspace: empack init --help"));
+            assert!(text.contains("Next: empack init --help"));
             continue;
         }
         assert_eq!(report["selected"], "author");
@@ -132,7 +131,7 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             assert!(author["lock"].is_null());
             assert!(author["name"].is_null());
             assert!(finding(&report, "context-not-ready"));
-            assert!(text.contains("Author: Invalid"));
+            assert!(text.contains("Project: invalid"));
             continue;
         }
         assert_eq!(author["state"], "valid");
@@ -144,16 +143,15 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             if state == "stale" { "1.21.2" } else { "1.21.1" }
         );
         assert_eq!(author["loader"], "Vanilla");
-        assert!(text.contains("Author: Valid"));
-        assert!(text.contains("Pack: Verification Pack 1.0.0"));
+        assert!(text.starts_with("Project: Verification Pack 1.0.0\n"));
         let label = match state {
-            "missing" => "Missing",
-            "invalid" => "Invalid",
-            "stale" => "Stale",
-            "valid" => "Valid",
+            "missing" => "not found",
+            "invalid" => "invalid",
+            "stale" => "needs sync",
+            "valid" => "current",
             _ => unreachable!(),
         };
-        assert!(text.contains(&format!("Resolution lock: {label}")));
+        assert!(text.contains(&format!("Lock: {label}")));
         assert_eq!(finding(&report, "lock-not-current"), state != "valid");
         if state == "valid" {
             let digest: String = Sha256::digest(fs::read(root.join("empack.lock")).unwrap())
@@ -161,10 +159,11 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
                 .map(|byte| format!("{byte:02x}"))
                 .collect();
             assert_eq!(author["exact"], digest);
-            assert!(text.contains(&format!("Lock document SHA-256: {digest}")));
+            assert!(!text.contains(&digest));
+            assert!(text.contains("File contents have not been checked."));
         } else {
             assert!(author["exact"].is_null());
-            assert!(text.contains("Next in this workspace: empack --dry-run sync"));
+            assert!(text.contains("Next: empack --dry-run sync"));
         }
     }
 }
@@ -175,7 +174,7 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
     let root = project.dir();
     // Explicit selection distinguishes missing contexts from an undetected workspace.
     for (context, label) in [
-        ("author", "Author"),
+        ("author", "Project"),
         ("instance", "Instance"),
         ("publisher", "Publisher"),
     ] {
@@ -185,7 +184,7 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
         assert_eq!(report["contexts"][0]["state"], "missing");
         assert!(finding(&report, "context-not-ready"));
         assert!(!finding(&report, "workspace-empty"));
-        assert!(text.contains(&format!("{label}: Missing")));
+        assert!(text.contains(&format!("{label}: not found")));
     }
     fs::write(root.join("empack.yml"), b"schema: [invalid\n").unwrap();
     fs::create_dir(root.join(".empack")).unwrap();
@@ -197,9 +196,9 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
     )
     .unwrap();
     let expected = [
-        ("author", "Author", "invalid", "Invalid"),
-        ("instance", "Instance", "invalid", "Invalid"),
-        ("publisher", "Publisher", "unavailable", "Unavailable"),
+        ("author", "Project", "invalid", "invalid"),
+        ("instance", "Instance", "invalid", "invalid"),
+        ("publisher", "Publisher", "unavailable", "not verified"),
     ];
     for selected in [None, Some("author"), Some("instance"), Some("publisher")] {
         let (report, text) = inspect(root, selected);
@@ -221,4 +220,139 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
             );
         }
     }
+}
+
+#[test]
+fn cli_instance_check_verifies_managed_content_without_repairing_player_data() {
+    use empack_lib::engine::release::*;
+    use sha2::{Digest, Sha256};
+    let project = TestProject::new();
+    let root = project.dir();
+    fs::create_dir(root.join("assets")).unwrap();
+    let files = [
+        (
+            "mod",
+            "mods/check.jar",
+            FilePolicy::Managed,
+            &b"mod bytes"[..],
+            None,
+        ),
+        (
+            "options",
+            "options.txt",
+            FilePolicy::Seed,
+            &b"defaults"[..],
+            None,
+        ),
+        (
+            "world",
+            "saves/played/level.dat",
+            FilePolicy::Seed,
+            &b"initial level"[..],
+            Some("saves/played"),
+        ),
+    ]
+    .into_iter()
+    .map(|(key, destination, policy, bytes, world)| {
+        fs::write(root.join("assets").join(key), bytes).unwrap();
+        ReleaseFile {
+            world_root: world.map(str::to_owned),
+            key: key.into(),
+            destination: destination.into(),
+            layer: ReleaseLayer::Common,
+            policy,
+            client: Participation::Required,
+            server: Participation::Unsupported,
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            bytes: bytes.len() as u64,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Asset {
+                path: format!("assets/{key}"),
+            },
+        }
+    })
+    .collect();
+    let release = DecodedRelease::encode(ReleaseDocument {
+        schema: RELEASE_SCHEMA,
+        pack: "check.fixture".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.8.0-beta".into(),
+        require_subscription: false,
+        server_launch: None,
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java: ReleaseJava::for_game("1.21.1", 21).unwrap(),
+        },
+        choices: vec![],
+        files,
+    })
+    .unwrap();
+    fs::write(root.join("release.json"), release.bytes()).unwrap();
+    offline_command(root)
+        .args([
+            "--yes",
+            "instance",
+            "install",
+            "release.json",
+            "--sha256",
+            release.id(),
+            "--layout",
+            "prism",
+        ])
+        .assert()
+        .success();
+    fs::write(root.join(".minecraft/options.txt"), b"player choices").unwrap();
+    fs::remove_file(root.join(".minecraft/saves/played/level.dat")).unwrap();
+    let before = snapshot(root);
+    for (json, details) in [(false, false), (true, false), (false, true)] {
+        let mut command = offline_command(root);
+        command.args(["instance", "check", "--quiet"]);
+        if json {
+            command.arg("--json");
+        }
+        if details {
+            command.arg("--details");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        if json {
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["scope"], "instance");
+            assert_eq!(report["complete"], true);
+            assert_eq!(report["verified_files"], 1);
+            assert_eq!(report["player_owned_entries"], 2);
+        } else {
+            assert!(String::from_utf8_lossy(&output.stdout).contains("Managed files verified: 1"));
+        }
+        assert_eq!(snapshot(root), before);
+    }
+    fs::write(root.join(".minecraft/mods/check.jar"), b"changed").unwrap();
+    let before = snapshot(root);
+    let output = offline_command(root)
+        .args(["instance", "check", "--json", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert!(!output.stderr.is_empty());
+    assert_eq!(snapshot(root), before);
+    fs::write(root.join(".empack/instance.json"), b"{broken").unwrap();
+    let before = snapshot(root);
+    let output = offline_command(root)
+        .args(["instance", "check", "--json", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(snapshot(root), before);
 }

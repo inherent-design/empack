@@ -5,7 +5,7 @@ use crate::application::{
 };
 use serde_json::json;
 use std::fs;
-fn args(plan: bool) -> MigrationArgs {
+fn args() -> MigrationArgs {
     MigrationArgs {
         java: None,
         minecraft: "1.21.2".into(),
@@ -13,7 +13,6 @@ fn args(plan: bool) -> MigrationArgs {
         loader_version: Some("0.16.14".into()),
         acceptable_versions: vec![],
         replacements: vec![],
-        plan,
         json: false,
         materialize: false,
         release_policy: Some(CliReleasePolicy::PreferStable),
@@ -41,28 +40,38 @@ async fn execute(
         false,
         services(server),
         RuntimeCatalog::for_loopback_tests(&server.url()),
-        Some(MigrationOptions::parse(args)?),
+        Some(MigrationOptions::parse(
+            args,
+            if dry {
+                ApplicationMode::Preview
+            } else {
+                ApplicationMode::Apply
+            },
+        )?),
     )
     .await
 }
 #[tokio::test]
 async fn host_runtime_migration_plan_and_apply_share_candidate() {
+    let mut structured = args();
+    structured.json = true;
+    let error = MigrationOptions::parse(structured, ApplicationMode::Apply)
+        .err()
+        .unwrap();
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Usage
+    );
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
     runtime(&mut server).await;
     let before = crate::test_support::file_bytes(root.path());
-    execute(root.path(), &server, args(true), false)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), true).await.unwrap();
     assert_eq!(crate::test_support::file_bytes(root.path()), before);
-    execute(root.path(), &server, args(false), true)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), true).await.unwrap();
     assert_eq!(crate::test_support::file_bytes(root.path()), before);
-    execute(root.path(), &server, args(false), false)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), false).await.unwrap();
     let next = project(root.path());
     assert_eq!(next.intent().runtime.minecraft.as_str(), "1.21.2");
     assert_eq!(next.lock().runtime.minecraft.as_str(), "1.21.2");
@@ -102,7 +111,6 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
     provider(&mut server, "Root0002", "RootVer2").await;
     let options = AddOptions {
         inputs: vec!["Root0001".into()],
-        force: false,
         continue_independent: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
@@ -126,9 +134,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
     synchronization::synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
-    execute(root.path(), &server, args(false), false)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), false).await.unwrap();
     let retained = project(root.path());
     assert_eq!(
         retained.lock().dependencies[&key].selected,
@@ -138,7 +144,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
         retained.lock().dependencies[&key].files,
         old.lock().dependencies[&key].files
     );
-    let mut replace = args(false);
+    let mut replace = args();
     replace.replacements = vec![format!("{}=modrinth:Root0002", key.as_str())];
     execute(root.path(), &server, replace, false).await.unwrap();
     let replaced = project(root.path());
@@ -156,7 +162,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
         DependencySelection::Automatic
     );
     let before = crate::test_support::file_bytes(root.path());
-    let mut invalid = args(false);
+    let mut invalid = args();
     invalid.replacements = vec!["missing=modrinth:Root0001".into()];
     assert!(
         execute(root.path(), &server, invalid, false)
@@ -173,7 +179,7 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
     runtime(&mut server).await;
-    let mut invalid = args(false);
+    let mut invalid = args();
     invalid.loader_version = Some("not-published".into());
     let before = crate::test_support::file_bytes(root.path());
     assert!(
@@ -189,11 +195,7 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
     intent.metadata.name = "Changed after lock".into();
     crate::testing::write_authoring(&path, &intent).unwrap();
     let before = fs::read(&path).unwrap();
-    assert!(
-        execute(root.path(), &server, args(false), false)
-            .await
-            .is_err()
-    );
+    assert!(execute(root.path(), &server, args(), false).await.is_err());
     assert_eq!(fs::read(path).unwrap(), before);
 }
 
@@ -271,7 +273,6 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         &session(root.path(), false),
         AddOptions {
             inputs: vec!["Root0001".into()],
-            force: false,
             continue_independent: false,
             platform: Some(SearchPlatform::Modrinth),
             kind: None,
@@ -312,7 +313,9 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
     }
     if case == LibraryCase::SyncDroppedIncompatible {
         let mut intent = old.intent().clone();
-        intent.runtime = MigrationOptions::parse(args(false)).unwrap().runtime;
+        intent.runtime = MigrationOptions::parse(args(), ApplicationMode::Apply)
+            .unwrap()
+            .runtime;
         crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     }
     let before = crate::test_support::file_bytes(&root.path().join("project"));
@@ -331,7 +334,7 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
             )
             .await
         } else {
-            execute(root.path(), &server, args(false), false).await
+            execute(root.path(), &server, args(), false).await
         };
         let error = result.unwrap_err().to_string();
         assert!(error.contains("library1"), "{error}");
@@ -349,16 +352,12 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         );
         return;
     }
-    execute(root.path(), &server, args(true), false)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), true).await.unwrap();
     assert_eq!(
         crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
-    execute(root.path(), &server, args(false), false)
-        .await
-        .unwrap();
+    execute(root.path(), &server, args(), false).await.unwrap();
     let next = project(root.path());
     assert_eq!(next.intent().roots.len(), 1);
     assert_eq!(
@@ -392,7 +391,7 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
     );
     let report = delta::MigrationDelta::between(old.intent(), old.lock(), &next);
     let json = serde_json::to_value(&report).unwrap();
-    assert_eq!(json["schema"], 2);
+    assert_eq!(json["schema"], 3);
     let rows = json["dependencies"].as_array().unwrap();
     assert_eq!(rows.len(), 3);
     let library_row = rows.iter().find(|row| row["key"] == "library1").unwrap();
@@ -602,3 +601,84 @@ async fn migration_reports_compatible_library_dropped_from_new_closure_as_retain
 }
 
 mod journey;
+
+#[tokio::test]
+async fn migration_native_conflicts_are_reported_before_readiness_and_preserve_all_inputs() {
+    use crate::engine::diagnostics::DiagnosticCode;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    runtime(&mut server).await;
+    provider(&mut server, "Root0001", "RootVer1").await;
+    let selected = AddOptions {
+        inputs: vec!["Root0001".into()],
+        platform: Some(crate::application::cli::SearchPlatform::Modrinth),
+        kind: None,
+        version_id: Some("RootVer1".into()),
+        file_id: None,
+        file_plan: None,
+        download_as_local: false,
+        continue_independent: false,
+    };
+    super::super::add_with_catalog(
+        &session(root.path(), false),
+        selected,
+        services(&server).catalog,
+    )
+    .await
+    .unwrap();
+    let destination = root.path().join("project/pack/mods/renderer.jar");
+    fs::create_dir_all(destination.parent().unwrap()).unwrap();
+    // The exact referenced file has recorded assertions; local bytes do not satisfy them.
+    fs::write(&destination, b"payload").unwrap();
+    let before = crate::test_support::file_bytes(root.path());
+    for (json, dry) in [(false, true), (true, true), (false, false)] {
+        let (host, messages) = session(root.path(), dry).record_messages();
+        let mut options = args();
+        options.json = json;
+        let error = synchronization::synchronize_mode(
+            &host,
+            false,
+            services(&server),
+            RuntimeCatalog::for_loopback_tests(&server.url()),
+            Some(
+                MigrationOptions::parse(
+                    options,
+                    ApplicationMode::for_action(host.config().app_config()),
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            crate::engine::diagnostics::Diagnostic::from_error(
+                &error,
+                crate::engine::diagnostics::DiagnosticPhase::Preparation
+            )
+            .code,
+            DiagnosticCode::DigestMismatch
+        );
+        let messages = messages.lock().unwrap();
+        if json {
+            let reports: Vec<serde_json::Value> = messages
+                .iter()
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+            assert_eq!(reports.len(), 1, "{messages:?}");
+            assert_eq!(reports[0]["proposal"], "blocked");
+            assert_eq!(reports[0]["current_runtime"]["minecraft"], "1.21.1");
+            assert_eq!(reports[0]["proposed_runtime"]["minecraft"], "1.21.2");
+            assert_eq!(reports[0]["file_changes"], json!([]));
+            assert!(!reports[0]["diagnostic"].is_null());
+        } else {
+            assert!(
+                messages
+                    .iter()
+                    .any(|line| line == "Runtime migration: blocked"),
+                "{messages:?}"
+            );
+        }
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+    }
+}

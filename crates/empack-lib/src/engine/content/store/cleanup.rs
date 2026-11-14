@@ -1,6 +1,6 @@
 //! Disposable cache eviction binds native objects and never recursively removes storage.
 use super::*;
-use crate::engine::{native::ObjectIdentity, resources::AdmissionPermit};
+use crate::engine::{native::ObjectIdentity, resources::AdmissionPermit, runtime::WorkProgress};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +128,7 @@ impl FileContentStore {
         scope: &mut WorkScope,
         plan: CacheCleanupPlan,
     ) -> Result<CacheCleanupReceipt> {
+        scope.report_progress(WorkProgress::CleaningCache);
         let store = self.clone();
         let work = scope.spawn_blocking(
             ResourceRequest {

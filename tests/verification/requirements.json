@@ -46,6 +46,18 @@
         "UX-084.prism-reference",
         "UX-087.fresh-user-documentation"
       ]
+    },
+    "v085_manual_scope": {
+      "approved_on": "2026-11-11",
+      "reason": "Maintainer-approved bootstrap and CLI acceptance uses managed Prism/server workflows on the available Mac with automated Windows/Linux coverage; retain every automated gate and all unrun manual observations.",
+      "platforms": [
+        "macos"
+      ],
+      "procedures": [
+        "acceptance::prism::reference-instance",
+        "acceptance::server::managed-console",
+        "acceptance::server::managed-gui"
+      ]
     }
   },
   "requirements": [
@@ -53,7 +65,7 @@
       "id": "UX-001",
       "family": "Entry and inspection",
       "title": "Shipped executable identity and help",
-      "public_surface": "--help; --version; version; every command --help",
+      "public_surface": "--help; --version; every command --help",
       "api_ids": [
         "CLI",
         "PACKAGE"
@@ -85,7 +97,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Version flags match the selected executable identity without loading ordinary command configuration",
             "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
           ]
@@ -108,6 +120,7 @@
           "assertions": [
             "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
             "Short help and version flags remain available without loading unrelated author state",
+            "Displayed inherited path values preserve ordinary Unicode while directional controls are visible escapes; all help routes leave selected state/cache paths untouched",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
           ]
         },
@@ -129,7 +142,9 @@
           "assertions": [
             "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
-            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work",
+            "Retired unused Modrinth credential options and YAML log-format spellings fail as usage errors without changing author files or isolated host state"
           ]
         },
         {
@@ -147,7 +162,7 @@
             "default"
           ],
           "assertions": [
-            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Version flags match the selected executable identity without loading ordinary command configuration",
             "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
             "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
@@ -177,6 +192,7 @@
           "assertions": [
             "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
             "Short help and version flags remain available without loading unrelated author state",
+            "Displayed inherited path values preserve ordinary Unicode while directional controls are visible escapes; all help routes leave selected state/cache paths untouched",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
             "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
           ],
@@ -206,7 +222,9 @@
             "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
             "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
             "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
-            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback",
+            "Empty add/remove scopes and retired add --force/-f and remove --deps/-d fail locally with usage before project or provider work",
+            "Retired unused Modrinth credential options and YAML log-format spellings fail as usage errors without changing author files or isolated host state"
           ],
           "required_targets": [
             "x86_64-unknown-linux-gnu",
@@ -263,7 +281,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Unlike display flags, the version command and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
+            "Unlike display flags, doctor and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
           ]
         },
         {
@@ -801,6 +819,25 @@
             "Immutable release staging uses the shared refusal/interruption matrix while preserving signing inputs, publisher work, prior releases and selected host state",
             "An explicitly approved identical selection produces the verified descriptor/signature/assets without creating a channel"
           ]
+        },
+        {
+          "id": "UX-003.prompt-stream-eligibility",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::streams::cli_prompt_uses_input_and_stderr_instead_of_result_stdout"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Terminal stdin and stderr permit a deliberate approval choice while result stdout is redirected; declining preserves the whole workspace and reports no application",
+            "Redirected prompt stderr refuses noninteractive execution before publication even with terminal stdin/stdout; the diagnostic directs the user to explicit approval or preview"
+          ]
         }
       ],
       "owner_now": [
@@ -816,14 +853,14 @@
     {
       "id": "UX-004",
       "family": "Entry and inspection",
-      "title": "Tool requirements are observational",
-      "public_surface": "requirements",
+      "title": "Host diagnostics distinguish tool discovery from requested validation",
+      "public_surface": "doctor [--details|--json] [--java PATH] [--minecraft VERSION] [--quiet]",
       "api_ids": [
         "CLI",
         "RUN"
       ],
-      "required_assertions": "Report absent Java/tools accurately without installing backend or creating state; no broad compatibility claim from PATH alone.",
-      "required_work": "Package test with empty controlled PATH and explicit supported/unsupported Java probe fixtures.",
+      "required_assertions": "Default host/tool discovery does not execute Java or load project/state; explicit bounded Java probes retain missing/invalid/unsupported failures, use recorded game policy without compatibility claims for mods, preserve inputs, and do not render raw JVM properties.",
+      "required_work": "Run controlled missing, discovered, explicit, failed and game-policy Java fixtures through the public executable and final extracted products.",
       "evidence_tiers": [
         "H",
         "X",
@@ -850,14 +887,15 @@
             "telemetry"
           ],
           "assertions": [
-            "Requirements and version dispatch succeed without an author project and preserve all fixture bytes; no backend bootstrap is part of inspection"
+            "Default doctor dispatch succeeds without an author project and preserves all fixture bytes; no backend bootstrap is part of inspection"
           ]
         },
         {
           "id": "UX-004.cli-path-discovery-is-observational",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+            "empack-tests::cli_entry::cli_doctor_describes_native_capabilities_without_bootstrap",
+            "empack-tests::cli_offline::cli_bootstrap_probe_ignores_configuration_and_cannot_execute_work"
           ],
           "required_platforms": [
             "linux",
@@ -869,6 +907,7 @@
             "telemetry"
           ],
           "assertions": [
+            "The standalone native interoperability probe ignores malformed environment/dotenv configuration and emits exactly its protocol; added command/approval arguments cannot execute work",
             "Empty controlled PATH reports missing Java and required native capabilities without creating state or attempting a configured HTTP request",
             "Controlled Java fixtures advertising old, current and malformed versions are discovered without execution or compatibility certification; directories and Unix nonexecutable files cannot masquerade as executable Java",
             "Inspection retains malformed author text, supplied tool bytes, empty directories and captured permissions and explicitly separates path discovery from selected-runtime compatibility"
@@ -878,7 +917,9 @@
           "id": "UX-004.packaged-tool-inspection",
           "boundary": "P",
           "test_ids": [
-            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+            "empack-tests::cli_entry::cli_doctor_describes_native_capabilities_without_bootstrap",
+            "empack-tests::cli_entry::cli_doctor_probes_only_explicit_tools_and_reports_java_policy",
+            "empack-tests::cli_entry::cli_doctor_retains_failed_probes_without_exposing_jvm_properties"
           ],
           "required_platforms": [
             "linux",
@@ -890,7 +931,8 @@
           ],
           "assertions": [
             "The final extracted product runs the same empty-PATH and controlled-tool inspection outside the checkout without bootstrap or tool execution",
-            "Archive admission binds the inspection to the exact distributed binary identity and native target; ordinary source suites cannot qualify this case"
+            "Archive admission binds the inspection to the exact distributed binary identity and native target; ordinary source suites cannot qualify this case",
+            "The same extracted native product runs explicit Java/game-policy and failure-redaction fixtures; synthetic tools establish command/probe behavior rather than real-game acceptance"
           ],
           "required_targets": [
             "x86_64-unknown-linux-gnu",
@@ -898,6 +940,29 @@
             "x86_64-apple-darwin",
             "aarch64-apple-darwin",
             "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-004.explicit-java-policy-and-failure",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_doctor_probes_only_explicit_tools_and_reports_java_policy",
+            "empack-tests::cli_entry::cli_doctor_retains_failed_probes_without_exposing_jvm_properties"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only explicit Java or Minecraft selection executes a bounded version probe; exact static arguments are checked and relative paths resolve from the invocation directory independently of workdir",
+            "Known admitted majors succeed, known out-of-profile majors fail through existing typed classification, unknown game profiles remain unverified, and missing Java fails only a requested check",
+            "Failed, ambiguous and malformed probes retain an unsuccessful structured report and diagnostic without exposing unrelated JVM properties; dry-run refuses explicit execution and contradictory output options fail locally",
+            "Malformed author text, hostile state/cache/home paths, fixture content/permissions and prior artifacts remain unchanged; no request reaches the configured proxy; retired requirements/version verbs are not aliases"
           ]
         }
       ],
@@ -1099,11 +1164,13 @@
     {
       "id": "UX-006",
       "family": "Entry and inspection",
-      "title": "Author and binding conformance",
-      "public_surface": "manifest check --json",
+      "title": "Current project and authoring conformance",
+      "public_surface": "check; check --documents/--online --json",
       "api_ids": [
         "DOC",
-        "CLI"
+        "CLI",
+        "CAT",
+        "IO"
       ],
       "required_assertions": "Short/expanded equivalent forms agree; unknown/duplicate/conflicting fields fail; no silent first-observation URL fallback; invalid content not rewritten.",
       "required_work": "Run editor/CLI conformance automatically; add YAML duplicates/comments and docs examples.",
@@ -1274,7 +1341,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual manifest reference and native-release usage YAML blocks pass public manifest check without rewriting source or creating state/cache storage",
+            "The actual manifest reference and native-release usage YAML blocks pass public check --documents without rewriting source or creating state/cache storage",
             "The manifest example reports the complete literal dependency set with exact normalized source, content kind, side/optional requirements and missing-lock facts; the native example composes its literal bindings without acquiring payloads"
           ]
         },
@@ -1320,6 +1387,75 @@
             "Author-only identity/attribution/Java requirements survive a round-trip without inventing outputs",
             "Bundled presets and equivalent explicit profiles have the same semantic revision; changing format changes that revision",
             "Provider pins, local sources, asserted URLs and optional choices retain their meaning; invalid source-specific fields and obsolete schema refuse before resolution"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-scopes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::checking::tests::documents_are_diagnosed_without_content_or_mutation_authority",
+            "empack-lib::engine::checking::tests::stale_lock_is_a_failed_check_without_rewriting_it",
+            "empack-lib::engine::checking::tests::online_checks_all_exact_selections_without_catalog_discovery_or_materialization",
+            "empack-lib::engine::checking::tests::fresh_missing_or_conflicting_requirements_fail_without_selecting_replacements",
+            "empack-lib::engine::checking::tests::fresh_file_changes_and_transport_failure_retain_document_findings",
+            "empack-lib::engine::checking::tests::changed_documents_after_provider_work_are_not_a_successful_check",
+            "empack-lib::engine::checking::tests::embedded_and_local_assertions_are_checked_without_copying_or_repairing_sources",
+            "empack-lib::engine::checking::tests::exact_checks_share_one_transfer_allowance_across_retained_selections"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Documents-only validates authoring and present lock; recorded checks require a current lock and verify applicable local and embedded assertions without mutation",
+            "Online checks every exact locked provider selection including retained dependencies under one budget; absent requirements cannot trigger catalog/latest selection",
+            "Malformed/stale input, changed provider bytes/relationships, unavailable transport and post-observation edits retain useful findings and fail; source/state/prior artifact bytes remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-presentation-and-comparison",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::checking::tests::fresh_digest_comparison_requires_shared_evidence_or_verified_local_bytes",
+            "empack-lib::application::engine_host::checking::tests::check_output_leads_with_scope_and_failure_without_claiming_repairs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Human report states scope, failed task and useful details without claiming repairs; details hint is conditional",
+            "Fresh digests must have comparable assertions or verified local bytes with matching size; incomparable evidence cannot pass"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-executable",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_offline::cli_check_reports_document_failures_as_json_without_changing_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual CLI emits parseable JSON and a failed status on invalid lock after reporting findings; author inputs and prior outputs remain unchanged",
+            "New check scopes parse and execute; mutually exclusive scopes and removed manifest check reject without effects"
           ]
         }
       ],
@@ -1507,7 +1643,8 @@
             "Seven executable JSON report routes remain single JSON values without ANSI across color/log-format/log-stream combinations",
             "Diagnostic logs remain observable on stderr; human output honors its chosen log stream",
             "Failed JSON lookups retain stderr diagnostics without a successful payload; author and lock bytes remain unchanged",
-            "Synthetic Modrinth and CurseForge API-key values remain absent from stdout and stderr across JSON reports, selected human log destinations and failed requests, in both product graphs"
+            "The configured synthetic CurseForge API-key value remains absent from stdout and stderr across JSON reports, selected human log destinations and failed requests, in both product graphs",
+            "Text, pretty text and JSON log events preserve report separation; formatted JSON log events remain parseable on stderr alongside independent plain progress"
           ]
         },
         {
@@ -1624,6 +1761,71 @@
             "Changed runtime ownership evidence survives confirmed cancellation and is reported; refused launch or unacknowledged recovery preserves the instance, and explicit acknowledgement permits a later launch",
             "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
           ]
+        },
+        {
+          "id": "UX-008.mixed-stream-display",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::streams::cli_output_capabilities_follow_each_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual executable independently styles terminal stdout/stderr and leaves each redirected destination unstyled under automatic color",
+            "Explicit always/never color policy works for both stream arrangements; multilingual result values and the warning remain present and the requested project is published"
+          ],
+          "remaining_group_evidence": "Real Unix PTYs and output redirection; this does not establish ConPTY split handles, Java or graphical consumer behavior."
+        },
+        {
+          "id": "UX-008.shared-progress-observations",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::engine_host::progress::tests::progress_preserves_latest_update_and_immediate_phase_changes",
+            "empack-lib::application::engine_host::progress::tests::progress_plain_output_is_phase_only_and_quiet_has_no_progress"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Item updates coalesce to the latest pending observation, a flush requires no new item and phase changes remain immediate",
+            "Pausing clears the temporary region before a choice; progress can resume and final drop clears it",
+            "Plain output records each phase sparsely without per-item spam; quiet emits no provisional progress",
+            "The display immediately replaces acquisition text when observing local reading, cache writes, server runtime and installer work, archive assembly/verification, instance staging, saving changes, recovery or cleanup; phase labels assert no completed count or receipt"
+          ]
+        },
+        {
+          "id": "UX-008.progress-terminal-finalization",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::streams::cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual CLI progress is observed before completion and leaves no temporary text on final 12-, 40- and 80-column terminal screens; JSON stdout stays parseable and ordinary result text remains present",
+            "Quiet produces no provisional checking text; automatic and explicit always/never color follow the selected stream palette, including combined terminals and stderr terminal with redirected stdout",
+            "Host interruption during the controlled version response returns 130 with its final diagnostic, restores the visible cursor, preserves workspace bytes and permits a subsequent ordinary operation",
+            "Verbose logging retains its diagnostic messages and JSON separation without creating a second command-span animation"
+          ],
+          "remaining_group_evidence": "Controlled slow local version response and real Unix PTYs; does not establish real JVM, game or graphical launcher acceptance."
         }
       ],
       "owner_now": [
@@ -2391,7 +2593,8 @@
             "empack-lib::engine::acquisition::tests::dropping_acquisition_future_closes_and_retires_its_verifier",
             "empack-lib::engine::acquisition::tests::mirror_retry_counts_partial_bytes_from_the_failed_attempt",
             "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires",
-            "empack-lib::engine::api::tests::failure_order_preserves_actual_errors_when_cancellation_races"
+            "empack-lib::engine::api::tests::failure_order_preserves_actual_errors_when_cancellation_races",
+            "empack-lib::engine::acquisition::tests::acquisition_progress_observes_bytes_without_claiming_completion_or_hiding_cancellation"
           ],
           "required_platforms": [
             "linux",
@@ -2406,7 +2609,8 @@
             "Streamed bytes and partial failed mirrors consume the original allowance; headers, digests, HTTP status and source policy cannot substitute for verified bytes",
             "Stalled headers and bodies meet the transfer deadline without waiting for EOF; cancellation and caller abandonment retire the socket and release resource reservations",
             "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately",
-            "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure"
+            "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure",
+            "Actual received byte counts remain provisional; an incomplete download has no terminal success and cancellation retires its socket and reservations"
           ]
         },
         {
@@ -2753,7 +2957,8 @@
             "empack-lib::engine::import::acquisition::tests::import_candidate_retains_every_layer_and_explicit_local_conversion",
             "empack-lib::engine::import::acquisition::tests::import_candidate_rejects_inventory_and_semantic_changes",
             "empack-lib::engine::import::acquisition::tests::import_candidate_requires_a_safe_durable_url_or_explicit_conversion",
-            "empack-lib::engine::import::acquisition::tests::import_candidate_preserves_provider_pins_weak_digests_and_optional_choices"
+            "empack-lib::engine::import::acquisition::tests::import_candidate_preserves_exact_selections_without_authoring_pins",
+            "empack-lib::application::engine_host::cli::import::tests::provider_import_preserves_kinds_optional_choices_and_exported_files"
           ],
           "required_platforms": [
             "linux",
@@ -2766,7 +2971,8 @@
           ],
           "assertions": [
             "Import retains side participation, provider identity and source assertions; dropping entries or changing declared requirements requires explicit supported interpretation",
-            "Auxiliary exclusion cannot silently alter the imported runtime; unsafe durable URLs require a supported explicit conversion"
+            "Auxiliary exclusion cannot silently alter the imported runtime; unsafe durable URLs require a supported explicit conversion",
+            "Imported provider versions remain exact lock evidence with Automatic author policy; unchanged synchronization retains them, while explicit update preview/apply advances only the selected dependency without changing author intent"
           ],
           "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
         },
@@ -4205,7 +4411,8 @@
           "id": "UX-025.public-stale-constraints",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs"
+            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs",
+            "empack-tests::journey_selection::journey_cli_changed_author_pin_reports_sync_without_mutation"
           ],
           "required_platforms": [
             "linux",
@@ -4218,7 +4425,8 @@
           ],
           "assertions": [
             "Manifest explanation and synchronization agree for unchanged, display-only, source, missing-source, layout and binding changes",
-            "Refused resolution preserves inputs; permitted moves retain exact bytes and authoring, retire only the previous owned path and converge"
+            "Refused resolution preserves inputs; permitted moves retain exact bytes and authoring, retire only the previous owned path and converge",
+            "Changed author pins produce typed reconciliation guidance through update and JSON assessment without network work or mutation"
           ]
         },
         {
@@ -4264,13 +4472,13 @@
     {
       "id": "UX-026",
       "family": "Dependencies and resolution",
-      "title": "Selected automatic update",
-      "public_surface": "update KEY... --release-policy",
+      "title": "Dependency update preview and application",
+      "public_surface": "update KEY... | --all [--apply] [--release-policy]",
       "api_ids": [
         "CAT",
         "DEP"
       ],
-      "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
+      "required_assertions": "Explicit keys or all author roots select update scope; preview is the default and --yes cannot apply; only --apply can request publication. Only authorized roots and necessary closure change; exact pins stay exact; retained libraries are not independently upgraded; current/changed counts truthful; filename/role mapping retained.",
       "required_work": "Cases cover selected/unselected scope and exact pins; operation/root/project release-policy precedence; explicit, primary and companion roles with changed filenames; public preview, application, partial completion and retry; and truthful changed/retained counts with two-sync convergence. Controlled-host and live ordinary-provider cases establish automatic selection; the separate executable local-source journey establishes the shared update publication/reporting path. All declared live prerequisites and host/product/package execution remain qualification requirements.",
       "evidence_tiers": [
         "U",
@@ -4289,7 +4497,9 @@
           "test_ids": [
             "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory",
             "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection",
-            "empack-lib::application::engine_host::cli::tests::primary_placement_update_survives_filename_change_and_converges_with_sync"
+            "empack-lib::application::engine_host::cli::tests::primary_placement_update_survives_filename_change_and_converges_with_sync",
+            "empack-lib::application::engine_host::cli::tests::reviewed_update_pin_changes_only_the_named_author_selection",
+            "empack-lib::engine::api::addition_tests::independent_batch::partial_pinned_update_publishes_only_successful_groups_author_pins"
           ],
           "required_platforms": [
             "linux",
@@ -4306,7 +4516,9 @@
             "Displayed per-root preview and completed receipt report one changed and one retained selection; runtime, required edges, all unselected records and raw authoring/bindings remain unchanged",
             "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption",
             "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations",
-            "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version"
+            "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version",
+            "Repeated per-key exact pins replace only the named roots' automatic release preferences through the public host update path, preserve unrelated authored fields, and reject invalid/duplicate/unrequested values without edits; dry-run and atomic/independent batches retain approval semantics",
+            "Partial independent updates publish only successful groups author-pin edits and receipts; blocked groups retain their original exact selection and author pin"
           ],
           "remaining_group_evidence": "The shared host path establishes operation-policy precedence with distinguishing candidates; ordinary binary translation has a separate live case below, and every declared execution variant remains required"
         },
@@ -4335,7 +4547,8 @@
           "id": "UX-026.live-pinned-update",
           "boundary": "L",
           "test_ids": [
-            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring"
+            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring",
+            "empack-tests::live_provider_cli::live_cli_complete_groups_report_partial_add_and_update"
           ],
           "required_platforms": [
             "linux",
@@ -4351,9 +4564,11 @@
             "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files",
             "Unpinning retains the current exact inventory; automatic update preserves author intent and runtime, and actual changed/retained output agrees with the selected pin",
             "An unselected automatic root remains at an explicitly older version even though its separate dry-run update proposes a change; selected pinned/automatic updates preserve its complete dependency record and required edges",
-            "Materialized files across the complete locked candidate match declared SHA-512 and size independently; two subsequent CLI syncs converge"
+            "Materialized files across the complete locked candidate match declared SHA-512 and size independently; two subsequent CLI syncs converge",
+            "Complete real provider relationships permit a partial selected update: an explicitly older automatic Lithium selection changes while a blocked pinned Sodium selection, authored pin and modified bytes stay unchanged",
+            "Actual partial preview preserves project and host state; explicit application reports one changed and zero retained selections and a nonzero partial outcome; repair permits a complete no-op update and repeated sync convergence"
           ],
-          "remaining_group_evidence": "Live success does not imply a newer version was available; deterministic host coverage establishes the changed-selection path"
+          "remaining_group_evidence": "The pinned fixture alone need not find a newer version; the complete-group fixture explicitly selects an older compatible version and requires a changed selection. Every declared host and feature variant remains required."
         },
         {
           "id": "UX-026.selected-update-scope",
@@ -4361,7 +4576,8 @@
           "test_ids": [
             "empack-lib::engine::addition::update_tests::update_binds_aliases_preserves_raw_intent_and_retains_unselected_installations",
             "empack-lib::engine::addition::update_tests::transitive_update_requires_dependents_and_does_not_promote_temporary_roots",
-            "empack-lib::engine::addition::update_tests::update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities"
+            "empack-lib::engine::addition::update_tests::update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities",
+            "empack-lib::engine::addition::update_tests::reviewed_update_pins_preserve_other_intent_and_require_the_dependent_group"
           ],
           "required_platforms": [
             "linux",
@@ -4374,7 +4590,8 @@
           ],
           "assertions": [
             "Updates bind aliases without changing raw intent or unselected installations",
-            "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced"
+            "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced",
+            "Explicit reviewed author-pin updates preserve all other authored intent and require retained dependents; mismatched or unrequested pin changes fail"
           ]
         },
         {
@@ -4404,7 +4621,7 @@
           "id": "UX-026.executable-selected-update-outcomes",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
+            "empack-tests::cli_offline::journeys::journey_incomplete_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4416,9 +4633,52 @@
             "telemetry"
           ],
           "assertions": [
-            "Malformed local source input refuses the whole request even in independent-group mode; a blocked all-requested update and every independent-group preview preserve the complete project inventory",
-            "Explicit independent-group application updates the ready local root while preserving the blocked root record, authored intent and every unrelated project byte; literal output reports one changed selection and partial completion",
-            "A successful retry reports zero changed and two retained selections, and two subsequent synchronizations preserve the complete project; this local/manual fixture establishes shared CLI publication/reporting, while separate host/live cases establish automatic provider selection"
+            "Malformed local source input refuses the whole request even in independent-group mode; blocked add/update requests with unknown dependency relationships preserve the complete project during preview and application",
+            "Human and JSON reports retain the blocked group and identify incomplete dependency information rather than offering speculative partial publication",
+            "After explicit repair, a complete ordinary update reports one changed and one retained selection; retry reports zero changed and two retained, and two synchronizations converge without changing unrelated files or authored intent"
+          ]
+        },
+        {
+          "id": "UX-026.explicit-application-host",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::synchronization::tests::update_previews_require_explicit_application_and_all_retains_libraries",
+            "empack-lib::application::engine_host::dependencies::tests::update_json_preserves_provider_observations_and_prepared_proposal_without_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Selected and all-root previews with --yes preserve the complete fixture snapshot; explicit all-root application changes only author-requested content and preserves retained library bytes and author intent.",
+            "A native provider update JSON preview contains the captured current and observed permitted exact selections alongside the prepared proposal and planned changes, without human text, author publication or durable-state changes, even with --yes."
+          ]
+        },
+        {
+          "id": "UX-026.explicit-application-cli",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_offline::cli_update_requires_apply_even_with_yes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual binary keeps source, installed, lock and state bytes unchanged for selected/all previews even with --yes; --apply updates selected bytes.",
+            "Missing scope, names combined with --all and --apply combined with --dry-run return usage status before any changes.",
+            "The actual binary emits clean schema1 ready/blocked JSON with planned SHA256 and portable attributes; --quiet hides progress and invalid JSON application/details modes refuse locally without effects.",
+            "A false EMPACK_DRY_RUN value permits explicit application; a true value or explicit --dry-run refuses --apply before work; --yes alone still cannot apply in either environment"
           ]
         }
       ],
@@ -4500,7 +4760,8 @@
           "id": "UX-027.provider-assessment",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects"
+            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects",
+            "empack-lib::engine::providers::assessment::tests::analyzed_update_reuses_observed_closure_for_retained_candidate_validation"
           ],
           "required_platforms": [
             "linux",
@@ -4512,7 +4773,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Provider assessment reports forward and reverse incompatibilities against retained content separately from complete required closure; update preparation rejects the resulting candidate"
+            "Provider assessment reports forward and reverse incompatibilities against retained content separately from complete required closure; update preparation rejects the resulting candidate",
+            "Update analysis retains its exact provider closure for normalization without another catalog scan; full candidate validation still rejects incompatible retained participation without changing the captured project."
           ]
         },
         {
@@ -4557,14 +4819,15 @@
         "PUB"
       ],
       "required_assertions": "Default all-or-none versus explicit independent groups; dependent/conflicting roots coupled; partial result exits nonzero and identifies successes.",
-      "required_work": "Snapshot every file and retry already-successful groups; no duplicate publication.",
+      "required_work": "Prove independence from complete proposed and retained relationship evidence; preserve the whole request when that evidence is incomplete. Snapshot every file and retry successful or repaired groups. Actual ordinary-provider CLI add and update must also establish positive partial effects without duplicate publication.",
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "L"
       ],
       "risk": "critical",
-      "run_gate": "pr",
+      "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
       "cases": [
@@ -4576,7 +4839,8 @@
             "empack-lib::engine::addition::independent::tests::independent_groups_merge_required_closure_and_reject_conflicting_shared_records",
             "empack-lib::engine::addition::independent::tests::independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions",
             "empack-lib::engine::addition::independent::tests::negative_relationships_keep_interdependent_updates_in_one_component",
-            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap"
+            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap",
+            "empack-lib::engine::addition::independent::tests::missing_proposed_or_retained_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4589,7 +4853,8 @@
           ],
           "assertions": [
             "Required chains/cycles, old and new occupied paths, shared records, Unicode/ancestor collisions and negative relationships couple dependent requests",
-            "Disjoint environments remain independent until an old or new placement overlaps; contradictory shared records are rejected"
+            "Disjoint environments remain independent until an old or new placement overlaps; contradictory shared records are rejected",
+            "Unknown or partial dependency evidence in proposed or retained selections keeps all requested changes together; complete evidence preserves the existing graph, identity and placement partition rules"
           ]
         },
         {
@@ -4598,7 +4863,8 @@
           "test_ids": [
             "empack-lib::engine::api::addition_tests::independent_batch::batch_default_preserves_all_and_partial_publishes_one_coherent_candidate",
             "empack-lib::engine::api::addition_tests::independent_batch::failed_shared_component_blocks_all_its_requests_but_not_an_unrelated_group",
-            "empack-lib::engine::api::addition_tests::independent_batch::partial_update_keeps_failed_intent_and_stale_approval_never_publishes"
+            "empack-lib::engine::api::addition_tests::independent_batch::partial_update_keeps_failed_intent_and_stale_approval_never_publishes",
+            "empack-lib::engine::api::addition_tests::independent_batch::incomplete_dependency_evidence_cannot_authorize_partial_publication"
           ],
           "required_platforms": [
             "linux",
@@ -4612,14 +4878,15 @@
           "assertions": [
             "Default preparation is all-or-none; explicit independent policy admits one coherent candidate and returns a typed partial receipt for successful groups",
             "A failed shared component blocks every member while unrelated groups remain available; stale approval cannot publish",
-            "Decline, all-failed and stale cases preserve files; partial update retains failed intent and retires reserved resources"
+            "Decline, all-failed and stale cases preserve files; partial update retains failed intent and retires reserved resources",
+            "Unknown and partial evidence cannot authorize speculative partial publication: failed native preparation preserves the whole project and reports affected keys, while a subsequent complete ordinary operation still succeeds and retires resources"
           ]
         },
         {
           "id": "UX-028.public-partial-add-update",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
+            "empack-tests::cli_offline::journeys::journey_incomplete_dependency_information_keeps_requests_together"
           ],
           "required_platforms": [
             "linux",
@@ -4631,9 +4898,9 @@
             "telemetry"
           ],
           "assertions": [
-            "Actual CLI preview identifies ready and blocked roots without publication; default add/update failures preserve all project files",
-            "Partial add and changed-content update exit nonzero, name the ready/blocked groups and report the completed effects and accurate selection counts",
-            "Every unrelated file and retained lock record survives; retrying completed additions or repairing a rejected update cannot duplicate publication; repeated sync converges"
+            "Actual CLI preview and application preserve every project file when unknown local-file dependency information prevents proving independence and any requested member is blocked",
+            "Default, detailed and JSON output report the whole blocked group and missing dependency information without claiming an independent ready subset",
+            "An explicitly selected healthy addition succeeds; after repair a whole ordinary update reports one changed and one retained selection, retry reports zero changed and two retained, and repeated sync converges while preserving unrelated files and authored intent"
           ]
         },
         {
@@ -4652,8 +4919,30 @@
             "telemetry"
           ],
           "assertions": [
-            "An unowned directory occupying one requested destination remains intact, including its sentinel, while a separate valid root can publish under explicit independent policy"
+            "An unowned directory and its sentinel remain intact; incomplete local-file dependency information prevents partial publication of a multi-request batch, and a later explicit healthy-file addition succeeds without claiming the occupied path"
           ]
+        },
+        {
+          "id": "UX-028.live-complete-independent-groups",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_complete_groups_report_partial_add_and_update"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public add against real complete Modrinth metadata publishes Lithium while retaining an already-present blocked Sodium record and exact author pin",
+            "An explicitly older automatic Lithium selection advances under independent update while modified Sodium remains blocked; preview preserves the whole project and host state, and explicit application retains the original blocked record, pin, bytes and every unrelated file",
+            "Partial add/update return nonzero and identify actual completed effects; update counts agree with the changed selection; explicit repair, a complete no-op update and repeated sync converge"
+          ],
+          "remaining_group_evidence": "Requires actual provider access and an observed changed version. Offline manual-file cases establish conservative refusal; they do not substitute for this positive partial-publication evidence."
         }
       ],
       "owner_now": [
@@ -4924,13 +5213,13 @@
       "id": "UX-031",
       "family": "Dependencies and resolution",
       "title": "Physical removal and forgetting",
-      "public_surface": "remove; --forget; --acknowledge-unknown",
+      "public_surface": "remove DEPENDENCY\u2026; --forget; --acknowledge-unknown",
       "api_ids": [
         "DEP",
         "PUB"
       ],
       "required_assertions": "Correct canonical target under alias; retained dependents block; forget retains bytes; sources/worlds/unowned dirs untouched.",
-      "required_work": "Cross-command add\u2192alias/re-add\u2192sync\u2192remove; explicit unknown graph decisions and unsupported --deps.",
+      "required_work": "Cross-command new add, canonical identity/alias retention, sync and exact-key removal; explicit unknown graph decisions and refusal of retired orphan flags.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4955,8 +5244,8 @@
             "empack-lib::engine::removal::tests::incomplete_selected_nodes_do_not_prevent_an_explicit_complete_group_removal",
             "empack-lib::engine::removal::tests::required_cycles_need_explicit_group_selection_and_never_collect_other_nodes",
             "empack-lib::engine::removal::tests::stale_resolution_cannot_authorize_removal",
-            "empack-lib::engine::removal::selection::tests::exact_keys_and_titles_deduplicate_and_unknown_names_fail_the_batch",
-            "empack-lib::engine::removal::selection::tests::provider_identity_is_qualified_and_titles_never_override_exact_keys"
+            "empack-lib::engine::removal::selection::tests::exact_keys_ignore_titles_and_unknown_keys_fail_the_batch",
+            "empack-lib::engine::removal::selection::tests::provider_identity_is_explicit_and_display_titles_never_select_keys"
           ],
           "required_platforms": [
             "linux",
@@ -4968,7 +5257,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Logical keys and qualified provider identity resolve deterministically; ambiguous titles and invalid grouped requests cannot select a successful subset",
+            "Native requests use exact case-sensitive keys or explicitly typed provider identities; display titles and raw provider strings are never inferred as targets, and missing keys refuse the whole group",
             "Known dependents and cycles require explicit selection; incomplete retained evidence needs acknowledgement; forgetting retains exact files, edges and uncertainty",
             "Stale resolution cannot authorize removal and native publication remains separate from a pure proposal"
           ]
@@ -5027,7 +5316,7 @@
             "empack-lib::engine::api::removal_tests::removal_preview_is_read_only_and_requires_exact_grant_and_engine",
             "empack-lib::engine::api::removal_tests::remove_and_demote_have_distinct_receipts_and_subsequent_build_content",
             "empack-lib::engine::api::removal_tests::selected_portable_alias_is_not_mistaken_for_absent_content",
-            "empack-lib::engine::api::removal_tests::title_selection_previews_canonical_identity_and_unknown_batch_changes_nothing",
+            "empack-lib::engine::api::removal_tests::logical_selection_previews_exact_identity_and_unknown_batch_changes_nothing",
             "empack-lib::engine::api::removal_tests::unrelated_content_does_not_block_removal_or_become_a_read_precondition",
             "empack-lib::engine::api::removal_tests::unselected_locked_bytes_are_not_removal_inputs"
           ],
@@ -5063,7 +5352,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual CLI resolves a canonical provider ID to its aliased root and refuses grouped errors, unsupported --deps and contradictory policies without edits",
+            "The actual CLI requires exact dependency keys, refuses provider/title/case guesses and retired --deps, and preserves all files on invalid grouped or contradictory requests",
             "Forgetting retains exact selections and bytes across two syncs; acknowledgement cannot override known dependents; physical removal requires deliberate selection",
             "Source files, custom bindings, worlds, unowned directories and prior artifacts survive preview/refusal and unrelated removal; actual selected deletion agrees with the receipt"
           ]
@@ -5102,16 +5391,18 @@
     {
       "id": "UX-032",
       "family": "Dependencies and resolution",
-      "title": "Outdated evidence and strict mode",
-      "public_surface": "outdated --json --strict",
+      "title": "Update discovery, proposal and incomplete evidence",
+      "public_surface": "update KEY\u2026 | --all [--json] [--details] [--quiet]",
       "api_ids": [
         "CAT",
         "CLI",
-        "DOC"
+        "DOC",
+        "DEP"
       ],
-      "required_assertions": "Populated current/permitted/compatible/upstream/pinned/manual/failed rows; shared budget; report rendered before strict failure; no mutation.",
-      "required_work": "Add independent expected reports incl retained inventory and incomplete provider evidence; empty smoke alone insufficient.",
+      "required_assertions": "Populated current/permitted/runtime-compatible/upstream/pinned/manual/failed observations; shared budget; useful findings rendered before mandatory proposal failure; no preview mutation.",
+      "required_work": "Keep independent expected reports including retained inventory, native proposal and incomplete provider evidence; empty smoke alone is insufficient.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "L"
@@ -5126,6 +5417,9 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::providers::assessment::tests::changed_rows_require_joint_validation_and_pins_remain_exact",
+            "empack-lib::engine::providers::assessment::tests::selected_assessment_retains_context_and_limits_catalog_work",
+            "empack-lib::engine::providers::assessment::tests::noncandidate_payload_limits_do_not_poison_current_catalog_metadata",
+            "empack-lib::engine::providers::problem::tests::typed_json_errors_identify_fields_without_echoing_values_or_map_keys",
             "empack-lib::engine::providers::assessment::tests::assessment_uses_authored_preferences_and_reports_each_effective_policy",
             "empack-lib::engine::providers::assessment::tests::manual_sources_are_not_reported_as_current_provider_versions",
             "empack-lib::engine::providers::compatible::tests::assessment_distinguishes_policy_compatibility_and_complete_upstream_observation",
@@ -5141,6 +5435,9 @@
             "telemetry"
           ],
           "assertions": [
+            "Catalog identity/runtime metadata is validated for every observed record; historical noncandidate payload placement errors do not poison eligible candidates, while exact selections and runtime-eligible payloads still reject empty/duplicate/nonportable files",
+            "Typed provider field/invariant diagnostics retain canonical project/selection context without raw values, dynamic map keys or trailing-JSON acceptance",
+            "Selected-root reports query only selected catalogs plus required closure, retain unselected locked inventory as context, reject unknown/repeated keys before network access, and expose actual root/page progress without resetting budgets",
             "Independent complete report expectations distinguish current, permitted, compatible and upstream observations; exact pins remain exact and manual roots are not provider versions",
             "Root and project release preferences affect permitted choices without conflating compatibility or newest observed metadata; incomplete pagination cannot claim a complete upstream observation"
           ]
@@ -5156,7 +5453,8 @@
             "empack-lib::engine::providers::assessment::tests::provider_access_and_service_failures_still_stop_later_roots",
             "empack-lib::engine::providers::assessment::tests::throttled_catalog_is_unknown_and_does_not_reset_shared_budget",
             "empack-lib::engine::providers::assessment::tests::declaration_limit_keeps_completed_rows_and_marks_partial_evidence",
-            "empack-lib::engine::providers::assessment::tests::declaration_scan_honors_original_deadline_and_keeps_partial_evidence"
+            "empack-lib::engine::providers::assessment::tests::declaration_scan_honors_original_deadline_and_keeps_partial_evidence",
+            "empack-lib::engine::providers::assessment::tests::analyzed_update_keeps_independent_findings_and_original_provider_error"
           ],
           "required_platforms": [
             "linux",
@@ -5169,7 +5467,8 @@
           ],
           "assertions": [
             "Malformed root evidence leaves independent rows assessable under the original remaining byte allowance; exhaustion is not reset",
-            "Authorization, service and throttling failures stop later provider work; deadline and declaration limits retain completed rows while reporting incomplete evidence"
+            "Authorization, service and throttling failures stop later provider work; deadline and declaration limits retain completed rows while reporting incomplete evidence",
+            "The shared update-analysis path retains independent successful observations when a malformed root blocks the combined proposal, and returns the original typed provider field error without creating a new catalog budget or fetching a partial application candidate."
           ]
         },
         {
@@ -5177,7 +5476,8 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects",
-            "empack-lib::engine::providers::assessment::tests::declared_incompatibilities_do_not_claim_placement_aware_validation"
+            "empack-lib::engine::providers::assessment::tests::declared_incompatibilities_do_not_claim_placement_aware_validation",
+            "empack-lib::application::engine_host::dependencies::tests::update_json_distinguishes_known_required_conflict_from_missing_evidence"
           ],
           "required_platforms": [
             "linux",
@@ -5190,14 +5490,15 @@
           ],
           "assertions": [
             "Forward and reverse declarations involving retained inventory remain visible, and update preparation refuses the incompatible candidate",
-            "Required dependency closure, declared-list completeness and complete placement/runtime compatibility remain distinct claims"
+            "Required dependency closure, declared-list completeness and complete placement/runtime compatibility remain distinct claims",
+            "A proven exact required-version conflict is blocked, not missing-evidence incomplete, even though the inconsistent closure cannot be validated; the real host retains source/selected/required identities, a typed dependency diagnostic and unchanged project/state bytes."
           ]
         },
         {
-          "id": "UX-032.strict-presentation",
+          "id": "UX-032.proposal-presentation",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::application::engine_host::cli::assessment::tests::text_separates_required_closure_from_candidate_compatibility"
+            "empack-lib::application::engine_host::dependencies::tests::failed_update_json_retains_provider_field_evidence_before_failure"
           ],
           "required_platforms": [
             "linux",
@@ -5209,15 +5510,16 @@
             "telemetry"
           ],
           "assertions": [
-            "A populated invalid-evidence report is emitted exactly once in text or JSON before strict-mode failure returns; retained cause and compatibility limits remain visible"
+            "An actual malformed provider file list emits exactly one schema-1 incomplete update report before failure; the typed catalog field/invariant and current exact pin survive, while author files and host state remain unchanged."
           ]
         },
         {
           "id": "UX-032.public-report-and-preservation",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::journey_selection::journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits",
-            "empack-tests::cli_offline::cli_strict_outdated_accepts_complete_empty_assessment"
+            "empack-tests::journey_selection::journey_cli_update_reports_incomplete_provider_work_without_edits",
+            "empack-tests::journey_selection::journey_cli_update_exact_filter_preserves_retained_scope_and_streams",
+            "empack-tests::cli_offline::cli_empty_update_is_unchanged_and_obsolete_queries_are_rejected"
           ],
           "required_platforms": [
             "linux",
@@ -5229,9 +5531,10 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual executable emits complete independent JSON expectations and explanatory text for manual and unavailable-provider rows; strict mode fails only the incomplete assessment after rendering its report",
-            "A manual-only root set remains complete despite retained non-root provider records; every invocation preserves all source, lock, binding, template and prior-artifact bytes",
-            "An empty assessment succeeds in strict mode without manufacturing provider observations"
+            "Schema-1 requested/source-kind scope, discovery observations and actual native proposal distinguish catalog completeness from readiness; exact-key filtering never scans an unselected provider and quiet suppresses stderr progress without dropping results",
+            "The actual executable reports manual sources and incomplete provider work without requiring --strict; obsolete outdated/strict routes are refused rather than retained as aliases",
+            "An explicit local refresh may update lock evidence without replacing payload bytes; application preserves the retained provider and a second preview is unchanged",
+            "All previews and refused selectors preserve author documents, source/template/prior-artifact bytes and external host state; incomplete previews fail after rendering useful evidence."
           ]
         },
         {
@@ -5250,8 +5553,50 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual executable assesses a populated exact-pinned Modrinth project through live routes in strict JSON mode, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
+            "The actual executable assesses a populated exact-pinned Modrinth project through live routes with a schema-1 update preview, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
             "Successful provider closure does not claim complete candidate or gameplay compatibility; the subsequent update journey preserves the same pin until explicitly unpinned"
+          ]
+        },
+        {
+          "id": "UX-032.interactive-selection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::dependencies::tests::interactive_update_uses_observed_versions_and_requires_separate_application",
+            "empack-lib::application::engine_host::dependencies::tests::interactive_update_cancellation_preserves_author_and_host_state",
+            "empack-lib::engine::providers::assessment::tests::version_selection_refuses_unobserved_choices_and_keeps_the_original_deadline"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real bounded provider list, including an installed version, eligible prerelease and unrelated runtime, produces the intended escaped menu and a deliberate exact pin; preview preserves source/state and separate approved application changes that pin without promoting retained libraries",
+            "Selection cancellation retains interruption status and unchanged source/state; unoffered identities are refused and a deliberate choice cannot reset the original deadline",
+            "The shared host loop clears temporary progress before a prompt, continues the same captured operation and only applies after native preparation and approval; an exact nonapplying command can repeat the selection"
+          ]
+        },
+        {
+          "id": "UX-032.selection-admission",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::compatible::tests::explicit_version_choices_keep_eligible_prereleases_without_weakening_admission"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit runtime-eligible prereleases remain selectable under stable-only automatic policy, but other runtimes remain excluded and eligible payload validation and catalog count bounds are unchanged"
           ]
         }
       ],
@@ -5271,13 +5616,13 @@
       "id": "UX-033",
       "family": "Dependencies and resolution",
       "title": "Runtime migration with full retained inventory",
-      "public_surface": "migrate --plan/--json; application; --replace; --materialize",
+      "public_surface": "migrate [--dry-run [--json]]; application; --replace; --materialize",
       "api_ids": [
         "CAT",
         "DEP",
         "PUB"
       ],
-      "required_assertions": "Plan/application share candidate; whole active lock assessed incl no-longer-required libraries; local sources explicit; incompatible retained content requires decision.",
+      "required_assertions": "Preview/application share semantic candidate and native preparation; whole active lock checked including retained libraries; local sources explicit; incompatible retained content requires a decision. Structured preview is one schema-3 report with native readiness/blockers, file changes/attributes and deferred references; no pending/native publication in dry-run.",
       "required_work": "Client/server and populated A\u2192B runtime fixture, profile drift, changed filenames; verify published outputs and report before/after.",
       "evidence_tiers": [
         "U",
@@ -5306,9 +5651,10 @@
             "telemetry"
           ],
           "assertions": [
-            "Captured JSON from plan, dry-run and application agrees for automatic root, exact pin, client-only mod, retained library and local source",
+            "Structured dry-run and human dry-run preserve source/state; their proposed selections agree with the actual approved application for automatic root, exact pin, client-only mod, retained library and local source",
             "Runtime and filename change preserve primary-role placement, comments, bindings and local bytes; incomplete local dependency evidence remains explicit",
-            "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges"
+            "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges",
+            "A provider title containing line breaks and terminal controls is rejected at lock admission without project/state changes; ordinary Unicode titles survive the subsequent human and JSON migration lifecycle"
           ]
         },
         {
@@ -5327,7 +5673,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Plan, dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
+            "Structured preview, human dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
           ]
         },
         {
@@ -5414,7 +5760,7 @@
           ],
           "assertions": [
             "The actual CLI refuses malformed, duplicate, missing-root, local-root and redundant canonical provider replacements before acquisition; a redundant request cannot reset an exact pin",
-            "Invalid loader arguments, JSON without plan, missing locks and stale evidence preserve every author file under plan, preview and approved invocation"
+            "Invalid loader arguments, JSON without a true dry-run mode (including an explicitly false environment flag), removed --plan, missing locks and stale evidence preserve author files under preview and approved invocation"
           ]
         },
         {
@@ -5437,6 +5783,27 @@
             "Stable placements, local configuration, profiles, comments, prior artifacts and unselected content survive; complete client/server native inventories and byte digests match the applied candidate",
             "A stale authored Prism component profile refuses delivery without changing author files or old outputs; deliberately removing it produces current components and the expected files",
             "A deliberate provider replacement resets only the selected pin, preserves all unselected records and file bytes, rebuilds the expected native outputs and converges across two syncs; no startup or gameplay claim"
+          ]
+        },
+        {
+          "id": "UX-033.native-readiness-before-reporting",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::migration_native_conflicts_are_reported_before_readiness_and_preserve_all_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A valid provider/runtime candidate with a checksum-invalid existing destination fails human preview, structured preview and approved application through the same original typed native error",
+            "Structured failure retains the current/proposed runtime, blocked result and diagnostic without inventing a file plan; all author/lock/native/prior state bytes remain unchanged",
+            "Default sync/pin/unpin preparation still uses the shared native owner; JSON previews cannot mix ordinary materialization or confirmation prose into stdout"
           ]
         }
       ],
@@ -5779,7 +6146,8 @@
           "assertions": [
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
             "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory",
-            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow",
+            "Public pending resume accepts explicit import Java/runtime, content-folder and metadata options, preserving Unicode author values through sync and byte-exact export checks"
           ]
         },
         {
@@ -6109,6 +6477,30 @@
             "Malformed and schema-only unknown-header controls remain; restoring test-owned supported bytes restores the original public ID and obligations without authorization, while discard remains explicit"
           ],
           "remaining_group_evidence": "Schema fault injection belongs to the fixture; every observation and refusal uses ordinary public commands. This does not establish migration support, physical reboot or any unexecuted host/product/package variant."
+        },
+        {
+          "id": "UX-035.import-interpretation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::shared_pending_import_preserves_interpretation_and_replacement_choices",
+            "empack-lib::application::engine_host::build::tests::native_build_missing_content_is_read_only_and_exact_supplied_bytes_complete_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A retained import accepts explicit auxiliary exclusion, Java/runtime selection, content folders, metadata and additional accepted versions through the same import interpreter",
+            "Replacing an existing project requires an explicit replacement choice and fresh native preparation; refusal and dry-run preserve all project/state/input bytes",
+            "Resumption verifies the supplied file against the retained archive, preserves ordinary Unicode author metadata and removes the selected pending record after successful publication",
+            "Import-only arguments on saved builds return a usage error before Downloads scanning or browser launch, preserving the complete workspace",
+            "Build-only wait assistance refuses an import with a usage error before scanning or browser opening, preserving saved work and supplied sources"
+          ]
         }
       ],
       "owner_now": [
@@ -6127,7 +6519,7 @@
       "id": "UX-036",
       "family": "Missing input and pending work",
       "title": "Continue across executable restart",
-      "public_surface": "pending resume; legacy continuations",
+      "public_surface": "pending resume; saved-input operations",
       "api_ids": [
         "PEND",
         "IO",
@@ -6193,7 +6585,7 @@
           "test_ids": [
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
             "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state",
-            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup"
+            "empack-tests::journey_pending::journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup"
           ],
           "required_platforms": [
             "linux",
@@ -6208,7 +6600,7 @@
             "A separate executable retains the first verified input while the second is missing without publishing a partial project",
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
             "Repeated synchronization converges; changed author bytes prevent stale resume",
-            "Both public pending resume and sync --continue complete from retained verified input after executable restart and cache cleanup"
+            "Full and unique-prefix pending IDs complete from retained verified input after executable restart and cache cleanup"
           ]
         },
         {
@@ -6250,7 +6642,7 @@
           ],
           "assertions": [
             "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
-            "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
+            "Full and unique-prefix pending IDs install the same inventory and converge across repeated preparation; stale installation refuses replay"
           ]
         },
         {
@@ -6419,7 +6811,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Public diagnostic selectors associate two distinct manual payloads through both pending resume and init --continue, across separate executable invocations",
+            "Public diagnostic selectors associate two distinct manual payloads through full and unique-prefix pending IDs across separate executable invocations",
             "After the original archive and first download are removed, same-length corruption fails the original SHA-512 without changing saved state, author notes, prior artifacts or the absent destination",
             "Missing payload becomes a new obligation while the other payload is retained; inspection lists retained content without claiming complete discovery",
             "Fresh verified replacement completes an exact independently asserted exported inventory after both original downloads and ordinary cache are removed; repeated synchronization converges"
@@ -6442,7 +6834,7 @@
           ],
           "assertions": [
             "A timed-out restricted build retains its recipe and prior artifacts",
-            "A fresh build --continue invocation accepts verified renamed bytes and produces the independently expected complete MRPack"
+            "A selected pending resume invocation accepts verified renamed bytes and produces the independently expected complete MRPack"
           ]
         },
         {
@@ -6649,7 +7041,8 @@
           "assertions": [
             "Invalid wait bounds and preview leave authoring and saved state untouched",
             "A sole wrong same-length file times out; renamed verified bytes subsequently produce the complete expected archive while preserving downloads and prior author/artifact bytes",
-            "A changed saved recipe refuses automatic continuation"
+            "A changed saved recipe refuses automatic continuation",
+            "The public pending resume ID route waits for the selected saved build, preserves source/downloads on timeout and completes after verified bytes are supplied"
           ]
         },
         {
@@ -7371,7 +7764,7 @@
         "INST",
         "RUN"
       ],
-      "required_assertions": "Exact descriptor/hash/assets and mandatory prelaunch/wrapper retained; instance prepare materializes correct bytes.",
+      "required_assertions": "Exact descriptor/hash/assets and mandatory prelaunch/wrapper retained; instance ensure materializes correct bytes.",
       "required_work": "Independent archive inspection then generated integration with actual binary; actual Prism import separately.",
       "evidence_tiers": [
         "H",
@@ -7401,7 +7794,7 @@
           ],
           "assertions": [
             "Independent complete archive members, literal selected bytes, SHA-256 descriptor/assets and generated command settings agree with the reference snapshot",
-            "Public instance prepare uses the hash extracted from the known emitted prelaunch fixture; changed descriptor bytes and equal-length corrupted assets refuse without altering instance files",
+            "Public instance ensure uses the hash extracted from the known emitted prelaunch fixture; changed descriptor bytes and equal-length corrupted assets refuse without altering instance files",
             "Preparation in a path with spaces and Unicode installs the exact visible inventory, preserves a world sentinel and player-edited seed content, and converges on repeated preparation",
             "Changing author configuration without changing the version produces a new descriptor identity and installs the new bytes into a fresh instance without changing unrelated author files",
             "The command fixture is a restricted expected string, not a substitute for Qt parsing or actual launcher execution"
@@ -9165,7 +9558,7 @@
           "test_ids": [
             "empack-lib::application::engine_host::build::tests::native_build_target_mapping_retains_archives_defaults_and_explicit_decisions",
             "empack-lib::application::engine_host::build::tests::curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output",
-            "empack-lib::application::engine_host::build::tests::native_build_rejects_unsupported_flags_and_invalid_targets_without_effects"
+            "empack-lib::application::engine_host::build::tests::native_build_rejects_invalid_targets_without_effects"
           ],
           "required_platforms": [
             "linux",
@@ -10094,8 +10487,8 @@
     {
       "id": "UX-056",
       "family": "Publisher and trust",
-      "title": "Publish hosted channel only after verification",
-      "public_surface": "release publish-channel",
+      "title": "Create a signed channel file after hosted verification",
+      "public_surface": "release channel create",
       "api_ids": [
         "REL",
         "IO",
@@ -10270,6 +10663,7 @@
           ],
           "assertions": [
             "Engine enrollment retains the exact selected pack, channel, full HTTPS URL and public key bytes; a fresh engine reopens the same identity/URL without changing the persisted trust bytes during preview",
+            "Subscription previews distinguish the prior recorded floor from first, repeated and newer candidate observations without writing the stored record",
             "A copied current-format enrollment cannot authorize observation at another root; a local trust edit after preparation invalidates execution and is preserved rather than overwritten"
           ]
         }
@@ -10678,6 +11072,7 @@
           ],
           "assertions": [
             "A durable authenticated channel binds the exact release before preparation; hosted relative assets are not requested until execution approval",
+            "An unaccepted floor cannot fetch a release; an offer change during metadata download refuses the stale selection even when the release ID is unchanged, preserves the newer native-generated record and allows a subsequent selection under that floor",
             "Asset, URL, provider, manual and archive-member provenance retain exact bytes and source meaning through hosted acquisition; corrupt content refuses before installation while preserving the observed sequence floor",
             "Repair after trust revocation uses the retained completed locator without selecting an update; it restores managed content but does not refill an initialized world, and the fetch reservations retire"
           ],
@@ -10899,7 +11294,7 @@
       "id": "UX-062",
       "family": "Installed instances",
       "title": "Preparation does not roll back a newer installation",
-      "public_surface": "instance prepare",
+      "public_surface": "instance ensure",
       "api_ids": [
         "INST",
         "REL",
@@ -10934,7 +11329,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Fresh controlled host sessions require enrollment when instance prepare requests it, including against an already installed active release, without requiring the input descriptor itself to demand subscription",
+            "Fresh controlled host sessions require enrollment when instance ensure requests it, including against an already installed active release, without requiring the input descriptor itself to demand subscription",
             "Permitted preparation bootstraps A; after explicit snapshot installation of B, repeated preparation using A retains the active B selection and project bytes",
             "A wrong exact digest refuses without changing installed state or either descriptor; this empty-inventory handler fixture does not establish asset repair, signed updates or launcher execution"
           ]
@@ -11051,11 +11446,13 @@
     {
       "id": "UX-063",
       "family": "Installed instances",
-      "title": "Inspect completed state",
-      "public_surface": "instance inspect; status --context instance",
+      "title": "Inspect and validate completed state",
+      "public_surface": "instance inspect; instance check; status --context instance",
       "api_ids": [
         "INST",
-        "CLI"
+        "CLI",
+        "PUB",
+        "RUN"
       ],
       "required_assertions": "Release/choices/history versus pending/uncertain state distinguishable; read-only; no corruption normalized away.",
       "required_work": "Machine/human reports and malformed state schema; role ambiguity.",
@@ -11177,6 +11574,52 @@
             "A subsequent user edit survives recovery refusal and unrelated planned content is not published",
             "This private journal fixture proves the shared pre-context barrier, not actual process termination or consumer startup"
           ]
+        },
+        {
+          "id": "UX-063.read-only-inventory",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::instance::checking::tests::checking_preserves_player_content_and_detects_missing_or_modified_managed_files",
+            "empack-lib::engine::instance::checking::tests::accepted_overrides_are_checked_against_their_saved_identity",
+            "empack-lib::engine::instance::checking::tests::runtime_evidence_remains_owned_and_is_never_cleared_by_checking",
+            "empack-lib::engine::instance::checking::tests::interrupted_publication_and_damaged_records_are_reported_without_recovery",
+            "empack-lib::engine::instance::checking::tests::prism_checks_admit_launcher_cache_saves_but_refuse_runtime_changes",
+            "empack-lib::engine::instance::checking::tests::player_owned_changes_during_the_check_do_not_invalidate_managed_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Completed root-bound descriptor, current selected managed inventory, original assertions, supported attributes and accepted local overrides are checked without preparation or mutation",
+            "Seed/world data and its concurrent changes are outside publisher-byte verification; launcher cache saves use the existing semantic Prism observation while actual runtime changes refuse",
+            "Active and unconfirmed runtime evidence, damaged records and interrupted publication fail without clearing evidence or restoring files; ordinary checks resume after confirmed cleanup"
+          ]
+        },
+        {
+          "id": "UX-063.public-check",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_status::cli_instance_check_verifies_managed_content_without_repairing_player_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The real CLI returns scoped human/default/details and JSON reports for a Prism instance while preserving player settings, world absence and all workspace bytes/attributes",
+            "Modified managed content and corrupt completed records return unsuccessful checks with useful structured findings; no repair is applied"
+          ]
         }
       ],
       "owner_now": [
@@ -11270,7 +11713,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Controlled host transport exercises check+update with inferred server context, preview/refusal and two separate observation/application approvals",
+            "Fresh update previews authenticate the offered release without changing history or fetching an unaccepted release, with or without --yes; a saved offer supports a nonapplying full plan",
+            "Explicit --apply requires separate observation/content approvals; dry-run and declined approval stop before their respective effects",
             "A missing release after approved channel observation preserves its durable sequence floor; declining application keeps A installed and accepting later applies B",
             "This host-only transport adapter is absent from the ordinary product; it is not actual hosted HTTPS or browser capability evidence"
           ]
@@ -11300,6 +11744,46 @@
           "assertions": [
             "Each declared final archive executes the public inferred-context/contradictory-override and managed-conflict update journeys",
             "Native component/suite observations cannot replace the exact five-target archive execution binding"
+          ]
+        },
+        {
+          "id": "UX-064.update-preview-manual-input",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::update_preview_requires_manual_inputs_without_saving"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A saved authenticated offer requiring manual content reports missing input in preview, including --yes and --apply with dry-run, without saving history or pending work",
+            "Explicit application saves the exact waiting operation; pending resume with the exact file installs that release, clears waiting work and permits a subsequent unchanged preview"
+          ]
+        },
+        {
+          "id": "UX-064.explicit-local-channel-update",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::local_channel_update_preserves_preview_and_requires_authenticated_offer"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An explicitly selected local channel offer previews without approval, durable history, release fetch or hosted-channel request, including --yes and dry-run",
+            "Wrong signatures and mixed local release/channel sources refuse without effects; explicit application saves the authenticated offer and fetches its exact remote release while preserving enrolled URL"
           ]
         }
       ],
@@ -11882,7 +12366,7 @@
       "id": "UX-069",
       "family": "Installed instances",
       "title": "Instance continuation and discard",
-      "public_surface": "instance continue / discard-pending; unified pending",
+      "public_surface": "pending resume / discard",
       "api_ids": [
         "INST",
         "PEND",
@@ -11917,7 +12401,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Only schema-2 pending instance records can resume, using the persistent base fingerprint",
+            "Only schema-3 pending instance records can resume, using the persistent base fingerprint",
             "Obsolete/unknown schemas and mismatched fingerprints refuse continuation without changing retained records or the instance",
             "The supported record resumes exact retained/supplied content through fresh preparation without rewriting saved bytes or authorizing publication"
           ]
@@ -12286,7 +12770,8 @@
           "id": "UX-071.coupled-prism-publication",
           "boundary": "N",
           "test_ids": [
-            "empack-lib::engine::api::instance::tests::prism_runtime_and_content_publish_together_and_keep_extra_components"
+            "empack-lib::engine::api::instance::tests::prism_runtime_and_content_publish_together_and_keep_extra_components",
+            "empack-lib::engine::api::instance::tests::prism_read_only_profile_tolerates_launcher_saves_but_rejects_component_changes"
           ],
           "required_platforms": [
             "linux",
@@ -12299,6 +12784,7 @@
           ],
           "assertions": [
             "A late profile edit produces StaleSnapshot before new mod bytes are published, preserving the exact edited inventory",
+            "Same-runtime atomic profile replacements and recognized launcher cache saves are read-only; game/extra-component versions, disabled or missing required components, and unknown setting changes invalidate preparation without rewriting the profile or seed-owned options",
             "Runtime and content update together with the complete expected Minecraft/Fabric profile, user components and metadata",
             "Old bootstrap preparation cannot roll back the installed update; explicit rollback restores the complete prior profile and mod inventory while preserving a played world"
           ]
@@ -12665,7 +13151,7 @@
           "id": "UX-073.java-specification-parser",
           "boundary": "U",
           "test_ids": [
-            "empack-lib::engine::api::launch::tests::java_properties_reject_ambiguous_missing_or_malformed_versions"
+            "empack-lib::engine::java::tests::java_properties_reject_ambiguous_missing_or_malformed_versions"
           ],
           "required_platforms": [
             "linux",
@@ -12758,6 +13244,7 @@
           ],
           "assertions": [
             "Old, absent, duplicate and malformed specification versions and nonzero probe status return specific diagnostics without invoking the runtime",
+            "Failed JVM probes provide actionable guidance without echoing unrelated JVM properties or raw captured output",
             "Every refusal allows an immediate compatible follow-up launch without runtime-recovery acknowledgement; publisher inputs, tools, player data and installation record remain intact",
             "A fixture runtime exiting 7 produces empack General status with its original runtime-status diagnostic, followed by a successful later launch"
           ]
@@ -14346,7 +14833,7 @@
           "boundary": "X",
           "test_ids": [
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
-            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending::journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup",
             "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
           ],
           "required_platforms": [
@@ -15771,7 +16258,7 @@
           "id": "UX-087.api-examples-compile",
           "boundary": "U",
           "test_ids": [
-            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 770)",
+            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 769)",
             "doctest::crates/empack-lib/src/lib.rs - (line 18)"
           ],
           "required_platforms": [
@@ -15797,9 +16284,9 @@
           "id": "UX-087.rustdoc-examples-execute",
           "boundary": "U",
           "test_ids": [
-            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 23)",
-            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 66)",
-            "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 98)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 24)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 54)",
+            "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 99)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::pairs (line 41)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::table (line 26)",
             "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 15)"
@@ -16590,7 +17077,9 @@
           "boundary": "U",
           "test_ids": [
             "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements",
-            "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases"
+            "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases",
+            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations",
+            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions"
           ],
           "required_platforms": [
             "linux",
@@ -17197,9 +17686,9 @@
       ]
     },
     "DOC": {
-      "owner_now": "engine::documents + application::engine_host::cli::manifest",
+      "owner_now": "engine::{documents,checking} + application::engine_host::{checking,cli::manifest}",
       "owner_09": "empack-engine codecs/inspection + CLI renderer",
-      "route": "DocumentCodec \u2192 decode_authoring/inspect_authoring/replace_intent \u2192 normalized ProjectIntent and raw/semantic revisions; JSON Schema is a separate checker",
+      "route": "DocumentCodec \u2192 local interpretation; checking \u2192 documents/recorded/fresh-exact reports through snapshots, content verification and provider closure, without native mutation grants",
       "sources": [
         "S11",
         "S29",
@@ -17259,7 +17748,7 @@
     "PEND": {
       "owner_now": "engine::pending + workflow-specific persisted records; application::engine_host",
       "owner_09": "shared pending semantics + native/browser retention and UI",
-      "route": "PendingCommand::{List,Show,Resume,Discard} \u2192 selected unchanged workflow record \u2192 exact input association \u2192 reprepare \u2192 fresh grant; legacy build/import/sync/instance continuation adapters",
+      "route": "PendingCommand::{List,Show,Resume,Discard} \u2192 selected unchanged workflow record \u2192 exact input association \u2192 reprepare \u2192 fresh grant; native build/import/sync/instance workflow owners",
       "sources": [
         "S11",
         "S12",
@@ -17290,7 +17779,7 @@
     "REL": {
       "owner_now": "engine::release + api::release_publication/subscription",
       "owner_09": "shared release meaning/signature verification + native signing custody and publication",
-      "route": "StageReleaseRequest / PublishChannelRequest / SubscriptionRequest; ReleaseDocument; authenticated release/channel envelopes; stored sequence floors; PublisherSetup",
+      "route": "StageReleaseRequest / CreateChannelRequest / SubscriptionRequest; ReleaseDocument; authenticated release/channel envelopes; stored sequence floors; PublisherSetup",
       "sources": [
         "S11",
         "S18",

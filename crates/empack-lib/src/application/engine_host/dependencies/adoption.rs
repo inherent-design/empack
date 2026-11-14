@@ -1,14 +1,15 @@
 //! Stream the captured resolution changes before adoption approval.
+use crate::application::labels;
 use crate::engine::api::{AdoptObservedPreview, AdoptionResolution};
 use empack_core::{digest::ExpectedDigest, model::AcquisitionSpec};
 
 pub(super) fn describe(view: &AdoptObservedPreview, mut emit: impl FnMut(String)) {
     for selection in &view.selections {
-        emit(format!("Resolution change: {}", selection.key.as_str()));
+        emit(format!("Dependency record: {}", selection.key.as_str()));
         if let Some(before) = &selection.before {
             describe_resolution("Before", before, &mut emit);
         } else {
-            emit("Before: no recorded resolution".into());
+            emit("Before: not recorded".into());
         }
         describe_resolution("After", &selection.after, &mut emit);
     }
@@ -16,13 +17,27 @@ pub(super) fn describe(view: &AdoptObservedPreview, mut emit: impl FnMut(String)
 fn describe_resolution(label: &str, value: &AdoptionResolution, emit: &mut impl FnMut(String)) {
     let dependency = &value.dependency;
     emit(format!(
-        "{label}: {} ({:?}, {:?}); selected pin: {:?}",
-        dependency.title, dependency.kind, dependency.identity, dependency.selected
+        "{label}: {} ({}, {})",
+        dependency.title,
+        labels::content(dependency.kind),
+        super::identity_label(&dependency.identity)
     ));
     emit(format!(
-        "{label} required dependencies: {}; evidence: {:?}",
+        "{label} version: {}",
+        dependency
+            .selected
+            .as_ref()
+            .map(labels::pin)
+            .unwrap_or_else(|| "not recorded".into())
+    ));
+    emit(format!(
+        "{label} required dependencies: {}",
         if value.required.is_empty() {
-            "none recorded".into()
+            if value.coverage == empack_core::model::Coverage::CompleteForSelection {
+                "none declared".into()
+            } else {
+                "none recorded".into()
+            }
         } else {
             value
                 .required
@@ -30,31 +45,35 @@ fn describe_resolution(label: &str, value: &AdoptionResolution, emit: &mut impl 
                 .map(|key| key.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
-        },
-        value.coverage
+        }
+    ));
+    emit(format!(
+        "{label} dependency information: {}",
+        labels::coverage(value.coverage)
     ));
     for file in dependency.files.as_slice() {
         let slot = file.slot.as_str();
         emit(format!(
-            "{label} file {slot}: expected size {:?}",
-            file.expected.size
+            "{label} file {slot}: {}",
+            file.expected
+                .size
+                .map(|size| format!("expected {size} bytes"))
+                .unwrap_or_else(|| "size not declared".into())
         ));
         if let Some(digests) = &file.expected.digests {
             for digest in digests.values() {
                 emit(format!(
-                    "{label} file {slot}: {:?} {}",
-                    digest.algorithm(),
+                    "{label} file {slot}: declared {} {}",
+                    digest.algorithm().name(),
                     digest.hex()
                 ));
             }
         } else {
-            emit(format!(
-                "{label} file {slot}: no independent digest assertion"
-            ));
+            emit(format!("{label} file {slot}: no source checksum declared"));
         }
         if let Some(id) = &file.expected.accepted_observation {
             emit(format!(
-                "{label} file {slot}: accepted SHA256 observation {}",
+                "{label} file {slot}: accepted SHA-256 {}",
                 ExpectedDigest::Sha256(*id.bytes()).hex()
             ));
         }
@@ -63,22 +82,25 @@ fn describe_resolution(label: &str, value: &AdoptionResolution, emit: &mut impl 
                 pin,
                 slot: role,
                 alternatives,
-            } => emit(format!(
-                "{label} file {slot}: provider {:?}, role {}, origins {:?}",
-                pin,
-                role.as_str(),
-                alternatives
-            )),
+            } => {
+                emit(format!(
+                    "{label} file {slot}: provider {}, role {}",
+                    labels::pin(pin),
+                    role.as_str()
+                ));
+                if !alternatives.is_empty() {
+                    describe_locations(label, slot, alternatives, emit);
+                }
+            }
             AcquisitionSpec::ProviderArchiveMember { archive, member } => emit(format!(
-                "{label} file {slot}: provider archive {:?}, role {}, member {}",
-                archive.pin,
+                "{label} file {slot}: provider archive {}, role {}, member {}",
+                labels::pin(&archive.pin),
                 archive.slot.as_str(),
                 member.as_str()
             )),
-            AcquisitionSpec::Url(origins) => emit(format!(
-                "{label} file {slot}: origins {:?}",
-                origins.as_slice()
-            )),
+            AcquisitionSpec::Url(origins) => {
+                describe_locations(label, slot, origins.as_slice(), emit)
+            }
             AcquisitionSpec::Local(path) => {
                 emit(format!("{label} file {slot}: local {}", path.as_str()))
             }
@@ -87,22 +109,46 @@ fn describe_resolution(label: &str, value: &AdoptionResolution, emit: &mut impl 
                 archive.as_str(),
                 member.as_str()
             )),
-            // Freeform instructions and provenance are not acquisition identity, and may contain
-            // locators that should not be expanded into automatic diagnostics.
-            AcquisitionSpec::Manual { pin, .. } => {
-                emit(format!("{label} file {slot}: manual selection {:?}", pin))
-            }
+            // Instructions and provenance can contain credentials or signed locators.
+            AcquisitionSpec::Manual { pin, .. } => emit(format!(
+                "{label} file {slot}: manual download{}",
+                pin.as_ref()
+                    .map(|pin| format!(" for {}", labels::pin(pin)))
+                    .unwrap_or_default()
+            )),
         }
         for placement in file.placements.as_slice() {
             emit(format!(
-                "{label} file {slot}: {:?}/{}; client {:?}; server {:?}",
-                placement.layer,
+                "{label} file {slot}: layer {}, path {}; client {}; server {}",
+                labels::layer(placement.layer),
                 placement.destination.relative().as_str(),
-                placement.requirements.client,
-                placement.requirements.server
+                labels::requirement(&placement.requirements.client),
+                labels::requirement(&placement.requirements.server)
             ));
         }
     }
+}
+
+fn describe_locations(
+    label: &str,
+    slot: &str,
+    locations: &[String],
+    emit: &mut impl FnMut(String),
+) {
+    let hosts = locations
+        .iter()
+        .map(|location| {
+            reqwest::Url::parse(location)
+                .map(|url| url.origin().ascii_serialization())
+                .unwrap_or_else(|_| "unavailable".into())
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join(", ");
+    emit(format!(
+        "{label} file {slot}: download hosts {hosts} (full URLs hidden)"
+    ));
 }
 
 #[cfg(test)]
@@ -201,11 +247,11 @@ mod tests {
         for expected in [
             "Version1",
             "Version2",
-            "Some(27)",
+            "expected 27 bytes",
             "required-library",
-            "Unknown",
-            "CompleteForSelection",
-            "server Required",
+            "dependency information: not recorded",
+            "dependency information: complete for this version",
+            "server required",
             &ExpectedDigest::Sha256([7; 32]).hex(),
         ] {
             assert!(text.contains(expected), "missing {expected}: {text}");
@@ -213,5 +259,21 @@ mod tests {
         assert!(!text.contains("token=secret"));
         assert!(text.contains("Before file"));
         assert!(text.contains("After file"));
+    }
+    #[test]
+    fn download_locations_hide_credentials_paths_and_signed_queries() {
+        let urls = vec![
+            "https://username:password@cdn.example.invalid/private-file?token=secret#fragment"
+                .into(),
+            "https://cdn.example.invalid/other?private=hidden".into(),
+        ];
+        let mut lines = Vec::new();
+        describe_locations("After", "main", &urls, &mut |line| lines.push(line));
+        assert_eq!(
+            lines,
+            ["After file main: download hosts https://cdn.example.invalid (full URLs hidden)"]
+        );
+        assert_eq!(urls.len(), 2);
+        assert!(urls[0].contains("token=secret"));
     }
 }

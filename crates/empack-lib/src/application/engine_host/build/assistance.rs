@@ -4,14 +4,21 @@ use crate::engine::api::SavedBuildResume;
 use tokio::time::Instant;
 
 pub(super) fn validate(args: &BuildArgs) -> Result<()> {
-    if let Some(seconds) = args.wait_downloads {
+    validate_wait(args.downloads_dir.is_some(), args.wait_downloads)
+}
+pub(super) fn validate_wait(downloads: bool, wait_seconds: Option<u64>) -> Result<()> {
+    if let Some(seconds) = wait_seconds {
         ensure!(
             (1..=3600).contains(&seconds),
-            "Download wait must be between 1 and 3600 seconds"
+            crate::application::cli::CommandInputRequired(
+                "Download wait must be between 1 and 3600 seconds"
+            )
         );
         ensure!(
-            args.downloads_dir.is_some(),
-            "Download waiting requires an explicit downloads directory"
+            downloads,
+            crate::application::cli::CommandInputRequired(
+                "Download waiting requires an explicit downloads directory"
+            )
         );
     }
     Ok(())

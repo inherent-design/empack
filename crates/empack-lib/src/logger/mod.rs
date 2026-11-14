@@ -1,7 +1,9 @@
 use crate::primitives::*;
-use std::sync::OnceLock;
-use tracing_indicatif::IndicatifLayer;
+use indicatif::MultiProgress;
+use std::sync::{Arc, OnceLock};
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+mod output;
 
 #[cfg(feature = "telemetry")]
 use opentelemetry::trace::TracerProvider as _;
@@ -42,49 +44,39 @@ impl std::fmt::Debug for Logger {
 impl Logger {
     /// Initialize the global logger with the given configuration.
     ///
-    /// Composes: `registry + env_filter + fmt_layer + indicatif_layer`
-    /// and, when the `telemetry` feature is enabled, optional Chrome and
-    /// OTLP layers selected by the `EMPACK_PROFILE` env var.
-    pub fn init(config: LoggerConfig) -> Result<&'static Self, LoggerError> {
+    /// Shares the command's progress owner for diagnostic output. Tracing spans
+    /// do not create another terminal animation. The telemetry feature retains
+    /// Chrome and OTLP layers selected by the `EMPACK_PROFILE` environment variable.
+    pub fn init(
+        config: LoggerConfig,
+        progress: Arc<MultiProgress>,
+    ) -> Result<&'static Self, LoggerError> {
         if GLOBAL_LOGGER.get().is_some() {
             return Err(LoggerError::AlreadyInitialized);
         }
-
-        let indicatif_layer = IndicatifLayer::new();
 
         let filter_string = Self::build_filter_string(&config);
 
         let env_filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&filter_string));
 
-        let fmt_layer = match (config.output, config.format) {
-            (LogOutput::Stderr, LogFormat::Text) => fmt::layer()
-                .with_writer(indicatif_layer.get_stderr_writer())
+        let output = output::Output {
+            progress,
+            destination: config.output,
+        };
+        let fmt_layer = match config.format {
+            LogFormat::Text => fmt::layer()
+                .with_writer(output)
                 .with_ansi(config.terminal_caps.color != TerminalColorCaps::None)
                 .compact()
                 .boxed(),
-            (LogOutput::Stderr, LogFormat::Json) => fmt::layer()
-                .with_writer(indicatif_layer.get_stderr_writer())
+            LogFormat::Json => fmt::layer()
+                .with_writer(output)
                 .with_ansi(false)
                 .json()
                 .boxed(),
-            (LogOutput::Stderr, LogFormat::Yaml) => fmt::layer()
-                .with_writer(indicatif_layer.get_stderr_writer())
-                .with_ansi(config.terminal_caps.color != TerminalColorCaps::None)
-                .pretty()
-                .boxed(),
-            (LogOutput::Stdout, LogFormat::Text) => fmt::layer()
-                .with_writer(indicatif_layer.get_stdout_writer())
-                .with_ansi(config.terminal_caps.color != TerminalColorCaps::None)
-                .compact()
-                .boxed(),
-            (LogOutput::Stdout, LogFormat::Json) => fmt::layer()
-                .with_writer(indicatif_layer.get_stdout_writer())
-                .with_ansi(false)
-                .json()
-                .boxed(),
-            (LogOutput::Stdout, LogFormat::Yaml) => fmt::layer()
-                .with_writer(indicatif_layer.get_stdout_writer())
+            LogFormat::Pretty => fmt::layer()
+                .with_writer(output)
                 .with_ansi(config.terminal_caps.color != TerminalColorCaps::None)
                 .pretty()
                 .boxed(),
@@ -128,21 +120,12 @@ impl Logger {
             (None, None)
         };
 
-        // Per-layer filtering when telemetry is enabled: fmt and indicatif
-        // layers get the user's configured filter; telemetry layers (chrome,
-        // otlp) run unfiltered so #[instrument] spans at INFO level are always
-        // captured. Two separate EnvFilter instances because EnvFilter is not
-        // Clone. The indicatif layer MUST be filtered identically to fmt;
-        // otherwise it receives span events for progress bars that fmt never
-        // created, causing a panic in pb_manager.
+        // Keep the user's log filter separate from telemetry: command spans
+        // remain available to Chrome/OTLP even when console logging is quiet.
         #[cfg(feature = "telemetry")]
         {
-            let indicatif_filter = EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&filter_string));
-
             tracing_subscriber::registry()
                 .with(fmt_layer.with_filter(env_filter))
-                .with(indicatif_layer.with_filter(indicatif_filter))
                 .with(chrome_layer)
                 .with(otel_layer)
                 .try_init()
@@ -155,7 +138,6 @@ impl Logger {
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(fmt_layer)
-                .with(indicatif_layer)
                 .try_init()
                 .map_err(|e| LoggerError::InitializationFailed {
                     reason: e.to_string(),

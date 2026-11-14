@@ -125,10 +125,15 @@ pub(super) fn journey() {
         "--materialize",
     ];
     let mut plan = args.to_vec();
-    plan.extend(["--plan", "--json"]);
+    plan.extend(["--dry-run", "--json"]);
     let output = run(&project, &plan);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["materialization_requested"], true);
+    assert_eq!(report["native_publication_performed"], false);
+    assert!(!report["file_changes"].as_array().unwrap().is_empty());
+    assert!(report["diagnostic"].is_null());
     assert_eq!(report["current_runtime"]["minecraft"], "1.21.1");
     assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.2");
     assert_eq!(author_snapshot(root), before);
@@ -274,7 +279,7 @@ pub(super) fn journey() {
     let mut replace = args.to_vec();
     replace.extend(["--replace", "history=modrinth:gvQqBUqZ"]);
     let mut preview = replace.clone();
-    preview.extend(["--plan", "--json"]);
+    preview.extend(["--dry-run", "--json"]);
     let output = run(&project, &preview);
     let replacement: Value = serde_json::from_slice(&output.stdout).unwrap();
     let changed = replacement["dependencies"]

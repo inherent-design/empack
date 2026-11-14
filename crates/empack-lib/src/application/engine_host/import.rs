@@ -20,8 +20,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit archive selection. Transient download URLs are never formatted or serialized here.
 pub enum ImportSource {
-    Saved,
-    SavedSelected(String),
+    Saved(String),
     Provider {
         selector: ModpackSelector,
         releases: ReleasePolicy,
@@ -47,6 +46,49 @@ pub struct ImportHostRequest {
     pub supplied: BTreeMap<ImportContentKey, AcquiredContent>,
     /// Explicit host file associations; paths resolve against the invocation directory.
     pub local_files: Vec<ImportLocalFile>,
+}
+
+fn input_message(input: &crate::engine::import::ImportContentInput) -> Result<String> {
+    let selector = input.key.selector();
+    let reason = match input.reason {
+        crate::engine::import::ImportInputReason::RestrictedDownload => "download it manually",
+        crate::engine::import::ImportInputReason::UnsupportedTransport => {
+            "this download method is not supported; use a local file"
+        }
+    };
+    let next = match crate::application::shell::association(&selector, "PATH") {
+        Some(argument) => {
+            format!("after saving, use pending resume ID --file={argument}")
+        }
+        None => "save this import, then use pending show ID for its file requirements".into(),
+    };
+    Ok(format!(
+        "Missing import file {}: {reason}; {next}",
+        crate::terminal::json_text(&selector)?
+    ))
+}
+
+fn saved_import_hint(destination: &Path, state: &Path) -> String {
+    let command = destination
+        .to_str()
+        .zip(state.to_str())
+        .and_then(|(destination, state)| {
+            crate::application::shell::arguments(&[
+                "--workdir".into(),
+                destination.into(),
+                "--state-dir".into(),
+                state.into(),
+                "pending".into(),
+                "list".into(),
+            ])
+        });
+    match command {
+        Some(command) => format!(
+            "Import was saved.\nNext ({}): empack {command}\nUse the same destination and state directory for pending show ID and pending resume ID --file SELECTOR=PATH.",
+            crate::application::shell::NAME
+        ),
+        None => "Import was saved. Select its destination with --workdir and the original state directory with --state-dir, then use pending list, pending show ID and pending resume ID --file SELECTOR=PATH.".into(),
+    }
 }
 
 /// The decision callback receives verified source evidence, not a live project writer.
@@ -100,6 +142,7 @@ pub(super) async fn import_with_services(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectTarget::New(selected),
         Err(error) => return Err(error.into()),
     };
+    show_target_directory(session, &target);
     let config = session.config().app_config();
     let shared = governor(config);
     let deadline = Duration::from_secs(config.net_timeout);
@@ -138,17 +181,13 @@ pub(super) async fn import_with_services(
     let (content, mut saved) = scoped(session, shared.clone(), move |mut scope| async move {
         let mut resumed = None;
         let archive = match source {
-            source @ (ImportSource::Saved | ImportSource::SavedSelected(_)) => {
-                let expected = match source {
-                    ImportSource::SavedSelected(id) => Some(id),
-                    _ => None,
-                };
+            ImportSource::Saved(expected) => {
                 let saved =
                     crate::engine::import::load_pending_import(&mut scope, load_state, load_target)
                         .await?
                         .context("No saved import exists for this destination")?;
                 ensure!(
-                    expected.is_none_or(|id| id == saved.saved.identity()),
+                    expected == saved.saved.identity(),
                     "Selected pending import changed; inspect its new identity"
                 );
                 let archive = saved.archive.clone();
@@ -187,8 +226,8 @@ pub(super) async fn import_with_services(
                 } else {
                     ensure!(
                         !selected.file().alternatives.is_empty(),
-                        "Modpack archive {:?} requires explicit manual acquisition",
-                        selected.pin()
+                        "Modpack archive {} must be downloaded manually",
+                        crate::application::labels::pin(selected.pin())
                     );
                     transport
                         .acquire(
@@ -275,13 +314,10 @@ pub(super) async fn import_with_services(
             provided,
         } => {
             for input in &pending {
-                session.display().status().warning(&format!(
-                    "Import input {:?}: {:?}",
-                    input.key.selector(),
-                    input.reason
-                ));
+                session.display().status().warning(&input_message(input)?);
             }
             if approve(session, "Save incomplete import")? {
+                let hint = saved_import_hint(&selected_path, &state);
                 scoped(session, shared.clone(), move |mut scope| async move {
                     crate::engine::import::save_pending_import(
                         &mut scope,
@@ -295,12 +331,9 @@ pub(super) async fn import_with_services(
                     .await
                 })
                 .await?;
-                session.display().status().info("Import continuation was saved; use init --continue with the same destination and --import-file SELECTOR=PATH");
+                session.display().status().info(&hint);
             }
-            anyhow::bail!(
-                "Import was not published: {} content obligations need explicit input",
-                pending.len()
-            );
+            anyhow::bail!("Import needs {}", counted(pending.len(), "file", "files"));
         }
     };
     for diagnostic in &content.plan().imported().diagnostics {
@@ -336,8 +369,10 @@ pub(super) async fn import_with_services(
         };
         let view = prepared.view().import().context("Missing import preview")?;
         session.display().status().info(&format!(
-            "Import {} {} ({:?})",
-            view.metadata.name, view.metadata.version, view.runtime.loader
+            "Import {} {} ({})",
+            view.metadata.name,
+            view.metadata.version,
+            crate::application::labels::loader(view.runtime.loader)
         ));
         show_changes(session, &view.files)?;
         if !approve(session, "Import")? {
@@ -348,8 +383,8 @@ pub(super) async fn import_with_services(
                 anyhow::bail!("Unexpected import receipt")
             };
             Ok(format!(
-                "Import {:?}: {} published files",
-                receipt.publication.disposition, receipt.publication.changed_files
+                "Imported {}",
+                counted(receipt.publication.changed_files, "file", "files")
             ))
         })
         .await?;

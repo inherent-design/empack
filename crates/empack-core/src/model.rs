@@ -330,6 +330,11 @@ pub struct DependencyIntent {
     pub requirements: Requirements,
 }
 impl DependencyIntent {
+    /// An exact pin replaces this root's automatic preference, not its source or placement.
+    pub fn set_provider_pin(&mut self, pin: PinSelector) {
+        self.selection = DependencySelection::ProviderPin(pin);
+        self.releases = None;
+    }
     /// Check one exact selection against this root's source, pin, placement and participation.
     /// Runtime compatibility and native byte verification belong to their enclosing boundaries.
     pub fn validate_selection(

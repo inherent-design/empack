@@ -28,7 +28,7 @@ REVISION = "a" * 40
 class ChangeSelection(unittest.TestCase):
     def test_docs_and_editor_schemas_select_executable_tooling_without_native_matrix(self):
         plan = ci.selection(["README.md", ".github/README.md", "docs/schemas/empack.schema-6.json"], trusted=False)
-        self.assertEqual(plan["required_jobs"], ["tooling"])
+        self.assertEqual(plan["required_jobs"], ["tooling", "bootstrap"])
         self.assertFalse(plan["native_targets"])
         self.assertFalse(plan["blocked_jobs"])
 
@@ -296,8 +296,9 @@ class RequiredGate(unittest.TestCase):
             (root / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.exists() else b"")
             from verification.python_tests import inputs
             from verification.doctests import inputs as doctest_inputs
+            from verification.bootstrap import sources as bootstrap_sources
             paths = {"tests/verification/test-bindings.json", *inputs(SCRIPTS.parent),
-                     *doctest_inputs(SCRIPTS.parent)}
+                     *doctest_inputs(SCRIPTS.parent), *bootstrap_sources(SCRIPTS.parent)}
             originals = {}
             for name in paths:
                 target = root / name
@@ -461,7 +462,7 @@ class RequiredGate(unittest.TestCase):
                         for case in row["cases"]}
             native_complete = {
                 "UX-002", "UX-005", "UX-006", "UX-007", "UX-011", "UX-015", "UX-016", "UX-022", "UX-023",
-                "UX-024", "UX-027", "UX-028", "UX-029", "UX-034", "UX-036", "UX-038",
+                "UX-024", "UX-027", "UX-029", "UX-034", "UX-036", "UX-038",
                 "UX-040", "UX-049", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-074", "UX-075", "UX-076", "UX-078", "UX-079", "UX-080", "UX-088",
             }
             for requirement in acceptance:
@@ -673,7 +674,7 @@ class PushPlanning(unittest.TestCase):
         self.commit("docs")
         result, plan = self.plan()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(plan["required_jobs"], ["tooling"])
+        self.assertEqual(plan["required_jobs"], ["tooling", "bootstrap"])
         self.assertEqual(plan["changed_paths"], ["README.md"])
         self.assertEqual(plan["source_revision"], self.git("rev-parse", "HEAD"))
         self.assertTrue(plan["trusted"])

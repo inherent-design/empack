@@ -24,6 +24,24 @@ impl EmpackExitCode {
 }
 
 pub fn classify_error(error: &Error) -> EmpackExitCode {
+    use crate::engine::diagnostics::{Diagnostic, RecoveryClassification};
+    // An interrupt can be retained beneath a failed cleanup or uncertain result.
+    // The completed operation's recovery facts take precedence over that input.
+    if find_chain_error::<Diagnostic>(error).is_some_and(|diagnostic| {
+        matches!(
+            diagnostic.recovery,
+            RecoveryClassification::Required
+                | RecoveryClassification::InspectRecovery
+                | RecoveryClassification::PartiallyCompleted
+        )
+    }) {
+        return EmpackExitCode::General;
+    }
+    if find_chain_error::<super::process_runtime::RuntimeExit>(error)
+        .is_some_and(|exit| exit.is_interrupted())
+    {
+        return EmpackExitCode::Interrupted;
+    }
     if find_chain_error::<super::process_runtime::Interrupted>(error).is_some() {
         return EmpackExitCode::Interrupted;
     }
@@ -34,6 +52,7 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         return EmpackExitCode::Interrupted;
     }
     if find_chain_error::<super::cli::CommandInputRequired>(error).is_some()
+        || find_chain_error::<super::engine_host::cli::UpdatePinInput>(error).is_some()
         || find_chain_error::<crate::engine::documents::InvalidDocument>(error).is_some()
         || find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
         || find_chain_error::<empack_core::model::ModelError>(error).is_some()
@@ -42,6 +61,28 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         || find_chain_error::<empack_core::identity::IdentityError>(error).is_some()
     {
         return EmpackExitCode::Usage;
+    }
+    if matches!(
+        find_chain_error::<empack_core::addition::AdditionError>(error),
+        Some(
+            empack_core::addition::AdditionError::RequiredBy(_)
+                | empack_core::addition::AdditionError::RetainedSelectionConflict(_)
+                | empack_core::addition::AdditionError::InvalidUpdatePin(_)
+        )
+    ) {
+        return EmpackExitCode::Usage;
+    }
+    if let Some(selection) =
+        find_chain_error::<crate::engine::providers::DependencySelectionError>(error)
+    {
+        return match selection {
+            crate::engine::providers::DependencySelectionError::Missing(_) => {
+                EmpackExitCode::NotFound
+            }
+            crate::engine::providers::DependencySelectionError::Duplicate(_) => {
+                EmpackExitCode::Usage
+            }
+        };
     }
     if let Some(catalog) = find_chain_error::<crate::engine::providers::CatalogError>(error) {
         use crate::engine::providers::CatalogError;
@@ -126,11 +167,33 @@ mod tests {
             "unknown build target inside a template",
             "failed to download appears in user data",
             "no results found for query: a diagnostic",
+            "Runtime exited with exit status: 130",
         ] {
             assert_eq!(
                 classify_error(&anyhow::anyhow!(message)),
                 EmpackExitCode::General
             );
+        }
+    }
+
+    #[test]
+    fn completed_recovery_facts_take_precedence_over_cancellation() {
+        use crate::engine::diagnostics::{
+            Diagnostic, DiagnosticCode, DiagnosticPhase, RecoveryClassification,
+        };
+        for recovery in [
+            RecoveryClassification::Required,
+            RecoveryClassification::InspectRecovery,
+            RecoveryClassification::PartiallyCompleted,
+        ] {
+            let mut diagnostic = Diagnostic::new(
+                DiagnosticCode::RuntimeRecoveryRequired,
+                DiagnosticPhase::Execution,
+            );
+            diagnostic.recovery = recovery;
+            let error = Error::new(super::super::process_runtime::Interrupted).context(diagnostic);
+            assert_eq!(classify_error(&error), EmpackExitCode::General);
+            assert!(format!("{error:#}").contains("Operation interrupted"));
         }
     }
 }

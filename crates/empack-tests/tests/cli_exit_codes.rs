@@ -13,8 +13,7 @@ fn command(project: &TestProject) -> Command {
     command
         .env_remove("EMPACK_DRY_RUN")
         .env_remove("EMPACK_YES")
-        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
-        .env("EMPACK_PACKWIZ_BIN", project.dir().join("must-not-run"));
+        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"));
     command
 }
 fn output(project: &TestProject, arguments: &[&str]) -> Output {
@@ -50,9 +49,13 @@ fn add_local(project: &TestProject) {
 #[test]
 fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     let project = TestProject::new();
+    let name = "Verification 日本 café 🦀 \u{202e} Name";
     fs::write(
         project.dir().join("empack.yml"),
-        include_str!("../../../tests/fixtures/authoring/empack.yml"),
+        include_str!("../../../tests/fixtures/authoring/empack.yml").replace(
+            "name: Verification Pack",
+            &format!("name: {}", serde_json::to_string(name).unwrap()),
+        ),
     )
     .unwrap();
     assert!(output(&project, &["--yes", "sync"]).status.success());
@@ -61,21 +64,19 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     let secret = "PRIVATE_REPORT_API_KEY_MUST_NOT_ENTER_OUTPUT";
     let report_command = || {
         let mut command = command(&project);
-        command
-            .env("EMPACK_KEY_MODRINTH", secret)
-            .env("EMPACK_KEY_CURSEFORGE", secret);
+        command.env("EMPACK_KEY_CURSEFORGE", secret);
         command
     };
     let routes: &[&[&str]] = &[
         &["status", "--json"],
-        &["manifest", "check", "--json"],
+        &["check", "--documents", "--json"],
         &["manifest", "diff", "--json"],
         &["pending", "list", "--json"],
-        &["outdated", "--json"],
+        &["update", "--all", "--json"],
         &["build", "--explain", "--json"],
         &[
             "migrate",
-            "--plan",
+            "--dry-run",
             "--json",
             "--minecraft",
             "1.21.1",
@@ -84,7 +85,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         ],
     ];
     for color in ["never", "always", "auto"] {
-        for format in ["text", "json", "yaml"] {
+        for format in ["text", "json", "pretty"] {
             for stream in ["stderr", "stdout"] {
                 for route in routes {
                     let result = report_command()
@@ -108,7 +109,19 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                     let value: serde_json::Value = serde_json::from_slice(&result.stdout)
                         .unwrap_or_else(|error| panic!("{error}: {context}"));
                     assert!(value.is_object(), "{context}");
+                    if *route == ["status", "--json"] {
+                        assert_eq!(value["contexts"][0]["name"], name, "{context}");
+                    } else if *route == ["check", "--documents", "--json"]
+                        || *route == ["manifest", "diff", "--json"]
+                        || *route == ["build", "--explain", "--json"]
+                    {
+                        assert_eq!(value["pack"], name, "{context}");
+                    }
                     assert!(!result.stdout.contains(&0x1b), "{context}");
+                    assert!(
+                        !String::from_utf8_lossy(&result.stdout).contains('\u{202e}'),
+                        "{context}"
+                    );
                     assert!(
                         !String::from_utf8_lossy(&result.stdout).contains(secret),
                         "{context}"
@@ -122,6 +135,20 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                             .contains("Logger initialized successfully"),
                         "logging must remain observable: {context}"
                     );
+                    if format == "json" {
+                        // stderr also carries plain progress, independently of log format.
+                        let diagnostics = String::from_utf8_lossy(&result.stderr);
+                        let event = diagnostics
+                            .lines()
+                            .find(|line| line.contains("Logger initialized successfully"))
+                            .unwrap();
+                        let event: serde_json::Value = serde_json::from_str(event)
+                            .unwrap_or_else(|error| panic!("{error}: {context}"));
+                        assert_eq!(
+                            event["fields"]["message"],
+                            "Logger initialized successfully"
+                        );
+                    }
                     assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
                     assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
                     assert!(!project.dir().join("dist").exists());
@@ -148,6 +175,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         let stderr = String::from_utf8(result.stderr).unwrap();
         assert!(!stdout.contains(secret));
         assert!(!stderr.contains(secret));
+        assert!(!stdout.contains('\u{202e}'));
         assert_eq!(
             stdout.contains("Logger initialized successfully"),
             stream == "stdout"
@@ -156,7 +184,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
             stderr.contains("Logger initialized successfully"),
             stream == "stderr"
         );
-        assert!(stdout.contains("Metadata inspection only"));
+        assert!(stdout.contains("File contents have not been checked."));
     }
     // A refused JSON request has diagnostics, not a spurious successful payload.
     for route in [
@@ -382,7 +410,7 @@ fn cli_interrupt_exits_130() {
         "{diagnostic}"
     );
     assert!(
-        diagnostic.contains("Error: Operation interrupted"),
+        diagnostic.contains("Operation interrupted"),
         "Cancellation must reach executable error rendering: {diagnostic}"
     );
     drop(connection);
@@ -681,7 +709,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
     let completed = unavailable(launch(true));
     assert!(completed.status.success(), "{completed:?}");
     assert!(
-        String::from_utf8_lossy(&completed.stdout).contains(&format!(
+        String::from_utf8_lossy(&completed.stderr).contains(&format!(
             "checking completed release {id} for offline launch"
         )),
         "{completed:?}"
@@ -706,7 +734,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
         .args(["instance", "inspect"])
         .assert()
         .success()
-        .stdout(contains(format!("release {id};")));
+        .stdout(contains(format!("Release: {id}")));
     for file in ["launch-started", "launch-observed.json"] {
         fs::remove_file(game.join(file)).unwrap();
     }
@@ -715,7 +743,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
     let refused = unavailable(launch(true));
     assert!(!refused.status.success(), "{refused:?}");
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("ModifiedManagedFile"),
+        String::from_utf8_lossy(&refused.stderr).contains("A pack-managed file has local changes."),
         "{refused:?}"
     );
     assert_eq!(snapshot(&instance), damaged);
@@ -881,12 +909,21 @@ fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
         }
         console.send(ControlCode::EndOfText).unwrap();
         if interfere_with_cleanup {
+            console.expect("Error:").unwrap();
             console
                 .expect("recovery evidence could not be cleared")
                 .unwrap();
         }
         console.expect(Regex("(?i)operation interrupted")).unwrap();
-        assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
+        assert_eq!(
+            console.get_process().wait(Some(20_000)).unwrap(),
+            if interfere_with_cleanup {
+                EmpackExitCode::General.as_i32() as u32
+            } else {
+                EmpackExitCode::Interrupted.as_i32() as u32
+            },
+            "Uncleared ownership evidence must retain recovery failure after interruption"
+        );
         assert_eq!(
             unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
             WAIT_OBJECT_0,
@@ -1065,10 +1102,18 @@ fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
             "{remaining:?}"
         );
         runtime.pid = None;
-        assert_eq!(status.code(), Some(130));
+        assert_eq!(
+            status.code(),
+            Some(if interfere_with_cleanup {
+                EmpackExitCode::General.as_i32()
+            } else {
+                EmpackExitCode::Interrupted.as_i32()
+            })
+        );
         let diagnostic = fs::read_to_string(stderr.path()).unwrap();
         assert!(diagnostic.contains("Operation interrupted"), "{diagnostic}");
         if interfere_with_cleanup {
+            assert!(diagnostic.contains("Error:"), "{diagnostic}");
             assert!(
                 diagnostic.contains("Runtime evidence changed before retirement"),
                 "{diagnostic}"
@@ -1173,6 +1218,7 @@ fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() 
     for (mode, status) in [
         ("input", 0),
         ("interrupt", 0),
+        ("interrupt-130", 130),
         ("failure", 1),
         ("cancel", 130),
     ] {
@@ -1214,6 +1260,11 @@ exit "$result"
                 "/usr/bin/env",
                 "EMPACK_PTY_ROLE=child",
             ])
+            .arg(if mode == "interrupt-130" {
+                "EMPACK_PTY_INTERRUPT_STATUS=130"
+            } else {
+                "EMPACK_PTY_INTERRUPT_STATUS=0"
+            })
             .arg(driver.program())
             .args(["--exact", CHILD, "--nocapture", "--test-threads=1"]);
         for (name, value) in product.get_envs() {
@@ -1243,9 +1294,14 @@ exit "$result"
         match mode {
             "input" => terminal.send_line("stop").unwrap(),
             "failure" => terminal.send_line("fail").unwrap(),
-            "interrupt" => {
+            "interrupt" | "interrupt-130" => {
                 terminal.send(ControlCode::EndOfText).unwrap();
                 terminal.expect("INTERRUPTED_GRACEFULLY").unwrap();
+                if mode == "interrupt-130" {
+                    terminal
+                        .expect("Runtime interrupted (exit status: 130)")
+                        .unwrap();
+                }
             }
             "cancel" => {
                 assert!(

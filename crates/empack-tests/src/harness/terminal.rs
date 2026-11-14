@@ -4,6 +4,43 @@ pub fn spawn(command: std::process::Command) -> expectrl::session::OsSession {
     expectrl::Session::spawn(command).unwrap()
 }
 
+/// Establish fixed geometry before the command can write its first frame.
+#[cfg(not(windows))]
+pub fn spawn_sized(
+    command: std::process::Command,
+    columns: u16,
+    rows: u16,
+) -> expectrl::session::OsSession {
+    use expectrl::Expect;
+    // The PTY library sets 80x24 in both child and parent during spawn. Hold
+    // this literal-argv wrapper until spawn and our final resize have completed.
+    let mut wrapper = std::process::Command::new("/bin/sh");
+    wrapper.env_clear();
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            wrapper.env(key, value);
+        }
+    }
+    if let Some(directory) = command.get_current_dir() {
+        wrapper.current_dir(directory);
+    }
+    wrapper
+        .args([
+            "-c",
+            "IFS= read -r ready && [ \"$ready\" = empack-terminal-ready ] || exit 125\nexec \"$@\"",
+            "empack-terminal-fixture",
+        ])
+        .arg(command.get_program())
+        .args(command.get_args());
+    let mut session = spawn(wrapper);
+    session
+        .get_process_mut()
+        .set_window_size(columns, rows)
+        .unwrap();
+    session.send_line("empack-terminal-ready").unwrap();
+    session
+}
+
 #[cfg(windows)]
 pub fn spawn(command: std::process::Command) -> expectrl::Session<conpty::Process, Stream> {
     // The verification runner's CREATE_NEW_PROCESS_GROUP suppresses Ctrl-C for
@@ -112,6 +149,88 @@ impl expectrl::process::NonBlocking for Stream {
         self.reader.blocking(blocking);
         Ok(())
     }
+}
+
+/// Capture a finite command's complete terminal output and establish its exit status.
+#[cfg(not(windows))]
+pub fn capture_output(
+    command: std::process::Command,
+    columns: u16,
+    rows: u16,
+    expected: i32,
+) -> Vec<u8> {
+    use expectrl::Expect;
+    let mut session = spawn_sized(command, columns, rows);
+    session.set_expect_timeout(Some(std::time::Duration::from_secs(15)));
+    let output = session.expect(expectrl::Eof).unwrap().as_bytes().to_vec();
+    wait_for_exit(session.get_process(), expected);
+    output
+}
+
+/// Capture through ConPTY teardown, which can emit output after the child exits.
+#[cfg(windows)]
+pub fn capture_output(
+    command: std::process::Command,
+    columns: u16,
+    rows: u16,
+    expected: i32,
+) -> Vec<u8> {
+    use std::{io::Read, sync::mpsc, thread, time::Duration};
+    let mut session = spawn(command);
+    session
+        .get_process_mut()
+        .resize(columns.try_into().unwrap(), rows.try_into().unwrap())
+        .unwrap();
+    let mut reader: std::fs::File = session.get_process_mut().output().unwrap().into();
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let (output_tx, output_rx) = mpsc::sync_channel(1);
+    let reading = thread::spawn(move || {
+        let result = (|| -> std::io::Result<Vec<u8>> {
+            let mut output = Vec::new();
+            let mut oversized = false;
+            let mut buffer = [0u8; 8192];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(size) => {
+                        if output.len() + size >= 1 << 20 {
+                            oversized = true;
+                        } else if !oversized {
+                            output.extend_from_slice(&buffer[..size]);
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => break,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            if oversized {
+                return Err(std::io::Error::other("unbounded terminal output"));
+            }
+            Ok(output)
+        })();
+        let _ = output_tx.send(result);
+    });
+    let (status_tx, status_rx) = mpsc::sync_channel(1);
+    let closing = thread::spawn(move || {
+        let result = session.get_process().wait(Some(15_000));
+        // Closing can emit a final frame. The reader must stay active until EOF.
+        // https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session
+        drop(session);
+        let _ = status_tx.send(result.map_err(|error| error.to_string()));
+    });
+    let output = output_rx
+        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .expect("terminal output did not close after child retirement")
+        .expect("read terminal output");
+    let status = status_rx
+        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .expect("terminal teardown did not finish")
+        .expect("wait for terminal child");
+    reading.join().unwrap();
+    closing.join().unwrap();
+    assert_eq!(status, u32::try_from(expected).unwrap());
+    output
 }
 
 /// Decline an observed plan and wait for the executable, not just its output.

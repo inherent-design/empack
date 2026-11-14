@@ -43,6 +43,55 @@ bindings:
         environment: {client: required, server: required}
 "#;
 
+#[test]
+fn journey_cli_changed_author_pin_reports_sync_without_mutation() {
+    let project = TestProject::new();
+    let root = project.dir();
+    fixture(root);
+    let unchanged = snapshot(root).files;
+    for pins in [
+        vec!["renderer-alias=Version2", "renderer-alias=Version1"],
+        vec!["local=Version2"],
+        vec!["missing=Version2"],
+    ] {
+        let mut command = offline_command(root);
+        command.args(["update", "renderer-alias", "local"]);
+        for pin in pins {
+            command.args(["--pin", pin]);
+        }
+        let result = command.output().unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(empack_lib::application::exit::EmpackExitCode::Usage.as_i32())
+        );
+        assert_eq!(snapshot(root).files, unchanged);
+    }
+
+    let intent = AUTHOR.replace("    releases: any", "    pin: Version2");
+    fs::write(root.join("empack.yml"), intent).unwrap();
+    let before = snapshot(root).files;
+    for args in [
+        vec!["update", "renderer-alias"],
+        vec!["update", "renderer-alias", "--json"],
+    ] {
+        let result = offline_command(root).args(args).output().unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(empack_lib::application::exit::EmpackExitCode::Usage.as_i32())
+        );
+        let message = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            message.contains("Authored project or bindings changed"),
+            "{message}"
+        );
+        assert!(
+            message.contains("empack sync") && message.contains("renderer-alias"),
+            "{message}"
+        );
+        assert_eq!(snapshot(root).files, before);
+    }
+}
+
 fn write(root: &Path, name: &str, bytes: &[u8]) {
     let path = root.join(name);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -66,22 +115,27 @@ fn fixture(root: &Path) -> ResolvedProject {
     };
     let mut dependencies = BTreeMap::new();
     let mut coverage = BTreeMap::new();
+    use std::io::Write;
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("pack.mcmeta", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(br#"{"pack":{"pack_format":34,"description":"Literal local update fixture"}}"#)
+        .unwrap();
+    let local_pack = archive.finish().unwrap().into_inner();
     for (name, destination, bytes) in [
         (
             "renderer-alias",
             "resourcepacks/custom-name.zip",
-            b"retained provider bytes".as_slice(),
+            b"retained provider bytes".to_vec(),
         ),
-        (
-            "local",
-            "resourcepacks/local.zip",
-            b"retained local bytes".as_slice(),
-        ),
+        ("local", "resourcepacks/local.zip", local_pack),
     ] {
         let key = DependencyKey::parse(name).unwrap();
         let is_provider = name == "renderer-alias";
         let digests =
-            DigestSet::new(vec![ExpectedDigest::Sha256(Sha256::digest(bytes).into())]).unwrap();
+            DigestSet::new(vec![ExpectedDigest::Sha256(Sha256::digest(&bytes).into())]).unwrap();
         dependencies.insert(
             key.clone(),
             LockedDependency {
@@ -134,9 +188,9 @@ fn fixture(root: &Path) -> ResolvedProject {
             },
         );
         coverage.insert(key, Coverage::CompleteForSelection);
-        write(root, &format!("pack/{destination}"), bytes);
+        write(root, &format!("pack/{destination}"), &bytes);
         if !is_provider {
-            write(root, "vendor/local.zip", bytes);
+            write(root, "vendor/local.zip", &bytes);
         }
     }
     let lock = ResolutionLock {
@@ -316,7 +370,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             ),
             (
                 vec!["remove", "renderer-alias", "--deps"],
-                "Automatic orphan cleanup requires complete dependency evidence",
+                "unexpected argument '--deps'",
             ),
             (
                 vec![
@@ -336,8 +390,20 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
                 .stderr(predicates::str::contains(diagnostic));
             assert_eq!(snapshot(root).files, before);
         }
-        // A canonical provider selector resolves the aliased author root.
-        let query = "modrinth:Project1";
+        // Existing selections require their exact keys, without provider/title fallback.
+        for non_key in [
+            "modrinth:Project1",
+            "Project1",
+            "Renderer",
+            "RENDERER-ALIAS",
+        ] {
+            command()
+                .args(["--yes", "remove", non_key, "--forget"])
+                .assert()
+                .failure();
+            assert_eq!(snapshot(root).files, before);
+        }
+        let query = "renderer-alias";
         for dry in [true, false] {
             let mut cmd = command();
             cmd.args(["--yes", "remove", query]);
@@ -367,14 +433,16 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             .args(["--dry-run", "remove", query, "--forget"])
             .assert()
             .success()
-            .stdout(predicates::str::contains("Select renderer-alias:"));
+            .stdout(predicates::str::contains(
+                "renderer-alias: renderer-alias (modrinth:Project1)",
+            ));
         assert_eq!(snapshot(root).files, before);
         command()
             .args(["--yes", "remove", query, "--forget"])
             .assert()
             .success()
             .stdout(predicates::str::contains(
-                "Applied ForgetRoots to 1 dependencies",
+                "Removed 1 direct dependency from empack.yml; installed files were kept",
             ));
         let demoted = read_project(root);
         let mut expected_intent = original.intent().clone();
@@ -422,9 +490,9 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             .assert()
             .success()
             .stdout(predicates::str::contains(if known_dependent {
-                "Applied RemoveContent to 2 dependencies"
+                "Removed 2 dependencies"
             } else {
-                "Applied RemoveContent to 1 dependencies"
+                "Removed 1 dependency"
             }));
         let removed = read_project(root);
         assert!(!removed.lock().dependencies.contains_key(&selected));
@@ -460,7 +528,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
 }
 
 #[test]
-fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits() {
+fn journey_cli_update_reports_incomplete_provider_work_without_edits() {
     use serde_json::{Value, json};
 
     // Refuse the real client's CONNECT through its ordinary proxy configuration.
@@ -507,6 +575,7 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                     request.push(byte[0]);
                 }
                 assert!(request.starts_with(b"CONNECT api.modrinth.com:443 HTTP/1.1\r\n"));
+                std::thread::sleep(Duration::from_millis(250));
                 connection.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
             });
             let result = command.output().unwrap();
@@ -522,107 +591,114 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
         fixture(root);
         let command = || isolated_command(root, host.path());
         if manual_only {
-            // A retained, non-root provider record must not turn this manual-root
-            // assessment into network work or a claim about retained compatibility.
+            // Retained provider context is checked from the lock, not independently upgraded.
             command()
                 .args(["--yes", "remove", "renderer-alias", "--forget"])
                 .assert()
                 .success();
         }
         let before = snapshot(root).files;
-        for strict in [false, true] {
-            for json_output in [true, false] {
-                let mut cmd = command();
-                cmd.args(["outdated", "--release-policy", "any"]);
-                if strict {
-                    cmd.arg("--strict");
-                }
-                if json_output {
-                    cmd.arg("--json");
-                }
-                let output = if manual_only {
-                    cmd.output().unwrap()
-                } else {
-                    refused_transport(&mut cmd)
-                };
-                let fails = strict && !manual_only;
-                assert_eq!(output.status.code(), Some(i32::from(fails)), "{output:?}");
-                let stderr = String::from_utf8(output.stderr).unwrap();
-                if fails {
+        let host_before = snapshot(host.path()).files;
+        for json_output in [true, false] {
+            let mut cmd = command();
+            cmd.args(["update", "--all", "--release-policy", "any"]);
+            cmd.arg(if json_output { "--json" } else { "--details" });
+            let output = if manual_only {
+                cmd.output().unwrap()
+            } else {
+                refused_transport(&mut cmd)
+            };
+            assert_eq!(output.status.success(), manual_only, "{output:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(stderr.contains("Error:"), !manual_only, "{stderr}");
+            if !manual_only {
+                assert!(stderr.contains("Checking dependency"), "{stderr}");
+            }
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            if json_output {
+                let report: Value = serde_json::from_str(&stdout).unwrap();
+                assert_eq!(report["schema"], 1);
+                assert_eq!(report["source_kinds"]["local"], "local");
+                if manual_only {
+                    assert_eq!(report["requested"], json!(["local"]));
+                    assert_eq!(report["selected"], json!(["local"]));
                     assert!(
-                        stderr.contains("Dependency assessment is incomplete"),
-                        "{stderr}"
+                        report["discovery"].is_null(),
+                        "A local check must not invent fresh provider evidence"
                     );
-                } else {
-                    assert!(stderr.is_empty(), "{stderr}");
-                }
-                let stdout = String::from_utf8(output.stdout).unwrap();
-                if json_output {
-                    let mut report: Value = serde_json::from_str(&stdout).unwrap();
-                    assert!(!report["observed_at"].as_str().unwrap().is_empty());
-                    report.as_object_mut().unwrap().remove("observed_at");
-                    let mut rows = vec![json!({
-                        "release_policy": "any", "key": "local", "name": "local",
-                        "current": null, "permitted": null, "compatible": null,
-                        "upstream": null, "state": "manual", "catalog_complete": false,
-                        "observed_records": null, "diagnostic": null, "reasons": ["manual-source"]
-                    })];
-                    if !manual_only {
-                        let diagnostic = report["dependencies"][1]["diagnostic"].as_str().unwrap();
-                        assert!(
-                            diagnostic.contains("Dependency renderer-alias (Project1)"),
-                            "{diagnostic}"
-                        );
-                        // The ordinary proxy deliberately refuses transport;
-                        // it supplies no invented provider records or successful catalog.
-                        report["dependencies"][1]["diagnostic"] = Value::Null;
-                        rows.push(json!({
-                            "release_policy": "any", "key": "renderer-alias", "name": "renderer-alias",
-                            "current": {"provider": "modrinth", "project": "Project1", "selection": "Version1",
-                                "version": null, "published_at": null, "channel": null},
-                            "permitted": null, "compatible": null, "upstream": null, "state": "unknown",
-                            "catalog_complete": false, "observed_records": null, "diagnostic": null,
-                            "reasons": ["provider-unavailable"]
-                        }));
-                    }
+                    let changes = report["file_changes"].as_array().unwrap();
+                    assert!(changes.iter().all(|change| change["path"] == "empack.lock"));
                     assert_eq!(
-                        report,
-                        json!({
-                            "schema": 1, "release_policy": "any", "dependencies": rows,
-                            "joint": {"scope": "provider-dependency-closure", "candidate_compatibility": "not-assessed",
-                                "declared_incompatibilities": [], "declarations_complete": false,
-                                "state": if manual_only {"not-applicable"} else {"not-assessed"},
-                                "selections": [], "reasons": []}
-                        })
+                        report["proposal"],
+                        if changes.is_empty() {
+                            "unchanged"
+                        } else {
+                            "ready"
+                        }
                     );
                 } else {
+                    assert_eq!(report["requested"], json!(["local", "renderer-alias"]));
+                    assert_eq!(report["source_kinds"]["renderer-alias"], "provider");
+                    assert_eq!(report["proposal"], "incomplete");
+                    assert_eq!(report["selected"], json!([]));
+                    assert_eq!(report["file_changes"], json!([]));
+                    let discovery = &report["discovery"];
+                    assert!(!discovery["observed_at"].as_str().unwrap().is_empty());
+                    assert_eq!(discovery["release_policy"], "any");
+                    assert_eq!(discovery["dependencies"].as_array().unwrap().len(), 1);
+                    let row = &discovery["dependencies"][0];
+                    assert_eq!(row["key"], "renderer-alias");
+                    assert_eq!(row["current"]["project"], "Project1");
+                    assert_eq!(row["current"]["selection"], "Version1");
+                    assert_eq!(row["state"], "unknown");
+                    assert_eq!(row["reasons"], json!(["provider-unavailable"]));
+                    assert!(row["permitted"].is_null());
+                    assert!(!row["catalog_complete"].as_bool().unwrap());
                     assert!(
-                        stdout.contains(&format!("Assessment complete: {manual_only}")),
+                        row["diagnostic"]
+                            .as_str()
+                            .unwrap()
+                            .contains("Dependency renderer-alias (Project1)")
+                    );
+                    assert_eq!(discovery["required_dependencies"], "not-assessed");
+                    assert_eq!(discovery["required_selections"], json!([]));
+                    assert!(discovery.get("candidate_compatibility").is_none());
+                    assert!(report["diagnostic"].is_object());
+                }
+            } else {
+                assert!(
+                    stdout.contains(if manual_only {
+                        "Update plan: 1 dependency"
+                    } else {
+                        "Proposal: incomplete; no changes applied"
+                    }),
+                    "{stdout}"
+                );
+                if !manual_only {
+                    assert!(stdout.contains("renderer-alias: Unknown"), "{stdout}");
+                    assert!(
+                        stdout.contains("Current: modrinth:Project1@Version1"),
                         "{stdout}"
                     );
-                    assert!(stdout.contains("local [local]: manual (policy: any)"));
-                    assert!(stdout.contains(
-                        "Candidate compatibility (including retained inventory): not-assessed"
-                    ));
-                    assert!(stdout.contains("Declared incompatibility list complete: false"));
-                    if !manual_only {
-                        assert!(
-                            stdout
-                                .contains("renderer-alias [renderer-alias]: unknown (policy: any)")
-                        );
-                        assert!(stdout.contains("current: modrinth:Project1@Version1"));
-                        for column in ["permitted", "compatible", "upstream"] {
-                            assert!(stdout.contains(&format!("{column}: unknown")));
-                        }
-                        assert!(stdout.contains("provider-unavailable"));
-                    }
                 }
-                assert_eq!(
-                    snapshot(root).files,
-                    before,
-                    "assessment edited author files"
-                );
+                for internal in [
+                    "author roots",
+                    "Assessment complete:",
+                    "provider-unavailable",
+                ] {
+                    assert!(!stdout.contains(internal), "{stdout}");
+                }
             }
+            assert_eq!(
+                snapshot(root).files,
+                before,
+                "Preview changed author or installed bytes"
+            );
+            assert_eq!(
+                snapshot(host.path()).files,
+                host_before,
+                "Preview changed operation state"
+            );
         }
     }
 }
@@ -671,7 +747,6 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             vec!["--loader-version", "0.16.14"],
             "Vanilla has no loader version",
         ),
-        (vec!["--json"], "--plan"),
     ] {
         for mode in ["--dry-run", "--yes"] {
             let before = snapshot(root).files;
@@ -685,6 +760,22 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             assert_eq!(snapshot(root).files, before, "{extra:?}/{mode}");
         }
     }
+    for extra in ["--json", "--plan"] {
+        let before = snapshot(root).files;
+        command().args(args).arg(extra).assert().code(2);
+        assert_eq!(snapshot(root).files, before);
+    }
+    let before = snapshot(root).files;
+    // An explicitly false environment setting can satisfy Clap's presence rule;
+    // validate the actual mode too, before consulting the project or providers.
+    command()
+        .env("EMPACK_DRY_RUN", "false")
+        .args(args)
+        .arg("--json")
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains("requires --dry-run"));
+    assert_eq!(snapshot(root).files, before);
     for invalid in ["missing", "stale"] {
         fixture(root);
         if invalid == "missing" {
@@ -697,7 +788,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             .unwrap();
         }
         let before = snapshot(root).files;
-        for mode in ["--plan", "--dry-run", "--yes"] {
+        for mode in ["--dry-run", "--yes"] {
             let result = command().args(args).arg(mode).output().unwrap();
             assert!(!result.status.success());
             let message = String::from_utf8_lossy(&result.stderr);
@@ -712,4 +803,119 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             assert_eq!(snapshot(root).files, before, "{invalid}/{mode}");
         }
     }
+}
+
+#[test]
+fn journey_cli_update_exact_filter_preserves_retained_scope_and_streams() {
+    let project = TestProject::new();
+    let root = project.dir();
+    let initial = fixture(root);
+    let before = snapshot(root).files;
+    for quiet in [false, true] {
+        let mut command = offline_command(root);
+        command.args(["update", "local", "--json"]);
+        if quiet {
+            command.arg("--quiet");
+        }
+        let output = command.assert().success().get_output().clone();
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["schema"], 1);
+        assert_eq!(report["requested"], serde_json::json!(["local"]));
+        assert_eq!(report["selected"], serde_json::json!(["local"]));
+        assert_eq!(report["source_kinds"], serde_json::json!({"local":"local"}));
+        assert!(report["discovery"].is_null());
+        let changes = report["file_changes"].as_array().unwrap();
+        assert!(changes.iter().all(|change| change["path"] == "empack.lock"));
+        assert_eq!(
+            report["proposal"],
+            if changes.is_empty() {
+                "unchanged"
+            } else {
+                "ready"
+            }
+        );
+        if quiet {
+            assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+        }
+        assert_eq!(snapshot(root).files, before);
+    }
+    let output = offline_command(root)
+        .args(["update", "local", "--quiet"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("Update plan: 1 dependency"), "{text}");
+    // This component fixture declares SHA-256 evidence. Explicitly refreshing
+    // its local source accepts observed content instead; only the lock changes.
+    assert!(text.contains("local: will change"), "{text}");
+    assert!(text.contains("Preview only; use --apply"), "{text}");
+    assert!(
+        !text.contains("renderer-alias"),
+        "An unselected provider must not be queried or reported as an independent update: {text}"
+    );
+    for (keys, code, diagnostic) in [
+        (
+            vec!["missing"],
+            empack_lib::EmpackExitCode::NotFound.as_i32(),
+            "Unknown dependency key: missing",
+        ),
+        (
+            vec!["local", "local"],
+            2,
+            "Dependency listed more than once: local",
+        ),
+    ] {
+        let output = offline_command(root)
+            .arg("update")
+            .args(keys)
+            .assert()
+            .code(code)
+            .get_output()
+            .clone();
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains(diagnostic)
+        );
+        assert!(output.stdout.is_empty());
+        assert_eq!(snapshot(root).files, before);
+    }
+    offline_command(root)
+        .args(["--yes", "update", "local", "--apply", "--quiet"])
+        .assert()
+        .success();
+    let refreshed = read_project(root);
+    let local = DependencyKey::parse("local").unwrap();
+    let retained = DependencyKey::parse("renderer-alias").unwrap();
+    assert_eq!(
+        refreshed.lock().dependencies[&retained],
+        initial.lock().dependencies[&retained]
+    );
+    let expected = &refreshed.lock().dependencies[&local].files.as_slice()[0].expected;
+    assert!(expected.digests.is_none());
+    assert!(expected.accepted_observation.is_some());
+    let after = snapshot(root).files;
+    for (path, bytes) in &before {
+        if path != "empack.lock" {
+            assert_eq!(
+                after.get(path),
+                Some(bytes),
+                "Unexpected change to {path:?}"
+            );
+        }
+    }
+    let output = offline_command(root)
+        .args(["update", "local", "--json", "--quiet"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["proposal"], "unchanged");
+    assert_eq!(report["changed_selections"], serde_json::json!([]));
+    assert_eq!(report["file_changes"], serde_json::json!([]));
+    assert_eq!(snapshot(root).files, after);
 }

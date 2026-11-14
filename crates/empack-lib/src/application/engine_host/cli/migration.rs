@@ -19,11 +19,17 @@ pub(super) struct MigrationOptions {
     pub java: Option<u16>,
     pub replacements: BTreeMap<DependencyKey, ProviderProjectId>,
     pub releases: Option<ReleasePolicy>,
-    pub plan: bool,
     pub json: bool,
 }
 impl MigrationOptions {
-    pub fn parse(args: MigrationArgs) -> Result<Self> {
+    pub fn parse(args: MigrationArgs, mode: ApplicationMode) -> Result<Self> {
+        if args.json && mode != ApplicationMode::Preview {
+            return Err(crate::primitives::ConfigError::ParseError {
+                value: "migrate --json".into(),
+                reason: "requires --dry-run".into(),
+            }
+            .into());
+        }
         let loader = match args.loader.as_str() {
             "vanilla" => LoaderKind::Vanilla,
             "fabric" => LoaderKind::Fabric,
@@ -78,7 +84,6 @@ impl MigrationOptions {
             },
             replacements,
             releases: args.release_policy.map(Into::into),
-            plan: args.plan,
             json: args.json,
         })
     }
@@ -122,22 +127,94 @@ impl MigrationOptions {
             .replace_intent(source, &intent)?
             .decode("migration candidate")
     }
-    pub fn present(
+    pub fn report(
         &self,
-        session: &dyn Session,
         source: &DecodedIntent,
         prior: &DecodedLock,
         proposed: &ResolvedProject,
+        materialize: bool,
+    ) -> MigrationOutput {
+        MigrationOutput {
+            delta: delta::MigrationDelta::between(source.intent(), prior.lock(), proposed),
+            json: self.json,
+            materialize,
+        }
+    }
+}
+/// Semantic observations are reported with the actual native preparation result, not as readiness alone.
+pub(in crate::application::engine_host) struct MigrationOutput {
+    delta: delta::MigrationDelta,
+    pub json: bool,
+    materialize: bool,
+}
+impl MigrationOutput {
+    pub fn present(
+        &self,
+        session: &dyn Session,
+        native: Result<&crate::engine::api::SyncPreview, &anyhow::Error>,
     ) -> Result<()> {
-        let report = delta::MigrationDelta::between(source.intent(), prior.lock(), proposed);
+        #[derive(serde::Serialize)]
+        struct Report<'a> {
+            #[serde(flatten)]
+            delta: &'a delta::MigrationDelta,
+            proposal: &'static str,
+            file_changes: Vec<crate::application::engine_host::file_report::Change>,
+            references: Vec<String>,
+            materialization_requested: bool,
+            native_publication_performed: bool,
+            diagnostic: Option<crate::engine::diagnostics::Diagnostic>,
+            problem: Option<String>,
+        }
+        let (proposal, file_changes, references, diagnostic, problem) = match native {
+            Ok(view) => (
+                if view.files.changes().is_empty() {
+                    "unchanged"
+                } else {
+                    "ready"
+                },
+                crate::application::engine_host::file_report::changes(&view.files)?,
+                view.references
+                    .iter()
+                    .map(|key| format!("{}/{}", key.dependency.as_str(), key.slot.as_str()))
+                    .collect(),
+                None,
+                None,
+            ),
+            Err(error) => (
+                "blocked",
+                Vec::new(),
+                Vec::new(),
+                Some(crate::engine::diagnostics::Diagnostic::from_error(
+                    error,
+                    crate::engine::diagnostics::DiagnosticPhase::Preparation,
+                )),
+                Some(format!("{error:#}").chars().take(4096).collect()),
+            ),
+        };
         if self.json {
             session
                 .display()
                 .status()
-                .message(&serde_json::to_string_pretty(&report)?);
+                .message(&crate::terminal::json_text(&Report {
+                    delta: &self.delta,
+                    proposal,
+                    file_changes,
+                    references,
+                    materialization_requested: self.materialize,
+                    native_publication_performed: false,
+                    diagnostic,
+                    problem,
+                })?);
         } else {
-            for line in report.text_lines() {
+            session
+                .display()
+                .status()
+                .message(&format!("Runtime migration: {proposal}"));
+            for line in self.delta.text_lines() {
                 session.display().status().info(&line);
+            }
+            if let Ok(view) = native {
+                show_changes(session, &view.files)?;
             }
         }
         Ok(())
@@ -146,7 +223,10 @@ impl MigrationOptions {
 
 pub async fn migrate(session: &dyn Session, args: MigrationArgs) -> Result<()> {
     let materialize = args.materialize;
-    let options = MigrationOptions::parse(args)?;
+    let options = MigrationOptions::parse(
+        args,
+        ApplicationMode::for_action(session.config().app_config()),
+    )?;
     synchronization::synchronize_mode(
         session,
         materialize,

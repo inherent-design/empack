@@ -142,6 +142,34 @@ fn build_roundtrip(
     );
     let key = input["key"].as_str().unwrap();
     let id = operation["id"].as_str().unwrap();
+    let saved_before = snapshot(host.path());
+    let listing = command(&project, &state)
+        .args(["pending", "list"])
+        .output()
+        .unwrap();
+    assert!(listing.status.success(), "{listing:?}");
+    assert!(listing.stderr.is_empty());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    assert!(listing.starts_with("Saved work: 1\n"));
+    assert!(listing.contains(&format!("build {}: saved", &id[..12])));
+    assert!(!listing.contains("digests"));
+    let detail = command(&project, &state)
+        .args(["pending", "show", id])
+        .output()
+        .unwrap();
+    assert!(detail.status.success(), "{detail:?}");
+    assert!(detail.stderr.is_empty());
+    let detail = String::from_utf8(detail.stdout).unwrap();
+    assert!(detail.contains(&format!("File: {key}")));
+    assert!(detail.contains("Filename: manual.zip"));
+    assert!(detail.contains("Size: 7 bytes"));
+    assert!(
+        detail.contains("sha256: 239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5")
+    );
+    assert!(detail.contains(&format!("Next: empack pending resume {id}")));
+    assert!(!detail.contains("unknown"));
+    assert_eq!(snapshot(host.path()), saved_before);
+    assert_eq!(snapshot(project.dir()).files, before);
     let supplied = host.path().join("renamed download.bin");
     // Same length as the selected payload: digest verification, not length or name.
     fs::write(&supplied, b"INVALID").unwrap();
@@ -320,15 +348,15 @@ fn journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup() {
 }
 
 #[test]
-fn journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup() {
+fn journey_pending_sync_prefix_retains_partial_inputs_across_restart_and_cleanup() {
     sync_restart_and_cleanup(true);
 }
 
-fn sync_restart_and_cleanup(legacy: bool) {
+fn sync_restart_and_cleanup(prefix: bool) {
     sync_roundtrip(
         empack_tests::fixtures::restricted::pair("pending-sync"),
         tempfile::tempdir().unwrap(),
-        legacy,
+        prefix,
         |_, _, _| {},
     );
 }
@@ -336,7 +364,7 @@ fn sync_restart_and_cleanup(legacy: bool) {
 fn sync_roundtrip(
     project: TestProject,
     host: tempfile::TempDir,
-    legacy: bool,
+    prefix: bool,
     after_partial: impl FnOnce(&TestProject, &Path, &Value),
 ) {
     let state = host.path().join("state");
@@ -455,18 +483,17 @@ fn sync_roundtrip(
         second["key"].as_str().unwrap(),
         second_path.display()
     );
-    let next: Vec<_> = partial["next"]
+    let mut next: Vec<_> = partial["next"]
         .as_array()
         .unwrap()
         .iter()
         .map(|part| part.as_str().unwrap())
         .collect();
-    let mut resume = command(&project, &state);
-    if legacy {
-        resume.args(["sync", "--continue"]);
-    } else {
-        resume.args(next);
+    if prefix {
+        next[2] = &next[2][..12];
     }
+    let mut resume = command(&project, &state);
+    resume.args(next);
     resume.args(["--file", &association]).assert().success();
     assert_eq!(
         report(&project, &state, &["pending", "list", "--json"])["operations"],
@@ -548,11 +575,12 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             .assert()
             .failure()
             .stderr(predicates::str::contains("stale"));
-        // The existing sync continuation command remains supported; no private record is injected.
+        // Preview also rejects stale captured work without rewriting the record.
         command(&project, &state)
-            .args(["sync", "--continue", "--dry-run"])
+            .args(["--dry-run", "pending", "resume", id])
             .assert()
-            .failure();
+            .failure()
+            .stderr(predicates::str::contains("stale"));
         approval::preserve_without_approval(
             project.dir(),
             project.dir(),
@@ -629,7 +657,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
         .args(["pending", "list"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("No saved pending operations"));
+        .stdout(predicates::str::contains("No saved work."));
     for action in ["show", "resume", "discard"] {
         for (id, diagnostic) in [
             ("1234", "No pending operation matches"),
@@ -940,13 +968,13 @@ fn journey_pending_build_survives_native_remount_with_public_keys() {
 #[ignore = "opt-in native APFS images; no GUI, Java or normal projects"]
 fn journey_pending_sync_survives_native_remount_with_retained_inputs() {
     let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         let project = empack_tests::fixtures::restricted::pair_on(
             TestProject::new_in(volume.root()),
             "pending-sync",
         );
         let host = tempfile::tempdir_in(volume.root()).unwrap();
-        sync_roundtrip(project, host, legacy, |project, state, operation| {
+        sync_roundtrip(project, host, prefix, |project, state, operation| {
             remount_pending(&volume, project, state, "sync", operation);
         });
     }

@@ -174,9 +174,11 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     fs::write(world.join("untracked.txt"), b"keep").unwrap();
     update::update_with_services(
         &session(root.path(), false),
-        vec!["adventure".into()],
-        None,
-        BatchPolicy::AllRequested,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["adventure".into()],
+            apply: true,
+            ..Default::default()
+        },
         services(),
     )
     .await
@@ -228,7 +230,6 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
             mods: vec!["adventure".into()],
-            deps: false,
             forget: false,
             acknowledge_unknown: false,
         },
@@ -271,6 +272,10 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
         .with_body(json!({"data":file.clone()}).to_string())
         .create_async()
         .await;
+    let catalog_page = server.mock("GET", "/mods/42/files")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!({"data":[file.clone()],"pagination":{"index":0,"pageSize":50,"resultCount":1,"totalCount":1}}).to_string())
+        .expect(1).create_async().await;
     let identify = server
         .mock("POST", "/fingerprints/432")
         .with_body(
@@ -385,28 +390,34 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
     )
     .await
     .unwrap();
-    let plan = json!({"schema":1,"environment":{"client":"required","server":"unsupported"},"files":{"world.zip":[{"destination":"saves/Supplied","layer":"common","environment":{"client":"required","server":"unsupported"}}]}});
-    fs::write(
-        root.path().join("world-plan.json"),
-        serde_json::to_vec(&plan).unwrap(),
+    let key = resolved.intent().roots.keys().next().unwrap().as_str();
+    let before = crate::test_support::file_bytes(root.path());
+    let host = session(root.path(), true);
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into()));
+    let transport = acquisition_with_cache_lookup(
+        &host,
+        catalog.configure_acquisition(HttpAcquisition::for_loopback_tests()),
     )
     .unwrap();
-    let mut selected = options("42");
-    selected.platform = Some(SearchPlatform::Curseforge);
-    selected.version_id = None;
-    selected.file_id = Some("456".into());
-    selected.file_plan = Some("world-plan.json".into());
-    selected.force = true;
-    let before = crate::test_support::file_bytes(root.path());
-    add_with_catalog(
-        &session(root.path(), true),
-        selected,
-        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+    update::update_with_services(
+        &host,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec![key.into()],
+            pins: vec![format!("{key}=456")],
+            apply: false,
+            ..Default::default()
+        },
+        dependencies::AdditionServices {
+            catalog,
+            transport,
+            files: DirectFileLimits::default(),
+        },
     )
     .await
     .unwrap();
     assert_eq!(crate::test_support::file_bytes(root.path()), before);
     identify.assert_async().await;
+    catalog_page.assert_async().await;
 }
 
 #[tokio::test]

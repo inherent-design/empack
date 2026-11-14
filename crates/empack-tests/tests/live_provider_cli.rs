@@ -101,7 +101,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
         let mut console = terminal::spawn(command);
         console.set_expect_timeout(Some(std::time::Duration::from_secs(120)));
         console
-            .expect(Regex("Select Mod for rendering engine"))
+            .expect(Regex("Choose a mod for rendering engine"))
             .unwrap();
         let approve = action == "approve";
         if matches!(action, "approve" | "decline") {
@@ -116,7 +116,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
             console.send_line(if approve { "y" } else { "n" }).unwrap();
             console
                 .expect(Regex(if approve {
-                    "Recorded [0-9]+ dependency bindings and [0-9]+ exact references"
+                    "Recorded [0-9]+ dependenc(y|ies)"
                 } else {
                     "Addition not applied"
                 }))
@@ -263,8 +263,8 @@ fn selector_journey(
             lock
         );
     }
-    // Re-add through every spelling requires deliberate replacement and retains
-    // one logical root for this canonical project. Refusal preserves all inputs.
+    // Re-addition through any spelling refuses; deliberate updates select the
+    // existing logical key and retain one root for this canonical project.
     for selector in [id, url, slug] {
         let author_before = author_snapshot(project.dir());
         let denied = execute(
@@ -274,10 +274,10 @@ fn selector_journey(
         );
         assert!(
             !denied.status.success(),
-            "same-identity replacement needs --force"
+            "Existing dependencies must be changed through update"
         );
         assert_eq!(author_snapshot(project.dir()), author_before);
-        run(&["--yes", "add", "--force", "--platform", platform, selector]);
+        run(&["--yes", "update", key.as_str(), "--apply"]);
         let updated = read_project(project.dir());
         assert_eq!(updated.intent().roots.len(), resolved.intent().roots.len());
         assert!(updated.intent().roots.contains_key(key));
@@ -335,7 +335,7 @@ fn selector_journey(
         }
     }
     run(&["--yes", "sync", "--materialize"]);
-    run(&["--yes", "add", "--force", "--platform", platform, id]);
+    run(&["--yes", "update", "custom-alias", "--apply"]);
     let aliased = read_project(project.dir());
     let alias = empack_core::model::DependencyKey::parse("custom-alias").unwrap();
     assert!(aliased.intent().roots.contains_key(&alias));
@@ -358,14 +358,14 @@ fn selector_journey(
         run(&["--yes", "sync"]);
         assert_eq!(author_snapshot(project.dir()), before);
     }
-    let query = format!("{platform}:{id}");
+    let query = String::from("custom-alias");
     let preview = run(&["--dry-run", "remove", &query]);
     let rendered = format!(
         "{}\n{}",
         String::from_utf8_lossy(&preview.stdout),
         String::from_utf8_lossy(&preview.stderr)
     );
-    assert!(rendered.contains("Select custom-alias:"), "{rendered}");
+    assert!(rendered.contains("custom-alias: "), "{rendered}");
     assert_eq!(author_snapshot(project.dir()), before);
     let result = run(&["--yes", "rm", &query]);
     let rendered = format!(
@@ -373,10 +373,7 @@ fn selector_journey(
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
-    assert!(
-        rendered.contains("Applied RemoveContent to 1 dependencies"),
-        "{rendered}"
-    );
+    assert!(rendered.contains("Removed 1 dependency"), "{rendered}");
     let removed = read_project(project.dir());
     assert!(!removed.intent().roots.contains_key(&alias));
     assert!(!removed.lock().dependencies.contains_key(&alias));
@@ -415,6 +412,238 @@ fn selector_journey(
 
 #[test]
 #[ignore = "requires live Modrinth catalog and downloads"]
+fn live_cli_complete_groups_report_partial_add_and_update() {
+    use empack_core::{identity::ModrinthProjectId, model::Coverage};
+    let project = TestProject::workflow_fixture("verified-independent-update", "fabric", "1.21.1");
+    run(
+        &project,
+        &["--yes", "add", "--platform", "modrinth", "sodium"],
+    );
+    let first = read_project(project.dir());
+    let sodium = first.intent().roots.keys().next().unwrap().clone();
+    run(&project, &["--yes", "pin", sodium.as_str()]);
+    let before_add = author_snapshot(project.dir());
+    let pinned = read_project(project.dir());
+    let partial_add = execute(
+        &project,
+        &[
+            "--yes",
+            "add",
+            "--platform",
+            "modrinth",
+            "sodium",
+            "lithium",
+            "--continue-independent",
+        ],
+        None,
+    );
+    assert!(
+        !partial_add.status.success(),
+        "a refused existing root must remain visible"
+    );
+    let add_text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&partial_add.stdout),
+        String::from_utf8_lossy(&partial_add.stderr)
+    );
+    assert!(add_text.contains("Recorded 1 dependency"), "{add_text}");
+    assert!(
+        add_text.contains("Addition completed only part of its displayed effects"),
+        "{add_text}"
+    );
+    let added = read_project(project.dir());
+    assert_eq!(added.intent().roots.len(), 2);
+    assert_eq!(
+        added.intent().roots[&sodium],
+        pinned.intent().roots[&sodium]
+    );
+    assert_eq!(
+        added.lock().dependencies[&sodium],
+        pinned.lock().dependencies[&sodium]
+    );
+    let after_add = author_snapshot(project.dir());
+    for (path, bytes) in before_add {
+        if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
+            assert_eq!(after_add.get(&path), Some(&bytes), "{path:?}");
+        }
+    }
+    let loaded = read_project(project.dir());
+    let lithium_project =
+        ProviderProjectId::Modrinth(ModrinthProjectId::parse("gvQqBUqZ").unwrap());
+    let lithium = loaded
+        .intent()
+        .roots
+        .keys()
+        .find(|key| {
+            loaded.lock().dependencies[*key].identity
+                == ResolvedIdentity::Provider(lithium_project.clone())
+        })
+        .unwrap()
+        .clone();
+    // Reuse the selected-update fixture's older exact version, then explicitly
+    // return that root to automatic selection without changing Sodium's hold.
+    let seed = format!("{}=5szYtenV", lithium.as_str());
+    run(
+        &project,
+        &[
+            "--yes",
+            "update",
+            lithium.as_str(),
+            "--pin",
+            &seed,
+            "--apply",
+        ],
+    );
+    run(&project, &["--yes", "unpin", lithium.as_str()]);
+    run(&project, &["--yes", "sync", "--materialize"]);
+    let baseline = read_project(project.dir());
+    assert!(
+        baseline
+            .lock()
+            .coverage
+            .values()
+            .all(|coverage| *coverage == Coverage::CompleteForSelection),
+        "fixture cannot prove independent groups with missing metadata"
+    );
+    let sodium_file = project.dir().join(placement_path(
+        &baseline.lock().dependencies[&sodium].files.as_slice()[0]
+            .placements
+            .as_slice()[0],
+    ));
+    let original_sodium = std::fs::read(&sodium_file).unwrap();
+    std::fs::write(&sodium_file, b"local author customization").unwrap();
+    std::fs::write(project.dir().join("prior-build.zip"), b"keep prior build").unwrap();
+    std::fs::write(project.dir().join("author-note.md"), b"keep author notes").unwrap();
+    let before = author_snapshot(project.dir());
+    let state_before = snapshot(&project.dir().join(".host-state")).files;
+    let preview = execute(
+        &project,
+        &[
+            "update",
+            sodium.as_str(),
+            lithium.as_str(),
+            "--continue-independent",
+            "--json",
+        ],
+        None,
+    );
+    assert!(
+        !preview.status.success(),
+        "a partial proposal is not a complete preview"
+    );
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(
+        report["proposal"],
+        "partially-ready",
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert_eq!(report["independence_unverified"], serde_json::json!([]));
+    assert_eq!(report["selected"], serde_json::json!([lithium.as_str()]));
+    assert_eq!(
+        report["changed_selections"],
+        serde_json::json!([lithium.as_str()]),
+        "fixture needs a genuinely different permitted Lithium version"
+    );
+    assert_eq!(
+        report["blocked_groups"][0]["dependencies"],
+        serde_json::json!([sodium.as_str()])
+    );
+    assert_eq!(author_snapshot(project.dir()), before);
+    assert_eq!(
+        snapshot(&project.dir().join(".host-state")).files,
+        state_before
+    );
+    let output = execute(
+        &project,
+        &[
+            "--yes",
+            "update",
+            sodium.as_str(),
+            lithium.as_str(),
+            "--continue-independent",
+            "--apply",
+        ],
+        None,
+    );
+    assert!(
+        !output.status.success(),
+        "partial application must retain an unsuccessful status"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Changed  1\n    Kept     0"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Update completed only part of its displayed effects"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let updated = read_project(project.dir());
+    assert_eq!(updated.intent(), baseline.intent());
+    assert_eq!(
+        updated.lock().dependencies[&sodium],
+        baseline.lock().dependencies[&sodium]
+    );
+    assert_ne!(
+        updated.lock().dependencies[&lithium].selected,
+        baseline.lock().dependencies[&lithium].selected
+    );
+    eprintln!(
+        "Independent provider fixture: Sodium {:?}; Lithium {:?} -> {:?}",
+        baseline.lock().dependencies[&sodium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        baseline.lock().dependencies[&lithium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        updated.lock().dependencies[&lithium]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection
+    );
+
+    let mut expected = before;
+    for file in baseline.lock().dependencies[&lithium].files.as_slice() {
+        for placement in file.placements.as_slice() {
+            expected.remove(&placement_path(placement));
+        }
+    }
+    let mut actual = author_snapshot(project.dir());
+    assert_ne!(
+        actual.remove(Path::new("empack.lock")),
+        expected.remove(Path::new("empack.lock"))
+    );
+    assert_eq!(
+        actual, expected,
+        "only the successful root's lock and retired materialization can change"
+    );
+    assert_eq!(
+        std::fs::read(&sodium_file).unwrap(),
+        b"local author customization"
+    );
+    // Repair only the fixture-owned drift, then a complete ordinary update and
+    // repeated synchronizations must converge without duplicate change claims.
+    std::fs::write(&sodium_file, original_sodium).unwrap();
+    let fixed = author_snapshot(project.dir());
+    let complete = run(&project, &["--yes", "update", "--all", "--apply"]);
+    assert!(String::from_utf8_lossy(&complete.stdout).contains("Changed  0\n    Kept     2"));
+    assert_eq!(author_snapshot(project.dir()), fixed);
+    for _ in 0..2 {
+        run(&project, &["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), fixed);
+    }
+}
+
+#[test]
+#[ignore = "requires live Modrinth catalog and downloads"]
 fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     use empack_core::model::DependencySelection;
     let project = TestProject::workflow_fixture("provider-update", "fabric", "1.21.1");
@@ -432,10 +661,16 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         DependencySelection::ProviderPin(selected.selection.clone())
     );
     let assessment_before = author_snapshot(project.dir());
-    let output = run(&project, &["outdated", "--json", "--strict"]);
+    let output = run(&project, &["update", "--all", "--json"]);
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["schema"], 1);
-    let rows = report["dependencies"].as_array().unwrap();
+    assert_eq!(report["requested"], serde_json::json!([key.as_str()]));
+    assert_eq!(report["source_kinds"][key.as_str()], "provider");
+    assert!(matches!(
+        report["proposal"].as_str(),
+        Some("ready" | "unchanged")
+    ));
+    let rows = report["discovery"]["dependencies"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row["key"], key.as_str());
@@ -455,9 +690,9 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         assert_eq!(row[column]["project"], selected.project.to_string());
         assert!(!row[column]["selection"].as_str().unwrap().is_empty());
     }
-    assert_eq!(report["joint"]["state"], "validated");
-    assert_eq!(report["joint"]["declarations_complete"], true);
-    assert_eq!(report["joint"]["candidate_compatibility"], "not-assessed");
+    assert_eq!(report["discovery"]["required_dependencies"], "validated");
+    assert_eq!(report["discovery"]["declarations_complete"], true);
+    assert!(report["discovery"].get("candidate_compatibility").is_none());
     assert_eq!(author_snapshot(project.dir()), assessment_before);
     // Keep the pinned-only assessment above. Add an independently versioned,
     // deliberately older automatic root so updating every root cannot masquerade
@@ -541,10 +776,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&preview.stderr)
     );
     assert!(
-        rendered.contains(&format!(
-            "Check {0} as {0}: selection changed",
-            sentinel_key.as_str()
-        )),
+        rendered.contains(&format!("{}: will change", sentinel_key.as_str())),
         "an explicit sentinel preview must be able to advance: {rendered}"
     );
     assert_eq!(snapshot(project.dir()), before_sentinel_preview);
@@ -568,7 +800,14 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     );
     let output = run(
         &project,
-        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+        &[
+            "--yes",
+            "update",
+            key.as_str(),
+            "--apply",
+            "--release-policy",
+            "any",
+        ],
     );
     let rendered = format!(
         "{}\n{}",
@@ -576,7 +815,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        rendered.contains("0 selections changed, 1 retained"),
+        rendered.contains("Changed  0\n    Kept     1"),
         "{rendered}"
     );
     let updated = read_project(project.dir());
@@ -633,7 +872,14 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     assert_eq!(snapshot(project.dir()).files, before_preview);
     let output = run(
         &project,
-        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+        &[
+            "--yes",
+            "update",
+            key.as_str(),
+            "--apply",
+            "--release-policy",
+            "any",
+        ],
     );
     let resolved = read_project(project.dir());
     let changed = usize::from(
@@ -644,7 +890,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+    assert!(rendered.contains(&format!("Checked 1 dependency\n    Changed  {changed}\n    Kept     {}\nAuthor settings were kept.", 1 - changed)), "{rendered}");
     assert_eq!(resolved.intent(), automatic.intent());
     assert_eq!(
         std::fs::read(project.dir().join("empack.yml")).unwrap(),
@@ -922,13 +1168,14 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
         let complete_before = snapshot(project.dir());
         run(&project, &preview);
         assert_eq!(snapshot(project.dir()), complete_before);
+        args.push("--apply");
         let output = run(&project, &args);
         let rendered = format!(
             "{}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+        assert!(rendered.contains(&format!("Checked 1 dependency\n    Changed  {changed}\n    Kept     {}\nAuthor settings were kept.", 1 - changed)), "{rendered}");
         let updated = read_project(project.dir());
         assert_eq!(updated.intent(), &authored);
         assert_eq!(
@@ -987,6 +1234,8 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
                 let mut args = vec!["--yes", "update", key.as_str(), "--release-policy", "any"];
                 if preview {
                     args.insert(0, "--dry-run");
+                } else {
+                    args.push("--apply");
                 }
                 let before = snapshot(project.dir());
                 let output = execute(&project, &args, None);
@@ -1112,7 +1361,7 @@ fn adopt_existing_live_content(bytes: &[u8], url: &str) {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(
-            rendered.contains("Adopted 1 verified dependency bindings"),
+            rendered.contains("Recorded 1 existing dependency ("),
             "{mode}: {rendered}"
         );
         let resolved = read_project(project.dir());
@@ -1240,12 +1489,9 @@ fn live_cli_direct_url_retains_observed_content() {
         run(&project, &["--yes", "sync"]);
         assert_eq!(author_snapshot(project.dir()), accepted);
     }
-    let report = run(&project, &["manifest", "check", "--json"]);
+    let report = run(&project, &["manifest", "explain", key.as_str(), "--json"]);
     let report: serde_json::Value = serde_json::from_slice(&report.stdout).unwrap();
-    assert_eq!(
-        report["dependencies"][0]["evidence_policy"],
-        "accept-first-observation"
-    );
+    assert_eq!(report["evidence_policy"], "accept-first-observation");
     assert_eq!(
         fs::read(project.dir().join("prior-build.zip")).unwrap(),
         b"prior artifact"

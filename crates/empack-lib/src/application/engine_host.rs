@@ -20,6 +20,10 @@ use std::{
     time::Duration,
 };
 
+fn counted(count: usize, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 fn absolute(invocation: &Path, selected: &Path) -> PathBuf {
     if selected.is_absolute() {
         selected.to_path_buf()
@@ -189,6 +193,20 @@ pub async fn recover(
     engine.shutdown().await;
     result
 }
+fn show_directory(session: &dyn Session, path: &Path) {
+    // Native debug paths preserve non-Unicode bytes and escape embedded line
+    // breaks. This is a directory label, never a copyable shell command.
+    session
+        .display()
+        .status()
+        .info(&format!("Directory: {path:?}"));
+}
+fn show_target_directory(session: &dyn Session, target: &ProjectTarget) {
+    match target {
+        ProjectTarget::Existing(path) | ProjectTarget::New(path) => show_directory(session, path),
+    }
+}
+
 fn show_changes(session: &dyn Session, files: &empack_core::files::FilePlan) -> Result<()> {
     use empack_core::files::{FileChange, ObservedPath};
     for change in files.changes() {
@@ -248,8 +266,12 @@ async fn recover_with_engine(
         "Pending recovery operation differs from --operation"
     );
     session.display().status().info(&format!(
-        "Interrupted operation: {} ({:?})",
-        status.operation, status.kind
+        "Interrupted operation: {} ({})",
+        status.operation,
+        match status.kind {
+            crate::engine::publication::RecoveryKind::Publication => "file changes",
+            crate::engine::publication::RecoveryKind::Creation => "directory creation",
+        }
     ));
     if status.restoring {
         session
@@ -285,9 +307,13 @@ async fn recover_with_engine(
         .recovery()
         .context("Missing recovery preview")?;
     session.display().status().info(&format!(
-        "{:?}: {} managed file changes",
-        view.action,
-        view.files.changes().len()
+        "{}: {}",
+        match view.action {
+            RecoveryAction::Finish if status.restoring => "Finish restoring previous files",
+            RecoveryAction::Finish => "Finish saved changes",
+            RecoveryAction::Restore => "Restore previous files",
+        },
+        counted(view.files.changes().len(), "file change", "file changes")
     ));
     show_changes(session, &view.files)?;
     apply(session, engine, prepared, "Recovery", |receipt| {
@@ -295,11 +321,38 @@ async fn recover_with_engine(
             anyhow::bail!("Unexpected recovery receipt");
         };
         Ok(format!(
-            "Recovery {:?}: {} managed files",
-            receipt.publication.disposition, receipt.publication.changed_files
+            "{} ({})",
+            match receipt.publication.disposition {
+                crate::engine::publication::PublicationDisposition::Published =>
+                    "Finished saved changes",
+                crate::engine::publication::PublicationDisposition::Restored =>
+                    "Restored previous state",
+            },
+            counted(
+                receipt.publication.changed_files,
+                "file change",
+                "file changes"
+            )
         ))
     })
     .await
+}
+
+/// An application request, never an execution grant or overwrite permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationMode {
+    Preview,
+    Apply,
+}
+impl ApplicationMode {
+    /// Explicit action verbs execute by default; only the shared dry-run setting previews.
+    pub(super) fn for_action(config: &AppConfig) -> Self {
+        if config.dry_run {
+            Self::Preview
+        } else {
+            Self::Apply
+        }
+    }
 }
 
 /// Callers display their exact preview before this shared approval and owned execution boundary.
@@ -310,10 +363,41 @@ async fn apply(
     label: &str,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
+    apply_in_mode(
+        session,
+        engine,
+        prepared,
+        label,
+        ApplicationMode::Apply,
+        false,
+        completed,
+    )
+    .await
+}
+async fn apply_in_mode(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    mode: ApplicationMode,
+    quiet: bool,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
+    if mode == ApplicationMode::Preview {
+        session
+            .display()
+            .status()
+            .message(if session.config().app_config().dry_run {
+                "Dry run complete - no changes applied"
+            } else {
+                "Preview only; use --apply to apply these changes."
+            });
+        return Ok(());
+    }
     if !approve(session, label)? {
         return Ok(());
     }
-    execute_approved(session, engine, prepared, label, completed).await
+    execute_approved_with_feedback(session, engine, prepared, label, quiet, completed).await
 }
 fn approve(session: &dyn Session, label: &str) -> Result<bool> {
     if session.config().app_config().dry_run {
@@ -351,6 +435,17 @@ async fn execute_approved(
     label: &str,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
+    execute_approved_with_feedback(session, engine, prepared, label, false, completed).await
+}
+
+async fn execute_approved_with_feedback(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    quiet: bool,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
     session.process().check_cancelled()?;
     let runs_runtime = matches!(
         prepared.view(),
@@ -368,16 +463,22 @@ async fn execute_approved(
         run_runtime: runs_runtime,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
+    let mut progress = progress::ProgressDisplay::new(session, quiet);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let outcome = loop {
         tokio::select! {
+            biased;
             outcome = handle.wait() => break outcome,
-            _ = ticks.tick() => if session.process().check_cancelled().is_err() {
-                handle.cancel();
-                break handle.wait().await;
+            _ = ticks.tick() => {
+                progress.observe_work(handle.progress());
+                if session.process().check_cancelled().is_err() {
+                    handle.cancel();
+                    break handle.wait().await;
+                }
             }
         }
     };
+    drop(progress);
     let result = match &*outcome {
         OperationOutcome::Completed(ExecutionOutcome::Completed(receipt)) => {
             completed(receipt).map(|message| session.display().status().complete(&message))
@@ -509,17 +610,19 @@ fn retained_failure(
 #[cfg(test)]
 pub(super) mod tests;
 
+pub(super) mod checking;
+pub(super) mod doctor;
+mod file_report;
 mod initialize;
 mod java;
+mod progress;
 pub use initialize::initialize;
 
 mod build;
-pub use build::{BuildDecisions, build, build_with_local_files, continue_build};
+pub use build::{BuildDecisions, build, build_with_local_files};
 
 mod dependencies;
-pub use dependencies::{
-    AddHostInput, add, add_providers, adopt_observed, remove, synchronize, update,
-};
+pub use dependencies::{AddHostInput, add, add_providers, adopt_observed, remove, synchronize};
 
 mod cleanup;
 pub use cleanup::clean;
@@ -534,6 +637,35 @@ where
     F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
+    scoped_with_feedback(session, governor, false, work).await
+}
+
+async fn scoped_with_feedback<T, F, Fut>(
+    session: &dyn Session,
+    governor: ResourceGovernor,
+    quiet: bool,
+    work: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
+    scoped_with_selections(session, governor, quiet, None, work).await
+}
+
+async fn scoped_with_selections<T, F, Fut>(
+    session: &dyn Session,
+    governor: ResourceGovernor,
+    quiet: bool,
+    mut questions: Option<tokio::sync::mpsc::Receiver<dependencies::selection::Question>>,
+    work: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
     session.process().check_cancelled()?;
     let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -541,12 +673,29 @@ where
         let _ = sender.send(work(scope).await);
         Ok(())
     })?;
+    let mut progress = progress::ProgressDisplay::new(session, quiet);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let mut cancellation_requested = false;
     let outcome = loop {
         tokio::select! {
+            biased;
             result = handle.wait() => break result,
+            question = async {
+                match questions.as_mut() {
+                    Some(receiver) => receiver.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match question {
+                    Some(question) => {
+                        progress.pause();
+                        question.answer(session);
+                    }
+                    None => questions = None,
+                }
+            }
             _ = ticks.tick(), if !cancellation_requested => {
+                progress.observe_work(handle.progress());
                 if session.process().check_cancelled().is_err() {
                     handle.cancel();
                     cancellation_requested = true;
@@ -554,6 +703,7 @@ where
             }
         }
     };
+    drop(progress);
     // A service may already have published a record or deleted owned content.
     // Retire it and preserve its terminal result instead of replacing that evidence
     // with the request that caused cancellation.
@@ -590,6 +740,7 @@ pub mod cli;
 
 pub(super) mod instance;
 pub(super) mod release;
+mod status_text;
 
 /// Metadata status uses the same report for embedded clients and the CLI.
 pub async fn status(session: &dyn Session, context: Option<String>, json: bool) -> Result<()> {
@@ -621,9 +772,9 @@ pub async fn status(session: &dyn Session, context: Option<String>, json: bool) 
     })
     .await?;
     let text = if json {
-        serde_json::to_string_pretty(&*report)?
+        crate::terminal::json_text(&*report)?
     } else {
-        report.text()
+        status_text::render(&report)
     };
     session.display().status().message(&text);
     Ok(())

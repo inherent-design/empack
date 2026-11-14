@@ -70,17 +70,37 @@ def validate_requirements(document):
     return requirements, cases
 
 
+def release_manual_scope(document, version):
+    """Fixed maintainer-approved v0.8.5 technical consumer scope, not a waiver."""
+    scope = document.get("gates", {}).get("v085_manual_scope")
+    if scope is None:
+        return None
+    selected = {"acceptance::prism::reference-instance", "acceptance::server::managed-console",
+                "acceptance::server::managed-gui"}
+    if (not isinstance(scope, dict)
+            or set(scope) != {"approved_on", "reason", "platforms", "procedures"}
+            or scope["approved_on"] != "2026-11-11" or scope["platforms"] != ["macos"]
+            or not isinstance(scope["reason"], str) or not scope["reason"].strip()
+            or not isinstance(scope["procedures"], list)
+            or not all(isinstance(value, str) for value in scope["procedures"])
+            or len(scope["procedures"]) != len(selected) or set(scope["procedures"]) != selected):
+        raise ValueError("Invalid maintainer-approved v0.8.5 manual scope")
+    operators = procedures()
+    if any(identity not in operators or operators[identity]["boundary"] != "C" for identity in selected):
+        raise ValueError("Manual scope must retain the selected consumer procedures")
+    return scope if version == "0.8.5-beta" else None
+
+
 def release_deferrals(document, version):
-    """The maintainer's fixed v0.8.4 environment scope; never substitute evidence.
+    """Fixed release-specific operator scope; never substitute evidence.
 
     Only named operator procedures may be deferred. Native, package, parser,
     tooling and other automated obligations cannot be excluded through this field.
-    Other release versions retain their full declared obligations.
+    Other release versions retain their full declared obligations. The separate
+    v0.8.5 policy additionally limits selected consumer variants to macOS.
     """
     scope = document.get("gates", {}).get("v084_environment_deferrals")
-    if scope is None:
-        return set()
-    if (not isinstance(scope, dict) or set(scope) != {"approved_on", "reason", "cases"}
+    if scope is not None and (not isinstance(scope, dict) or set(scope) != {"approved_on", "reason", "cases"}
             or scope["approved_on"] != "2026-11-10" or not isinstance(scope["reason"], str)
             or not scope["reason"].strip() or not isinstance(scope["cases"], list)
             or not all(isinstance(case, str) for case in scope["cases"])
@@ -88,12 +108,34 @@ def release_deferrals(document, version):
         raise ValueError("Invalid maintainer-approved v0.8.4 environment scope")
     cases = {case["id"]: case for row in document["requirements"] for case in row["cases"]}
     operators = procedures()
-    for identity in scope["cases"]:
+    for identity in scope["cases"] if scope is not None else []:
         case = cases.get(identity)
         if (case is None or not case["test_ids"]
                 or not all(test in operators for test in case["test_ids"])):
             raise ValueError("Environment deferral must name an existing operator-only case: " + identity)
-    return set(scope["cases"]) if version == "0.8.4-beta" else set()
+    deferred = set(scope["cases"]) if scope is not None and version == "0.8.4-beta" else set()
+    manual = release_manual_scope(document, version)
+    if manual is not None:
+        selected = set(manual["procedures"])
+        for case in cases.values():
+            # A mixed/automated case cannot be excluded by an operator policy.
+            if case["test_ids"] and all(test in operators for test in case["test_ids"]):
+                identities = set(case["test_ids"])
+                if identities & selected and not identities <= selected:
+                    raise ValueError("Selected and deferred manual procedures cannot share a case")
+                if not identities & selected:
+                    deferred.add(case["id"])
+                elif not set(manual["platforms"]) <= set(case["required_platforms"]):
+                    raise ValueError("Selected manual case lacks its required macOS variant: " + case["id"])
+    return deferred
+
+
+def release_variant_required(case, variant, deferred, manual):
+    if case["id"] in deferred:
+        return False
+    if manual is not None and all(test in manual["procedures"] for test in case["test_ids"]):
+        return variant["platform"] in manual["platforms"]
+    return True
 
 
 def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=(), acceptance_evidence=()):

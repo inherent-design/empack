@@ -3,7 +3,7 @@
 use crate::primitives::terminal::{
     TerminalPrimitives, TerminalUnicodeCaps, from_terminal_capabilities,
 };
-use crate::terminal::TerminalCapabilities;
+use crate::terminal::{TerminalCapabilities, display_line, display_text};
 
 pub struct StyleManager {
     primitives: TerminalPrimitives,
@@ -26,6 +26,7 @@ impl StyleManager {
 
     /// Style text with semantic success intent
     pub fn style_success(&self, text: &str) -> String {
+        let text = display_text(text);
         format!(
             "{}{}{}",
             self.primitives.success, text, self.primitives.reset
@@ -34,11 +35,13 @@ impl StyleManager {
 
     /// Style text with semantic error intent
     pub fn style_error(&self, text: &str) -> String {
+        let text = display_text(text);
         format!("{}{}{}", self.primitives.error, text, self.primitives.reset)
     }
 
     /// Style text with semantic warning intent
     pub fn style_warning(&self, text: &str) -> String {
+        let text = display_text(text);
         format!(
             "{}{}{}",
             self.primitives.warning, text, self.primitives.reset
@@ -47,16 +50,19 @@ impl StyleManager {
 
     /// Style text with semantic info intent
     pub fn style_info(&self, text: &str) -> String {
+        let text = display_text(text);
         format!("{}{}{}", self.primitives.info, text, self.primitives.reset)
     }
 
     /// Style text with emphasis (bold)
     pub fn style_emphasis(&self, text: &str) -> String {
+        let text = display_text(text);
         format!("{}{}{}", self.primitives.bold, text, self.primitives.reset)
     }
 
     /// Style text as subtle/muted
     pub fn style_subtle(&self, text: &str) -> String {
+        let text = display_text(text);
         format!("{}{}{}", self.primitives.muted, text, self.primitives.reset)
     }
 
@@ -67,6 +73,7 @@ impl StyleManager {
 
     /// Format success message with symbol and styling
     pub fn format_success(&self, message: &str) -> String {
+        let message = display_line(message);
         format!(
             "{} {}",
             self.style_success(self.primitives.checkmark),
@@ -76,11 +83,13 @@ impl StyleManager {
 
     /// Format error message with symbol and styling
     pub fn format_error(&self, message: &str) -> String {
+        let message = display_line(message);
         format!("{} {}", self.style_error(self.primitives.cross), message)
     }
 
     /// Format warning message with symbol and styling
     pub fn format_warning(&self, message: &str) -> String {
+        let message = display_line(message);
         format!(
             "{} {}",
             self.style_warning(self.primitives.warning_symbol),
@@ -90,6 +99,7 @@ impl StyleManager {
 
     /// Format info message with symbol and styling
     pub fn format_info(&self, message: &str) -> String {
+        let message = display_line(message);
         format!(
             "{} {}",
             self.style_info(self.primitives.info_symbol),
@@ -99,6 +109,7 @@ impl StyleManager {
 
     /// Format working/progress message (using info color with arrow)
     pub fn format_working(&self, message: &str) -> String {
+        let message = display_line(message);
         format!("{} {}", self.style_info(self.primitives.arrow), message)
     }
 }

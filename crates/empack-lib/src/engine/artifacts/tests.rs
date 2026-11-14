@@ -49,6 +49,22 @@ fn all_supported_containers_require_every_expected_file_and_exact_binary_bytes()
         assert_eq!(verified.members(), 1);
         assert_eq!(verified.unpacked_bytes(), 3);
         assert!(!verified.is_empty());
+        reader.rewind().unwrap();
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        for length in [0, 1, bytes.len() / 2, bytes.len() - 1] {
+            assert!(
+                verify_archive(
+                    &mut Cursor::new(&bytes[..length]),
+                    format,
+                    &expected,
+                    ArchiveLimits::default(),
+                    &Cancellation::default(),
+                )
+                .is_err(),
+                "{format:?}: truncated at {length}"
+            );
+        }
         let mut missing = expected.clone();
         missing.insert(path("missing"), content(b""));
         assert!(
@@ -86,6 +102,42 @@ fn all_supported_containers_require_every_expected_file_and_exact_binary_bytes()
             .is_err()
         );
     }
+
+    // Match the expected inventory to corrupted bytes: the archive's own CRC must still
+    // reject them, including an error delivered after the decoder has yielded a prefix.
+    let mut writer = sevenz_rust2::ArchiveWriter::new(Cursor::new(Vec::new())).unwrap();
+    writer.set_content_methods(vec![sevenz_rust2::EncoderConfiguration::new(
+        sevenz_rust2::EncoderMethod::COPY,
+    )]);
+    writer
+        .push_archive_entry(
+            sevenz_rust2::ArchiveEntry::new_file("a.bin"),
+            Some(&[0xff, 0, 1][..]),
+        )
+        .unwrap();
+    let mut bytes = writer.finish().unwrap().into_inner();
+    verify_archive(
+        &mut Cursor::new(&bytes),
+        DistributionArchive::SevenZip,
+        &expected,
+        ArchiveLimits::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    // The first copied stream follows the fixed 32-byte 7z signature header.
+    assert_eq!(&bytes[32..35], &[0xff, 0, 1]);
+    bytes[34] = 2;
+    let corrupted = BTreeMap::from([(path("a.bin"), content(&[0xff, 0, 2]))]);
+    assert!(
+        verify_archive(
+            &mut Cursor::new(bytes),
+            DistributionArchive::SevenZip,
+            &corrupted,
+            ArchiveLimits::default(),
+            &Cancellation::default(),
+        )
+        .is_err()
+    );
 }
 
 #[test]

@@ -15,7 +15,7 @@ PRISM_BINDING = {"id": PRISM_TEST, "boundary": "C", "platforms": ["linux", "maco
 INPUTS = (FIXTURE_PATH, "scripts/consumer/prism-config-probe.cpp",
           "scripts/check-prism-config.py", "scripts/verification/consumer.py",
           "crates/empack-lib/src/engine/templates/encoding.rs")
-PREPARE = ('empack --workdir "$INST_DIR" --yes instance prepare '
+PREPARE = ('empack --workdir "$INST_DIR" --yes instance ensure '
            '"$INST_DIR/.minecraft/.empack-consumer/release.json" --sha256 '
            + '0' * 64 + ' --layout prism --side client')
 WRAPPER = 'empack --workdir "$INST_DIR" --yes instance launch --'

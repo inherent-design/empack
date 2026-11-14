@@ -59,6 +59,9 @@ pub trait StatusProvider {
 
 /// Provider trait for progress tracking
 pub trait ProgressProvider {
+    /// A provisional progress message on stderr, including redirected output.
+    fn message(&self, message: &str);
+
     /// Create a progress bar for operations with known total
     fn bar(&self, total: u64) -> Box<dyn ProgressTracker>;
 

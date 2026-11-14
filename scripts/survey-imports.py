@@ -1230,10 +1230,10 @@ IMPORT_CHOICES = ["--exclude-auxiliary", "--import-optional-default", "true"]
 
 def pending_import_associations(output: str) -> list[tuple[str, int, int]]:
     """Only the CLI's exact restricted provider obligations authorize fixture downloads."""
-    if "Import continuation was saved" not in output:
+    if "Import was saved" not in output:
         raise RuntimeError("import failed without native continuation")
-    count = re.search(r"(\d+) content obligations need explicit input", output)
-    found = re.findall(r'Import input "(provider:curseforge:(\d+):(\d+):[^"\\]+)": RestrictedDownload', output)
+    count = re.search(r"Import needs (\d+) files?\b", output)
+    found = re.findall(r'Missing import file "(provider:curseforge:(\d+):(\d+):[^"\\]+)": download it manually;', output)
     if not count or len(found) != int(count.group(1)) or not found:
         raise RuntimeError("import has unresolved inputs outside the supported fixture associations")
     if len({item[0] for item in found}) != len(found):
@@ -1258,13 +1258,34 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
         return result, False
     output = initial.stdout + "\n" + initial.stderr
     result["output_tail"] = output[-4000:]
-    if "Import continuation was saved" not in output:
+    if "Import was saved" not in output:
         return result, False
     if project.exists():
         raise RuntimeError("incomplete import published its destination")
     pending = pending_import_associations(output)
     if len(pending) > 256:
         raise RuntimeError("manual fixture input count exceeds the 256-file survey allowance")
+    records = layout.cache_dir / "host-state" / "pending-imports"
+    before = {p.name: p.read_bytes() for p in records.glob("*.json")}
+    if len(before) != 1:
+        raise RuntimeError("expected one isolated native import record")
+    inspected = run_empack_command(
+        empack_bin, ["--workdir", str(project), "pending", "list", "--json"],
+        layout, timeout=60, label=f"{label}:pending", prefer_pty=False,
+    )
+    try:
+        report = json.loads(inspected.stdout)
+        [selected] = report["operations"]
+        pending_id = selected["id"]
+        if (not inspected.success or report["schema"] != 1
+                or Path(report["root"]).resolve() != project.resolve()
+                or selected["kind"] != "import" or selected["state"] != "unverified"
+                or not re.fullmatch(r"[0-9a-f]{64}", pending_id)):
+            raise ValueError("unexpected saved import")
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("cannot select the isolated import through pending list --json") from error
+    if before != {p.name: p.read_bytes() for p in records.glob("*.json")}:
+        raise RuntimeError("pending inspection changed the saved import")
     associations = []
     remaining_manual_bytes = 2 << 30
     supplied = layout.cache_dir / "manual-imports"
@@ -1283,12 +1304,8 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
             destination.unlink(missing_ok=True)
             raise
         remaining_manual_bytes -= received
-        associations.extend(["--import-file", f"{selector}={destination}"])
-    records = layout.cache_dir / "host-state" / "pending-imports"
-    before = {p.name: p.read_bytes() for p in records.glob("*.json")}
-    if len(before) != 1:
-        raise RuntimeError("expected one isolated native import record")
-    args = ["init", "--continue", "--yes", *choices, *associations, str(project)]
+        associations.extend(["--file", f"{selector}={destination}"])
+    args = ["--workdir", str(project), "--yes", "pending", "resume", pending_id, *choices, *associations]
     preview = run_empack_command(empack_bin, [*args, "--dry-run"], layout, timeout=600,
                                  label=f"{label}:preview", prefer_pty=announce)
     after = {p.name: p.read_bytes() for p in records.glob("*.json")}
@@ -1299,7 +1316,7 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
                                  label=f"{label}:continue", prefer_pty=announce)
     result.update(success=resumed.success, exit_code=resumed.exit_code,
                   continued=True, supplied_files=len(pending),
-                  elapsed_secs=initial.elapsed_secs + preview.elapsed_secs + resumed.elapsed_secs,
+                  elapsed_secs=initial.elapsed_secs + inspected.elapsed_secs + preview.elapsed_secs + resumed.elapsed_secs,
                   output_tail=(resumed.stdout + resumed.stderr)[-4000:])
     if resumed.success and list(records.glob("*.json")):
         raise RuntimeError("completed import retained its pending record")

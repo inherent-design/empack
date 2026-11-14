@@ -620,8 +620,35 @@ fn subscribed_prism_recipes_preserve_delivery_and_require_local_enrollment() {
             .unwrap()
             .read_to_string(&mut ini)
             .unwrap();
-        assert!(ini.contains("--require-subscription"));
-        assert!(ini.contains("instance launch --java-runtime --check-updates --"));
+        assert!(ini.contains("../.empack-tools/prepare.json"));
+        assert!(ini.contains("../.empack-tools/launch.json"));
+        for (name, flag, append) in [
+            (
+                ".empack-tools/prepare.json",
+                "--require-subscription",
+                false,
+            ),
+            (".empack-tools/launch.json", "--check-updates", true),
+        ] {
+            let record: serde_json::Value =
+                serde_json::from_reader(zip.by_name(name).unwrap()).unwrap();
+            assert_eq!(record["schema"], "empack-bootstrap-invocation/1");
+            assert_eq!(
+                record["engine_version"],
+                crate::engine::compatibility_version()
+            );
+            assert_eq!(record["append_arguments"], append);
+            let arguments = record["arguments"].as_array().unwrap();
+            assert!(arguments.iter().any(|argument| argument == flag));
+            if append {
+                assert!(
+                    arguments
+                        .iter()
+                        .any(|argument| argument == "--java-runtime")
+                );
+                assert_eq!(arguments.last().unwrap(), "--");
+            }
+        }
         let mut payload = Vec::new();
         zip.by_name(".minecraft/.empack-consumer/release.json")
             .unwrap()

@@ -75,6 +75,7 @@ pub async fn build_with_local_files(
 mod assistance;
 pub(super) mod browser;
 mod profiles;
+mod text;
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -91,10 +92,6 @@ async fn build_with_inputs(
     supplied: BuildAcquisitions,
     files: BTreeMap<AcquisitionKey, PathBuf>,
 ) -> Result<()> {
-    ensure!(
-        !args.continue_build && args.associate_downloads.is_empty(),
-        "Use the continuation entry point for a saved build and its file associations"
-    );
     assistance::validate(args)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -132,9 +129,9 @@ async fn build_with_inputs(
         let report = profiles::explain(&workspace, args, &request)?;
         session.display().status().message(
             &(if args.json {
-                serde_json::to_string_pretty(&report)?
+                crate::terminal::json_text(&report)?
             } else {
-                profiles::text(&report)
+                profiles::text(&report)?
             }),
         );
         return Ok(());
@@ -184,33 +181,20 @@ fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
     Ok(engine)
 }
 
-/// Continue an explicitly saved native build. Saved choices remain intact; new recipe flags
-/// are rejected, and every file association is checked against current captured obligations.
-pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
-    continue_build_selected(session, args, None).await
+/// Assistance for one selected saved build; recipe changes are not representable here.
+#[derive(Clone, Default)]
+pub(super) struct BuildResumeOptions {
+    pub files: BTreeMap<String, String>,
+    pub downloads: Option<PathBuf>,
+    pub wait_seconds: Option<u64>,
+    pub open_downloads: bool,
 }
-pub(super) async fn continue_build_selected(
+pub(super) async fn resume_saved(
     session: &dyn Session,
-    args: &BuildArgs,
-    expected: Option<&str>,
+    expected: &str,
+    options: BuildResumeOptions,
 ) -> Result<()> {
-    ensure!(
-        args.continue_build
-            && args.profiles.is_empty()
-            && !args.ad_hoc
-            && !args.explain
-            && args.delivery.is_none()
-            && args.environment.is_none()
-            && args.updates.is_none()
-            && args.targets.is_empty()
-            && args.format.is_none()
-            && !args.clean
-            && !args.optional_defaults
-            && args.optional_choices.is_empty()
-            && !args.allow_optional_metadata_loss,
-        "Continuation uses its saved recipe; targets, archive overrides and clean require a new build"
-    );
-    assistance::validate(args)?;
+    assistance::validate_wait(options.downloads.is_some(), options.wait_seconds)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = configured_engine(session.config().app_config(), &invocation)?;
@@ -225,18 +209,18 @@ pub(super) async fn continue_build_selected(
             crate::engine::api::SavedBuildResume::Prepared(resumed) => *resumed,
         };
         ensure!(
-            expected.is_none_or(|id| id == resumed.saved.identity()),
+            expected == resumed.saved.identity(),
             "Selected pending build changed; inspect its new identity"
         );
         let mut prepared = resumed.preparation;
-        if !args.associate_downloads.is_empty() {
+        if !options.files.is_empty() {
             let view = match &prepared {
                 Preparation::Ready(value) => value.view(),
                 Preparation::NeedsInput(value) => value.view(),
             };
             let files = associations(
                 view.build().context("Missing build preview")?,
-                &args.associate_downloads,
+                &options.files,
                 &invocation,
             )?;
             let Preparation::NeedsInput(pending) = prepared else {
@@ -245,17 +229,19 @@ pub(super) async fn continue_build_selected(
             prepared =
                 cancellable(session, engine.resume_with_local_files(*pending, files)).await?;
         }
-        let downloads = args
-            .downloads_dir
-            .as_ref()
-            .map(|path| absolute(&invocation, Path::new(path)));
+        let dry = session.config().app_config().dry_run;
+        let downloads = if dry {
+            None
+        } else {
+            options.downloads.map(|path| absolute(&invocation, &path))
+        };
         let (published, cleaned) = assistance::finish(
             session,
             &engine,
             prepared,
             downloads,
-            args.wait_downloads,
-            args.open_downloads,
+            if dry { None } else { options.wait_seconds },
+            options.open_downloads && !dry,
         )
         .await?;
         if published && !cleaned {
@@ -278,30 +264,23 @@ fn input_selector(key: &AcquisitionKey) -> String {
 }
 fn associations(
     view: &crate::engine::api::BuildPreview,
-    values: &[String],
+    values: &BTreeMap<String, String>,
     invocation: &Path,
 ) -> Result<BTreeMap<AcquisitionKey, PathBuf>> {
     let mut files = BTreeMap::new();
-    for value in values {
-        let (name, path) = value
-            .split_once('=')
-            .context("Use FILENAME=PATH for each download association")?;
+    for (name, path) in values {
         ensure!(
             !name.is_empty() && !path.is_empty(),
-            "Download association needs a filename and source path"
+            "Download association needs an exact file key and source path"
         );
         let matches: Vec<_> = view
-            .file_names()
+            .unresolved
             .iter()
-            .filter(|(key, names)| {
-                view.unresolved.contains(key)
-                    && (names.contains(name) || input_selector(key) == name)
-            })
-            .map(|(key, _)| key)
+            .filter(|key| input_selector(key) == *name)
             .collect();
         ensure!(
             matches.len() == 1,
-            "Download selector must match exactly one pending obligation; use its displayed locked: selector when filenames are ambiguous"
+            "Download key must identify one unresolved file from pending show"
         );
         ensure!(
             files
@@ -442,54 +421,9 @@ async fn finish_once(
     }
     .build()
     .context("Missing build preview")?;
-    session.display().status().info(&format!(
-        "Build for Minecraft {} ({:?})",
-        view.runtime.minecraft.as_str(),
-        view.runtime.loader,
-    ));
-    session.display().status().info(&format!(
-        "Requested optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
-        view.request().optional,
-        view.request().mrpack_optional,
-        view.request().evidence,
-    ));
-    for output in &view.outputs {
-        session.display().status().info(&format!(
-            "build {:?}: dist/{}; optional content: {:?}",
-            output.target,
-            output.artifact.as_str(),
-            view.request().optional_for(output.target)
-        ));
-    }
+    session.display().status().message(&text::preview(view));
     if let Some(cleanup) = &view.cleanup {
         show_changes(session, &cleanup.files)?;
-    }
-    if view.needs_network {
-        session
-            .display()
-            .status()
-            .info("This build requires verified network acquisition");
-    }
-    if view.runs_installer {
-        session
-            .display()
-            .status()
-            .info("This build executes the selected runtime installer in private staging");
-    }
-    for input in &view.content {
-        // AcquisitionKey contains only logical dependency and slot names.
-        session.display().status().info(&format!(
-            "content {}: {:?} {:?}",
-            input_selector(&input.key),
-            input.kind,
-            view.file_names().get(&input.key)
-        ));
-    }
-    if !view.unresolved.is_empty() {
-        session.display().status().warning(&format!(
-            "{} content obligations require verified supplied files",
-            view.unresolved.len()
-        ));
     }
     if let Preparation::NeedsInput(pending) = prepared {
         if session.config().app_config().dry_run {
@@ -498,12 +432,15 @@ async fn finish_once(
             );
             return Ok(false);
         }
-        session.display().status().info("The build remains unpublished; saving retains its recipe and verified files for continuation");
+        session.display().status().info("No archive has been written. Save this build to continue after supplying the missing files.");
         if !approve(session, "Save pending build")? {
             return Ok(false);
         }
         let saved = cancellable(session, engine.suspend_build(*pending)).await?;
-        session.display().status().info(&format!("Saved pending build with {} verified files; continue after supplying the missing downloads",saved.retained_files));
+        session
+            .display()
+            .status()
+            .info(&text::saved(saved.retained_files, &saved.saved.identity()));
         return Err(PendingBuildSaved { saved: saved.saved }.into());
     }
     let Preparation::Ready(prepared) = prepared else {
@@ -517,7 +454,7 @@ async fn finish_once(
         published = true;
         for artifact in &receipt.artifacts {
             if artifact.requires_platform_association() {
-                session.display().status().warning("Platform export requires upload to a platform project and installation through its project/version interface for updates. Direct archive import remains a snapshot; no platform association was created");
+                session.display().status().warning("For platform updates, publish this archive to the platform project and install that published version. Importing the file directly creates a fixed snapshot.");
             }
             if let Some(hosting) = &artifact.modrinth_hosting {
                 for blocked in &hosting.blocked_downloads {
@@ -539,11 +476,12 @@ async fn finish_once(
                 artifact.bytes
             ));
         }
-        Ok(format!(
-            "Built {} verified distributions; removed {} obsolete artifacts",
-            receipt.artifacts.len(),
-            receipt.removed_artifacts.len()
-        ))
+        let count = receipt.artifacts.len();
+        let mut summary = format!("Built {}", counted(count, "distribution", "distributions"));
+        if !receipt.removed_artifacts.is_empty() {
+            summary.push_str(&format!("; removed {}", counted(receipt.removed_artifacts.len(), "obsolete artifact", "obsolete artifacts")));
+        }
+        Ok(summary)
     })
     .await?;
     Ok(published)
@@ -575,9 +513,9 @@ pub(super) async fn save_execution_input(
     }
     for need in input.requirements() {
         session.display().status().warning(&format!(
-            "Missing content {}: {:?}",
+            "{}: {}",
             input_selector(&need.key),
-            need.kind
+            text::requirement(need.kind)
         ));
     }
     if !approve(session, "Save pending build")? {
@@ -587,9 +525,9 @@ pub(super) async fn save_execution_input(
         .take_continuation()
         .context("Build continuation was already taken")?;
     let saved = cancellable(session, engine.suspend_build(pending)).await?;
-    session.display().status().info(&format!(
-        "Saved pending build with {} verified files; resume with build --continue",
-        saved.retained_files
-    ));
+    session
+        .display()
+        .status()
+        .info(&text::saved(saved.retained_files, &saved.saved.identity()));
     Err(PendingBuildSaved { saved: saved.saved }.into())
 }

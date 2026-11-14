@@ -6,13 +6,14 @@ from verification.product_build import build_command, metadata_command, retain_b
 from verification.evidence import sha256, write_json
 
 
-def compilation(directory, target, digest, revision, stamped, features="default", builder="cargo"):
+def compilation(directory, target, digest, revision, stamped, features="default", builder="cargo", bootstrap=None):
     path_type = PureWindowsPath if target.endswith("windows-msvc") else PurePosixPath
     target_dir = path_type("C:/fixture/target" if target.endswith("windows-msvc") else "/fixture/target")
     executable = target_dir / target / "release" / ("empack.exe" if target.endswith("windows-msvc") else "empack")
     packages = [{"id": "synthetic::" + name, "name": name}
                 for name in ("empack-core", "empack-lib", "empack")]
     events = []
+    bootstrap = bootstrap or {"schema": 1, "version": "0.0.0-dev", "jar_sha256": "b" * 64, "sources": {}}
     for package in packages:
         name = package["name"]
         events.append({"reason": "compiler-artifact", "package_id": package["id"],
@@ -22,6 +23,8 @@ def compilation(directory, target, digest, revision, stamped, features="default"
                        "target": {"name": name.replace("-", "_"), "kind": ["bin" if name == "empack" else "lib"]},
                        "profile": {"test": False, "debug_assertions": False, "opt_level": "3"},
                        "executable": str(executable) if name == "empack" else None})
+    events.append({"reason": "build-script-executed", "package_id": "synthetic::empack-lib",
+                   "env": [["EMPACK_BOOTSTRAP_SHA256", bootstrap["jar_sha256"]]]})
     events.append({"reason": "build-finished", "success": True})
     messages = "\n".join(map(json.dumps, events))
     metadata = {"packages": packages, "target_directory": str(target_dir)}
@@ -34,5 +37,7 @@ def compilation(directory, target, digest, revision, stamped, features="default"
               "metadata_command": metadata_command(target, builder),
               "builder_version": "cross 0.2.5\ncargo 1.99.1 (synthetic)" if builder == "cross" else "cargo 1.99.1 (synthetic)",
               "artifact": artifact}
+    write_json(directory / "bootstrap-build.json", bootstrap)
+    record["bootstrap_sha256"] = sha256(directory / "bootstrap-build.json")
     write_json(directory / "compile.json", record)
     return sha256(directory / "compile.json")

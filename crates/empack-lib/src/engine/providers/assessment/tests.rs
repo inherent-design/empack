@@ -5,6 +5,7 @@ use crate::engine::{
     resources::ResourceGovernor,
     runtime::{OperationOutcome, OperationRuntime},
 };
+use empack_core::model::DependencyKey;
 use mockito::{Matcher, Server};
 use serde_json::{Value, json};
 
@@ -41,6 +42,19 @@ async fn assess_with_limits(
     project: ResolvedProject,
     limits: ClosureLimits,
 ) -> UpdateAssessment {
+    assess_request(server, project, AssessmentRequest::default(), limits)
+        .await
+        .0
+        .unwrap()
+}
+async fn assess_request(
+    server: &Server,
+    project: ResolvedProject,
+    request: AssessmentRequest,
+    limits: ClosureLimits,
+) -> (Result<UpdateAssessment>, Vec<AssessmentProgress>) {
+    let progress = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = progress.clone();
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let runtime = OperationRuntime::new(
         ResourceGovernor::new(ResourceRequest {
@@ -54,7 +68,9 @@ async fn assess_with_limits(
     let mut handle = runtime
         .start(move |mut scope| async move {
             Ok(catalog
-                .assess_updates(&mut scope, &project, None, limits)
+                .assess_updates(&mut scope, &project, request, limits, |event| {
+                    observed.lock().unwrap().push(event)
+                })
                 .await)
         })
         .unwrap();
@@ -67,7 +83,12 @@ async fn assess_with_limits(
     else {
         panic!("assessment failed")
     };
-    report.unwrap()
+    let progress = Arc::try_unwrap(progress)
+        .ok()
+        .unwrap()
+        .into_inner()
+        .unwrap();
+    (report, progress)
 }
 // Independent wire expectations: neither a production report writer nor a
 // candidate constructor supplies these fields.
@@ -83,16 +104,18 @@ fn assert_selection_report(report: &UpdateAssessment, pinned: bool) {
     assert_eq!(
         actual,
         json!({
-            "schema":1, "release_policy":"prefer-stable",
-            "dependencies":[{"release_policy":"prefer-stable", "key":"root", "name":"Title for Project1",
+            "schema":2, "catalog_validation":"runtime-compatible-payloads", "release_policy":"prefer-stable", "complete":true,
+            "scope":{"kind":"all-author-roots","roots":["root"],"total_roots":1,"retained_inventory":0},
+            "summary":{"change_available":usize::from(!pinned),"held":usize::from(pinned),"unknown":0,"manual":0,"unavailable":0,"conflicted":0},
+            "dependencies":[{"release_policy":"prefer-stable", "release_policy_source":"project-default", "compatible_matches_release_policy":true, "key":"root", "name":"Title for Project1",
                 "current":retained, "permitted":if pinned {retained.clone()} else {observed.clone()},
                 "compatible":observed, "upstream":observed, "state":if pinned {"pinned"} else {"change-available"},
                 "catalog_complete":true, "observed_records":1, "diagnostic":null,
                 "reasons":if pinned {vec!["pinned"]} else {vec![]}}],
-            "joint":{"scope":"provider-dependency-closure", "candidate_compatibility":"not-assessed",
+            "joint":{"scope":"provider-dependency-closure",
                 "declared_incompatibilities":[], "declarations_complete":true, "state":"validated",
                 "selections":[{"provider":"modrinth", "project":"Project1", "selection":selection,
-                    "version":null, "published_at":null, "channel":null}], "reasons":[]}
+                    "version":null, "published_at":null, "channel":null}], "reasons":[], "blocking_roots":[]}
         })
     );
 }
@@ -180,7 +203,6 @@ async fn declared_incompatibilities_do_not_claim_placement_aware_validation() {
             .all(|row| row.state == "change-available")
     );
     assert_eq!(report.joint.state, "validated");
-    assert_eq!(report.joint.candidate_compatibility, "not-assessed");
     assert_eq!(report.joint.declared_incompatibilities.len(), 1);
     assert_eq!(
         report.joint.declared_incompatibilities[0].from.selection,
@@ -291,6 +313,18 @@ async fn assessment_uses_authored_preferences_and_reports_each_effective_policy(
             row.release_policy,
             preference.unwrap_or(ReleasePolicy::StableOnly).as_str()
         );
+        assert_eq!(
+            row.release_policy_source,
+            if preference.is_some() {
+                "dependency"
+            } else {
+                "project-default"
+            }
+        );
+        assert_eq!(
+            row.compatible_matches_release_policy,
+            Some(preference.is_some())
+        );
         if preference.is_some() {
             assert_eq!(row.permitted.as_ref().unwrap().selection, "Version2");
         } else {
@@ -374,7 +408,6 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
         .unwrap();
         let report = assess(&server, current.clone()).await;
         assert_eq!(report.joint.state, "validated");
-        assert_eq!(report.joint.candidate_compatibility, "not-assessed");
         assert_eq!(report.joint.declared_incompatibilities.len(), 1);
         let pair = &report.joint.declared_incompatibilities[0];
         assert_eq!(
@@ -386,7 +419,7 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
             if reverse { "Project1" } else { "Project2" }
         );
         let json = serde_json::to_value(&report).unwrap();
-        assert_eq!(json["joint"]["candidate_compatibility"], "not-assessed");
+        assert!(json["joint"].get("candidate_compatibility").is_none());
         let group = AdditionGroup::from_resolved(&proposed).unwrap();
         let error = AdditionPlan::prepare_update(&current, &group).unwrap_err();
         assert!(error.to_string().contains("incompatib"), "{error}");
@@ -774,5 +807,535 @@ async fn provider_access_and_service_failures_still_stop_later_roots() {
         );
         assert!(!report.is_complete());
         skipped.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn selected_assessment_retains_context_and_limits_catalog_work() {
+    let mut server = Server::new_async().await;
+    records(&mut server, "Project1", "Version3", json!([])).await;
+    let untouched = server
+        .mock("GET", "/project/Project2")
+        .expect(0)
+        .create_async()
+        .await;
+    let project = fixture(
+        &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    let (report, progress) = assess_request(
+        &server,
+        project.clone(),
+        AssessmentRequest {
+            keys: vec![DependencyKey::parse("a").unwrap()],
+            releases: None,
+            exact: Default::default(),
+        },
+        ClosureLimits::default(),
+    )
+    .await;
+    let report = report.unwrap();
+    assert_eq!(report.scope.kind, "selected-author-roots");
+    assert_eq!(report.scope.roots, ["a"]);
+    assert_eq!(report.scope.total_roots, 2);
+    assert_eq!(report.scope.retained_inventory, 1);
+    assert_eq!(report.dependencies.len(), 1);
+    assert_eq!(report.summary().change_available, 1);
+    assert!(report.is_complete());
+    assert!(progress.iter().any(|event| matches!(event, AssessmentProgress::Catalog { key, total: 1, records: 1, .. } if key == "a")));
+    let closure_start = progress
+        .iter()
+        .position(|event| matches!(event, AssessmentProgress::RequiredClosure { roots: 1 }))
+        .unwrap();
+    assert!(progress[closure_start + 1..].iter().any(|event| matches!(event, AssessmentProgress::RequiredDependency { project } if project == "a")));
+    assert!(matches!(
+        progress.last(),
+        Some(AssessmentProgress::DeclaredConflicts)
+    ));
+    untouched.assert_async().await;
+    for (keys, missing) in [(vec!["missing"], true), (vec!["a", "a"], false)] {
+        let (report, progress) = assess_request(
+            &server,
+            project.clone(),
+            AssessmentRequest {
+                keys: keys
+                    .iter()
+                    .map(|key| DependencyKey::parse(key).unwrap())
+                    .collect(),
+                releases: None,
+                exact: Default::default(),
+            },
+            ClosureLimits::default(),
+        )
+        .await;
+        let error = report.unwrap_err();
+        assert!(
+            progress.is_empty(),
+            "invalid selection started catalog work"
+        );
+        match error.downcast_ref::<DependencySelectionError>().unwrap() {
+            DependencySelectionError::Missing(key) => {
+                assert!(missing);
+                assert_eq!(key.as_str(), "missing");
+            }
+            DependencySelectionError::Duplicate(key) => {
+                assert!(!missing);
+                assert_eq!(key.as_str(), "a");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn noncandidate_payload_limits_do_not_poison_current_catalog_metadata() {
+    for problem in ["empty", "duplicate", "portable"] {
+        let mut server = Server::new_async().await;
+        let current = version("Project1", "Version2", "1.20.1", json!([]));
+        let mut old = version("Project1", "OldVer01", "1.16.5", json!([]));
+        old["date_published"] = json!("2024-01-01T00:00:00Z");
+        match problem {
+            "empty" => old["files"] = json!([]),
+            "duplicate" => {
+                let mut duplicate = old["files"][0].clone();
+                duplicate["primary"] = json!(false);
+                old["files"].as_array_mut().unwrap().push(duplicate);
+            }
+            "portable" => old["files"][0]["filename"] = json!("legacy|assets.zip"),
+            _ => unreachable!(),
+        }
+        server
+            .mock("GET", "/project/Project1")
+            .with_body(
+                json!({"id":"Project1","slug":"one","title":"One","project_type":"resourcepack"})
+                    .to_string(),
+            )
+            .create_async()
+            .await;
+        let page = server
+            .mock("GET", "/project/Project1/version")
+            .match_query(Matcher::Any)
+            .with_body(json!([old.clone(), current.clone()]).to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/version/Version2")
+            .with_body(current.to_string())
+            .create_async()
+            .await;
+        let project = fixture(&[("a", "Project1", "Version1")], &["a"], &[], true);
+        let report = assess(&server, project.clone()).await;
+        assert!(
+            report.is_complete(),
+            "{problem}: {:?}",
+            report.dependencies[0].diagnostic
+        );
+        assert_eq!(
+            report.dependencies[0]
+                .compatible
+                .as_ref()
+                .unwrap()
+                .selection,
+            "Version2"
+        );
+        assert_eq!(report.dependencies[0].observed_records, Some(2));
+        // The very same historical payload remains ineligible for exact acquisition.
+        let pin = ResolvedPin {
+            project: project.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+                .selected
+                .as_ref()
+                .unwrap()
+                .project
+                .clone(),
+            selection: empack_core::identity::PinSelector::ModrinthVersion(
+                empack_core::identity::ModrinthVersionId::parse("OldVer01").unwrap(),
+            ),
+        };
+        let canonical = modrinth::project(
+            &serde_json::to_vec(
+                &json!({"id":"Project1","slug":"one","title":"One","project_type":"resourcepack"}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let error = modrinth::selection(canonical, &pin, &serde_json::to_vec(&old).unwrap())
+            .err()
+            .unwrap();
+        assert!(error.is::<ProviderRecordProblem>());
+        // If its runtime metadata becomes eligible, its invalid payload must stop qualification.
+        old["game_versions"] = json!(["1.20.1"]);
+        page.remove_async().await;
+        server
+            .mock("GET", "/project/Project1/version")
+            .match_query(Matcher::Any)
+            .with_body(json!([old, current]).to_string())
+            .create_async()
+            .await;
+        let report = assess(&server, project).await;
+        assert!(!report.is_complete());
+        assert_eq!(
+            report.dependencies[0].reasons,
+            [UpdateReason::InvalidEvidence]
+        );
+        assert!(
+            report.dependencies[0]
+                .diagnostic
+                .as_ref()
+                .unwrap()
+                .contains("files")
+        );
+    }
+}
+
+async fn analyzed_update(
+    server: &Server,
+    project: ResolvedProject,
+    keys: &[&str],
+) -> ProviderUpdateAnalysis {
+    let inputs = NonEmpty::new(
+        keys.iter()
+            .map(|key| {
+                ProviderAddInput::for_update(&project, &DependencyKey::parse(key).unwrap()).unwrap()
+            })
+            .collect(),
+    )
+    .unwrap();
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let runtime = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 64 << 20,
+            open_files: 8,
+            ..Default::default()
+        }),
+        1,
+    );
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(catalog
+                .analyze_provider_update(
+                    &mut scope,
+                    &project,
+                    inputs,
+                    UpdateAnalysisOptions::default(),
+                    |_| {},
+                )
+                .await)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    runtime.release_completed(handle.id());
+    drop(handle);
+    let OperationOutcome::Completed(result) =
+        Arc::try_unwrap(outcome).ok().expect("retired analysis")
+    else {
+        panic!("analysis worker failed")
+    };
+    result.unwrap()
+}
+
+#[tokio::test]
+async fn analyzed_update_reuses_observed_closure_for_retained_candidate_validation() {
+    use empack_core::{addition::AdditionPlan, model::PlacementIntent};
+    let mut server = Server::new_async().await;
+    let project_record =
+        json!({"id":"Project1","slug":"example","title":"Example","project_type":"resourcepack"});
+    let project_requests = server
+        .mock("GET", "/project/Project1")
+        .with_body(project_record.to_string())
+        .expect(2)
+        .create_async()
+        .await;
+    let record = version("Project1", "Version2", "1.20.1", json!([]));
+    let listed = server
+        .mock("GET", "/project/Project1/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([record]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let exact = server
+        .mock("GET", "/version/Version2")
+        .with_body(record.to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let retained_requests = server
+        .mock("GET", "/project/Project2")
+        .expect(0)
+        .create_async()
+        .await;
+    let base = fixture(
+        &[
+            ("root", "Project1", "Version1"),
+            ("retained", "Project2", "Version1"),
+        ],
+        &["root"],
+        &[],
+        true,
+    );
+    let root = DependencyKey::parse("root").unwrap();
+    let retained = DependencyKey::parse("retained").unwrap();
+    let mut intent = base.intent().clone();
+    intent.roots.get_mut(&root).unwrap().placement = PlacementIntent::Explicit(
+        base.lock().dependencies[&root].files.as_slice()[0]
+            .placements
+            .clone(),
+    );
+    let revision = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "author")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = revision;
+    let selected = lock.dependencies.get_mut(&root).unwrap();
+    selected.files = NonEmpty::new(vec![selected.files.as_slice()[0].clone()]).unwrap();
+    lock.dependencies
+        .get_mut(&retained)
+        .unwrap()
+        .incompatibilities
+        .push(ProviderIncompatibility {
+            project: Some(
+                base.lock().dependencies[&root]
+                    .selected
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .clone(),
+            ),
+            selection: Some(
+                base.lock().dependencies[&root]
+                    .selected
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .parse_pin("Version2")
+                    .unwrap(),
+            ),
+        });
+    let current = ResolvedProject::validate(intent, lock, revision).unwrap();
+    let before = DocumentCodec.encode_lock(&current).unwrap();
+    let analysis = analyzed_update(&server, current.clone(), &["root"]).await;
+    assert!(analysis.report.is_complete());
+    assert_eq!(analysis.report.summary().change_available, 1);
+    assert_eq!(analysis.report.joint.declared_incompatibilities.len(), 1);
+    let ProviderAdditionOutcome::Ready(addition) = analysis.proposal.unwrap() else {
+        panic!("exact provider group should normalize")
+    };
+    assert_eq!(addition.evidence().selections.len(), 1);
+    assert_eq!(
+        ObservedVersion::from_pin(
+            addition.project().lock().dependencies[&root]
+                .selected
+                .as_ref()
+                .unwrap()
+        )
+        .selection,
+        "Version2"
+    );
+    let error = AdditionPlan::prepare_update(&current, addition.group()).unwrap_err();
+    assert!(error.to_string().contains("incompatib"), "{error}");
+    assert_eq!(DocumentCodec.encode_lock(&current).unwrap(), before);
+    project_requests.assert_async().await;
+    listed.assert_async().await;
+    exact.assert_async().await;
+    retained_requests.assert_async().await;
+}
+
+#[tokio::test]
+async fn analyzed_update_keeps_independent_findings_and_original_provider_error() {
+    let mut server = Server::new_async().await;
+    let current = fixture(
+        &[("a", "Project1", "Version1"), ("b", "Project2", "Version1")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    for id in ["Project1", "Project2"] {
+        server
+            .mock("GET", format!("/project/{id}").as_str())
+            .with_body(
+                json!({"id":id,"slug":id,"title":id,"project_type":"resourcepack"}).to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+    }
+    let mut invalid = version("Project1", "Version2", "1.20.1", json!([]));
+    invalid["files"] = json!([]);
+    server
+        .mock("GET", "/project/Project1/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([invalid]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let independent = server
+        .mock("GET", "/project/Project2/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([version("Project2", "Version3", "1.20.1", json!([]))]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let no_candidate_fetch = server
+        .mock("GET", "/version/Version3")
+        .expect(0)
+        .create_async()
+        .await;
+    let analysis = analyzed_update(&server, current, &["a", "b"]).await;
+    assert!(!analysis.report.is_complete());
+    assert_eq!(
+        analysis.report.dependencies[0].reasons,
+        [UpdateReason::InvalidEvidence]
+    );
+    assert_eq!(analysis.report.dependencies[1].state, "change-available");
+    assert_eq!(
+        analysis.report.dependencies[1]
+            .permitted
+            .as_ref()
+            .unwrap()
+            .selection,
+        "Version3"
+    );
+    let error = analysis
+        .proposal
+        .err()
+        .expect("incomplete discovery cannot supply a complete group");
+    assert!(
+        matches!(
+            error.downcast_ref::<CatalogError>(),
+            Some(CatalogError::InvalidRecord)
+        ),
+        "{error:#}"
+    );
+    assert!(error.downcast_ref::<ProviderRecordProblem>().is_some());
+    independent.assert_async().await;
+    no_candidate_fetch.assert_async().await;
+}
+
+#[tokio::test]
+async fn version_selection_refuses_unobserved_choices_and_keeps_the_original_deadline() {
+    struct Choice {
+        late: bool,
+    }
+    impl UpdateVersionSelector for Choice {
+        fn choose<'a>(
+            &'a mut self,
+            choices: &'a UpdateVersionChoices,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<PinSelector>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                assert_eq!(choices.versions.len(), 1);
+                if self.late {
+                    tokio::time::pause();
+                    tokio::time::advance(std::time::Duration::from_secs(301)).await;
+                    Ok(choices.versions[0].pin.selection.clone())
+                } else {
+                    Ok(choices.current.project.parse_pin("Unlisted").unwrap())
+                }
+            })
+        }
+    }
+    for (late, empty) in [(false, false), (false, true), (true, false)] {
+        let mut server = Server::new_async().await;
+        if empty {
+            server.mock("GET", "/project/Project1").with_body(json!({"id":"Project1","slug":"Project1","title":"Project1","project_type":"resourcepack"}).to_string()).create_async().await;
+            server
+                .mock("GET", "/project/Project1/version")
+                .match_query(Matcher::Any)
+                .with_body(
+                    json!([version("Project1", "Version2", "1.21.1", json!([]))]).to_string(),
+                )
+                .create_async()
+                .await;
+        } else {
+            records(&mut server, "Project1", "Version2", json!([])).await;
+        }
+        let project = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
+        let input =
+            ProviderAddInput::for_update(&project, &DependencyKey::parse("root").unwrap()).unwrap();
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        let runtime = OperationRuntime::new(
+            ResourceGovernor::new(ResourceRequest {
+                jobs: 2,
+                memory_bytes: 64 << 20,
+                open_files: 8,
+                ..Default::default()
+            }),
+            1,
+        );
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                let mut selector = Choice { late };
+                Ok(catalog
+                    .analyze_provider_update(
+                        &mut scope,
+                        &project,
+                        NonEmpty::new(vec![input]).unwrap(),
+                        UpdateAnalysisOptions {
+                            selector: Some(&mut selector),
+                            ..Default::default()
+                        },
+                        |_| {},
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.shutdown().await;
+        let OperationOutcome::Completed(result) = &*outcome else {
+            panic!("Selection operation failed")
+        };
+        if empty {
+            let analysis = result.as_ref().unwrap();
+            assert!(analysis.report.dependencies[0].catalog_complete);
+            assert_eq!(analysis.report.dependencies[0].state, "unavailable");
+            assert!(analysis.selected_pins.is_empty());
+            assert!(matches!(
+                analysis
+                    .proposal
+                    .as_ref()
+                    .err()
+                    .unwrap()
+                    .downcast_ref::<CatalogError>(),
+                Some(CatalogError::NoCompatibleSelection)
+            ));
+        } else if late {
+            let analysis = result.as_ref().unwrap();
+            assert!(!analysis.report.is_complete());
+            assert!(analysis.report.dependencies[0].catalog_complete);
+            assert_eq!(
+                analysis.report.dependencies[0]
+                    .permitted
+                    .as_ref()
+                    .unwrap()
+                    .selection,
+                "Version2"
+            );
+            assert!(
+                analysis
+                    .report
+                    .joint
+                    .reasons
+                    .contains(&UpdateReason::Deadline)
+            );
+            assert!(matches!(
+                analysis
+                    .proposal
+                    .as_ref()
+                    .err()
+                    .unwrap()
+                    .downcast_ref::<CatalogError>(),
+                Some(CatalogError::Deadline)
+            ));
+        } else {
+            let error = result.as_ref().err().unwrap();
+            assert!(
+                format!("{error:#}").contains("Selected version was not offered"),
+                "{error:#}"
+            );
+        }
     }
 }

@@ -232,11 +232,12 @@ fn terminal_host_fixture() {
         assert!(status.success());
         assert_eq!(unsafe { libc::tcgetpgrp(0) }, group);
     }
-    let command = if mode == "spawn-failure" {
+    let mut command = if mode == "spawn-failure" {
         Command::new("/empack-missing-runtime")
     } else {
         fixture(CHILD, "child")
     };
+    command.env("EMPACK_BOOTSTRAP_CONTROL", "parent-only-fixture");
     let cancel = Cancellation::default();
     let token = cancel.clone();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -257,7 +258,9 @@ fn terminal_host_fixture() {
             if !matches!(stop_mode.as_str(), "external-resume" | "cancel-stopped") {
                 return;
             }
-            while !std::path::Path::new("runtime-pid").exists() {
+            // A PID identifies the child, but does not prove it has announced
+            // console readiness. Never stop it before the driver can proceed.
+            while !std::path::Path::new("runtime-ready").exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             let pid: i32 = std::fs::read_to_string("runtime-pid")
@@ -329,6 +332,7 @@ fn terminal_child_fixture() {
     if std::env::var("EMPACK_PTY_ROLE").as_deref() != Ok("child") {
         return;
     }
+    assert!(std::env::var_os("EMPACK_BOOTSTRAP_CONTROL").is_none());
     println!("RUNTIME_PID={}", std::process::id());
     assert_eq!(
         unsafe { libc::tcgetpgrp(0) },
@@ -353,10 +357,20 @@ fn terminal_child_fixture() {
     std::fs::write("runtime-pid.tmp", std::process::id().to_string()).unwrap();
     std::fs::rename("runtime-pid.tmp", "runtime-pid").unwrap();
     println!("CONSOLE_READY");
+    std::io::stdout().flush().unwrap();
+    if matches!(
+        std::env::var("EMPACK_PTY_MODE").as_deref(),
+        Ok("external-resume" | "cancel-stopped")
+    ) {
+        std::fs::write("runtime-ready", b"ready").unwrap();
+    }
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         if INTERRUPTED.load(Ordering::SeqCst) {
             println!("INTERRUPTED_GRACEFULLY");
+            if std::env::var("EMPACK_PTY_INTERRUPT_STATUS").as_deref() == Ok("130") {
+                std::process::exit(130);
+            }
             return;
         }
         assert!(Instant::now() < deadline, "console input timed out");

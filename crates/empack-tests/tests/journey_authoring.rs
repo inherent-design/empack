@@ -340,12 +340,23 @@ fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the
     ] {
         write(&project, name, bytes);
     }
+    let before_check = workspace::snapshot(project.dir());
     offline_command(project.dir())
-        .args(["manifest", "check"])
+        .args(["check", "--documents"])
+        .assert()
+        .failure()
+        .code(2);
+    assert_eq!(
+        workspace::snapshot(project.dir()),
+        before_check,
+        "A stale-lock check must preserve author work and state"
+    );
+    offline_command(project.dir())
+        .args(["--yes", "sync", "--materialize"])
         .assert()
         .success();
     offline_command(project.dir())
-        .args(["--yes", "sync", "--materialize"])
+        .args(["check", "--documents"])
         .assert()
         .success();
     let author = fs::read(project.dir().join("empack.yml")).unwrap();
@@ -387,7 +398,7 @@ fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the
         .success();
     assert_eq!(author_snapshot(&project), before);
     offline_command(project.dir())
-        .args(["--yes", "update", "fixture"])
+        .args(["--yes", "update", "fixture", "--apply"])
         .assert()
         .success();
     assert_eq!(fs::read(project.dir().join(SOURCE)).unwrap(), updated);

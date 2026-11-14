@@ -51,97 +51,22 @@ pub async fn inspect(session: &dyn Session, command: ManifestCommand) -> Result<
     Ok(())
 }
 fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<String> {
-    let caveat = "Local metadata only: no provider queries or file verification. Diff compares current constraints with locked selections; the lock does not retain earlier display metadata or build profiles.";
-    let limitations = report
-        .editing_limitations
-        .iter()
-        .map(|item| format!("{} {}: {}", item.document, item.path.join("."), item.reason))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let caveat = if limitations.is_empty() {
-        caveat.to_owned()
-    } else {
-        format!("{caveat}\nEditing limitations (input remains readable):\n{limitations}")
-    };
     match command {
-        ManifestCommand::Check { json } => {
-            if json {
-                Ok(serde_json::to_string_pretty(report)?)
-            } else {
-                Ok(format!(
-                    "{}: valid schema {} authoring; lock {}\n{}",
-                    report.pack, report.author_schema, report.lock_status, caveat
-                ))
-            }
-        }
+        ManifestCommand::Diff { json: true } => Ok(crate::terminal::json_text(report)?),
         ManifestCommand::Explain { dependency, json } => {
             let row = report
                 .dependencies
                 .iter()
                 .find(|row| row.key == dependency)
-                .context("Unknown dependency key")?;
+                .context("Dependency is not in the author files or lock")?;
             if json {
-                return Ok(serde_json::to_string_pretty(row)?);
-            }
-            let mut lines = vec![format!(
-                "{} ({})",
-                row.key,
-                if row.explicit {
-                    "authored root"
-                } else {
-                    "retained dependency"
-                }
-            )];
-            if let Some(request) = &row.effective {
-                lines.push(format!(
-                    "Effective request:\n{}",
-                    serde_saphyr::to_string(request)?
-                ));
-            }
-            for (label, value) in [
-                ("Canonical project", &row.canonical_project),
-                ("Locked selection", &row.locked_selection),
-            ] {
-                if let Some(value) = value {
-                    lines.push(format!("{label}: {}", serde_json::to_string(value)?));
-                }
-            }
-            if let Some(policy) = row.evidence_policy {
-                lines.push(format!(
-                    "URL evidence: {policy}; retained observations remain binding"
-                ));
-            }
-            if let Some(policy) = row.release_policy {
-                lines.push(format!(
-                    "Release policy: {policy} [{}]",
-                    row.policy_origin.unwrap_or("default")
-                ));
-            }
-            if let Some(reason) = &row.reason {
-                lines.push(reason.clone());
-            }
-            lines.push(caveat);
-            Ok(lines.join("\n"))
-        }
-        ManifestCommand::Diff { json } => {
-            if json {
-                Ok(serde_json::to_string_pretty(report)?)
+                Ok(crate::terminal::json_text(row)?)
             } else {
-                let mut lines = vec![format!("Author intent versus lock: {}", report.lock_status)];
-                if report.runtime_satisfied == Some(false) {
-                    lines.push("Runtime request requires resolution".into());
-                }
-                for row in &report.dependencies {
-                    if let Some(reason) = &row.reason {
-                        lines.push(format!("{}: {reason}", row.key));
-                    }
-                }
-                if let Some(reason) = &report.lock_reason {
-                    lines.push(reason.clone());
-                }
-                lines.push(caveat);
-                Ok(lines.join("\n"))
+                text::explain(report, row)
             }
         }
+        ManifestCommand::Diff { json: false } => Ok(text::diff(report)),
     }
 }
+
+mod text;

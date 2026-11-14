@@ -15,6 +15,111 @@ fn write_intent(root: &Path, intent: &ProjectIntent) {
     bytes.extend(DocumentCodec.encode_intent(intent).unwrap());
     fs::write(root.join("project/empack.yml"), bytes).unwrap();
 }
+
+#[tokio::test]
+async fn update_previews_require_explicit_application_and_all_retains_libraries() {
+    use crate::application::{Commands, cli::UpdateArgs, commands::execute_command_with_session};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::create_dir(root.path().join("project/seeds")).unwrap();
+    let mut intent = project(root.path()).intent().clone();
+    for name in ["settings", "retained"] {
+        fs::write(
+            root.path().join(format!("project/seeds/{name}.toml")),
+            b"initial",
+        )
+        .unwrap();
+        intent.roots.insert(
+            DependencyKey::parse(name).unwrap(),
+            DependencyIntent {
+                releases: None,
+                source: SourceIntent::Local(
+                    PortableRelPath::parse(
+                        &format!("seeds/{name}.toml"),
+                        PathSyntax::ProjectContent,
+                    )
+                    .unwrap(),
+                ),
+                kind: ContentKind::Config,
+                selection: DependencySelection::Automatic,
+                placement: placed(&format!("config/{name}.toml")),
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    let retained = DependencyKey::parse("retained").unwrap();
+    intent.roots.remove(&retained);
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    assert!(
+        project(root.path())
+            .lock()
+            .dependencies
+            .contains_key(&retained)
+    );
+    fs::write(
+        root.path().join("project/seeds/settings.toml"),
+        b"selected update",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("project/seeds/retained.toml"),
+        b"not selected",
+    )
+    .unwrap();
+    let before = snapshot(root.path());
+    for all in [false, true] {
+        let (session, messages) = session(root.path(), false).record_status_messages();
+        assert!(session.config().app_config().yes);
+        execute_command_with_session(
+            Commands::Update(UpdateArgs {
+                all,
+                dependencies: if all { vec![] } else { vec!["settings".into()] },
+                ..Default::default()
+            }),
+            &session,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            snapshot(root.path()),
+            before,
+            "preview must not publish even with --yes"
+        );
+        assert!(
+            messages
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message.contains("Preview only; use --apply"))
+        );
+    }
+    execute_command_with_session(
+        Commands::Update(UpdateArgs {
+            all: true,
+            apply: true,
+            ..Default::default()
+        }),
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+        b"selected update"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/retained.toml")).unwrap(),
+        b"initial"
+    );
+    assert_eq!(project(root.path()).intent(), &intent);
+}
 fn placed(name: &str) -> PlacementIntent {
     PlacementIntent::Explicit(
         NonEmpty::new(vec![Placement {
@@ -807,9 +912,11 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
         .unwrap();
         super::super::update::update_with_services(
             &session(root.path(), false),
-            vec![key.as_str().into()],
-            None,
-            BatchPolicy::AllRequested,
+            crate::application::cli::UpdateArgs {
+                dependencies: vec![key.as_str().into()],
+                apply: true,
+                ..Default::default()
+            },
             services("http://127.0.0.1:9"),
         )
         .await
@@ -846,10 +953,12 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
             assert!(
                 super::super::update::update_with_services(
                     &session(root.path(), false),
-                    vec![key.as_str().into()],
-                    None,
-                    BatchPolicy::AllRequested,
-                    services("http://127.0.0.1:9"),
+                    crate::application::cli::UpdateArgs {
+                        dependencies: vec![key.as_str().into()],
+                        apply: true,
+                        ..Default::default()
+                    },
+                    services("http://127.0.0.1:9")
                 )
                 .await
                 .is_err()
@@ -1150,10 +1259,38 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             .collect::<Vec<_>>()
     };
     assert_eq!(records().len(), 1);
+    let saved_id = || {
+        crate::engine::pending::inspect(
+            &root.path().join("state"),
+            &root.path().join("project"),
+            &Default::default(),
+        )
+        .unwrap()
+        .operations
+        .into_iter()
+        .find(|operation| operation.kind == crate::engine::pending::PendingKind::Sync)
+        .unwrap()
+        .id
+    };
     let before = snapshot(root.path());
-    resume_with_services(&session(root.path(), true), vec![], services(&server.url()))
-        .await
-        .unwrap();
+    let error = resume_with_services(
+        &session(root.path(), false),
+        vec![],
+        services(&server.url()),
+        &"0".repeat(64),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("Selected pending synchronization changed"));
+    assert_eq!(snapshot(root.path()), before);
+    resume_with_services(
+        &session(root.path(), true),
+        vec![],
+        services(&server.url()),
+        &saved_id(),
+    )
+    .await
+    .unwrap();
     assert_eq!(snapshot(root.path()), before);
     for selected in ["unknown/primary=one.jar", "one/primary=one.jar"] {
         let before = snapshot(root.path());
@@ -1163,9 +1300,14 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             vec![selected.into(), selected.into()]
         };
         assert!(
-            resume_with_services(&session(root.path(), false), files, services(&server.url()))
-                .await
-                .is_err()
+            resume_with_services(
+                &session(root.path(), false),
+                files,
+                services(&server.url()),
+                &saved_id()
+            )
+            .await
+            .is_err()
         );
         assert_eq!(snapshot(root.path()), before);
     }
@@ -1179,7 +1321,8 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             resume_with_services(
                 &session(root.path(), false),
                 vec!["one/primary=linked.jar".into()],
-                services(&server.url())
+                services(&server.url()),
+                &saved_id(),
             )
             .await
             .is_err()
@@ -1193,6 +1336,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         &session(root.path(), false),
         vec!["one/primary=one.jar".into()],
         services(&server.url()),
+        &saved_id(),
     )
     .await;
     assert!(format!("{:#}", partial.unwrap_err()).contains("continuation was saved"));
@@ -1207,7 +1351,8 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         resume_with_services(
             &session(root.path(), false),
             vec!["two/primary=two.jar".into()],
-            services(&server.url())
+            services(&server.url()),
+            &saved_id(),
         )
         .await
         .is_err()
@@ -1224,10 +1369,24 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
     )
     .unwrap();
     let operation = &shared.operations[0];
-    let text = shared.text();
+    let read_before = snapshot(root.path());
+    let (host, messages) = session(root.path(), false).record_messages();
+    crate::application::execute_command_with_session(
+        crate::application::Commands::Pending {
+            command: crate::application::cli::PendingCommand::Show {
+                id: operation.id.clone(),
+                json: false,
+            },
+        },
+        &host,
+    )
+    .await
+    .unwrap();
+    let text = messages.lock().unwrap().join("\n");
     assert!(text.contains("one/primary"));
-    assert!(text.contains("curseforge:123@456"));
+    assert!(text.contains("curseforge project 123, version 456"));
     assert!(text.contains("sha512:"));
+    assert_eq!(snapshot(root.path()), read_before);
     let downloads = root.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
     fs::write(downloads.join("renamed.bin"), b"second").unwrap();
@@ -1252,6 +1411,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             id: operation.id.clone(),
             files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
+            wait_downloads: None,
             open_downloads: false,
         },
     )
@@ -1261,7 +1421,13 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
     // Two paths with identical verified bytes represent one candidate content identity.
     assert_eq!(operation.state, "unverified");
     if migration {
-        assert!(operation.diagnostic.as_ref().unwrap().contains("migration"));
+        assert!(
+            operation
+                .diagnostic
+                .as_ref()
+                .unwrap()
+                .contains("Minecraft or loader settings changed")
+        );
     }
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), false),
@@ -1270,6 +1436,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
             id: operation.id.clone(),
             files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
+            wait_downloads: None,
             open_downloads: false,
         },
     )
@@ -1327,11 +1494,26 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
         .expect_at_least(1)
         .create_async()
         .await;
-    let version = server.mock("GET", "/version/RootVer1").with_body(json!({
+    let version_record = json!({
         "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
         "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
         "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-    }).to_string()).expect_at_least(1).create_async().await;
+    });
+    let version = server
+        .mock("GET", "/version/RootVer1")
+        .with_body(version_record.to_string())
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    // Update now performs discovery even for a held root; that query must use the
+    // locked identity too, without following the reassigned readable selector.
+    let catalog = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([version_record]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
     let mut intent = project(root.path()).intent().clone();
     let key = DependencyKey::parse("menu").unwrap();
     let request =
@@ -1361,9 +1543,11 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     // Update and a placement edit must use the locked identity, never re-resolve the slug.
     super::super::update::update_with_services(
         &session(root.path(), false),
-        vec!["menu".into()],
-        None,
-        BatchPolicy::AllRequested,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["menu".into()],
+            apply: true,
+            ..Default::default()
+        },
         services(&server.url()),
     )
     .await
@@ -1394,6 +1578,7 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     }
     assert_eq!(snapshot(&root.path().join("project")), stable);
     redirected.assert_async().await;
+    catalog.assert_async().await;
     canonical.assert_async().await;
     version.assert_async().await;
     // Pin helpers route through normal CLI approval and mutate only author documents.
@@ -1437,7 +1622,6 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     let before = snapshot(root.path());
     for json in [false, true] {
         for command in [
-            ManifestCommand::Check { json },
             ManifestCommand::Explain {
                 dependency: "renamed-menu".into(),
                 json,
@@ -1451,6 +1635,18 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
             .await
             .unwrap();
         }
+    }
+    for json in [false, true] {
+        execute_command_with_session(
+            Commands::Check(crate::application::cli::CheckArgs {
+                documents: true,
+                json,
+                ..Default::default()
+            }),
+            &session(root.path(), false),
+        )
+        .await
+        .unwrap();
     }
     assert_eq!(snapshot(root.path()), before);
     // Editing the request is a deliberate source change. An old exact pin cannot follow it.

@@ -12,6 +12,9 @@ mod desktop_assistance;
 #[path = "support/initialization.rs"]
 mod initialization;
 #[cfg(unix)]
+#[path = "support/streams.rs"]
+mod streams;
+#[cfg(unix)]
 use desktop_assistance::{browser_command, browser_fixture};
 use empack_tests::harness::terminal;
 use std::{fs, time::Duration};

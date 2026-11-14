@@ -8,9 +8,10 @@ import tomllib
 from .evidence import sha256, write_json
 from .process import run
 from .compiler import compiler_environment
+from .bootstrap import admit as admit_bootstrap
 
 EVIDENCE_FILES = {"product-build-messages.jsonl", "product-metadata.json", "product-build-audit.json"}
-COMPILATION_FILES = EVIDENCE_FILES | {"compile.json", "build.stdout", "metadata.stdout"}
+COMPILATION_FILES = EVIDENCE_FILES | {"compile.json", "build.stdout", "metadata.stdout", "bootstrap-build.json"}
 
 
 def compiler_stdout(output, builder, channel):
@@ -90,6 +91,7 @@ def compile_product(root, target, builder, directory, environment, features="def
                 "stamped": {name: sha256(root / name) for name in ("Cargo.toml", "Cargo.lock")}}
 
     before = source()
+    bootstrap = admit_bootstrap(root)
     version = checked([builder, "--version"], "builder-version").strip()
     channel = tomllib.loads((root / "rust-toolchain.toml").read_text(encoding="utf-8"))["toolchain"]["channel"]
     if builder == "cargo" and not version.startswith(f"cargo {channel} "):
@@ -100,6 +102,10 @@ def compile_product(root, target, builder, directory, environment, features="def
     messages = compiler_stdout(checked(command, "build", timeout=2400), builder, channel)
     metadata_args = metadata_command(target, builder)
     metadata = json.loads(compiler_stdout(checked(metadata_args, "metadata"), builder, channel))
+    inspect_bootstrap(messages, metadata, bootstrap["jar_sha256"])
+    if admit_bootstrap(root) != bootstrap:
+        raise ValueError("Bootstrap changed during native compilation")
+    write_json(directory / "bootstrap-build.json", bootstrap)
     filename = "empack.exe" if target.endswith("windows-msvc") else "empack"
     binary = target_dir / target / "release" / filename
     if binary.is_symlink() or not binary.is_file():
@@ -113,7 +119,8 @@ def compile_product(root, target, builder, directory, environment, features="def
         raise ValueError("Source changed during product compilation")
     record = {"schema": 1, "kind": "compiled-product", "source": before, "target": target,
               "features": features, "command": command, "metadata_command": metadata_args,
-              "builder_version": version, "artifact": artifact}
+              "builder_version": version, "artifact": artifact,
+              "bootstrap_sha256": sha256(directory / "bootstrap-build.json")}
     write_json(directory / "compile.json", record)
     return record
 
@@ -143,8 +150,26 @@ def inspect_compilation(directory, target, builder, features, revision, stamped,
     if (emitted != (directory / "product-build-messages.jsonl").read_text(encoding="utf-8")
             or metadata != json.loads((directory / "product-metadata.json").read_text(encoding="utf-8"))):
         raise ValueError("Compiled product differs from captured compiler stdout")
+    proof = directory / "bootstrap-build.json"
+    if proof.is_symlink() or not proof.is_file() or sha256(proof) != record.get("bootstrap_sha256"):
+        raise ValueError("Missing or changed compiled bootstrap identity")
+    bootstrap = json.loads(proof.read_text(encoding="utf-8"))
+    inspect_bootstrap(emitted, metadata, bootstrap.get("jar_sha256", ""))
     inspect_retained_build(directory, record["artifact"])
     return record
+
+
+def inspect_bootstrap(messages, metadata, expected):
+    """Bind the Java producer to the input Cargo actually embedded."""
+    if not re.fullmatch("[0-9a-f]{64}", expected):
+        raise ValueError("Invalid bootstrap JAR identity")
+    owners = {p["id"] for p in metadata["packages"] if p["name"] == "empack-lib"}
+    observed = [value for line in messages.splitlines() if line.strip()
+                for event in [json.loads(line)]
+                if event.get("reason") == "build-script-executed" and event.get("package_id") in owners
+                for name, value in event.get("env", []) if name == "EMPACK_BOOTSTRAP_SHA256"]
+    if observed != [expected]:
+        raise ValueError("Compiled product did not embed the admitted bootstrap JAR")
 
 
 def inspect_build(messages, metadata, features, executable, digest):
@@ -203,7 +228,8 @@ def inspect_build(messages, metadata, features, executable, digest):
                           "features": sorted(enabled), "profile": event["profile"]})
         elif reason not in {"compiler-message", "build-script-executed"}:
             raise ValueError(f"Unexpected Cargo build message: {reason}")
-    if not finished or len(binaries) != 1 or not required <= {u["package"] for u in units}:
+    if not finished or len(binaries) != 1 or not required <= {
+            u["package"] for u in units if set(u["kind"]) & {"lib", "rlib", "bin"}}:
         raise ValueError("Incomplete Cargo product build evidence")
     return {"schema": 1, "features": features, "executable_sha256": digest, "units": units,
             "messages_sha256": hashlib.sha256(messages.encode("utf-8")).hexdigest(),

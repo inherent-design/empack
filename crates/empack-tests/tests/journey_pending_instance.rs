@@ -75,7 +75,7 @@ impl Fixture {
     fn prepare(&self) -> assert_cmd::Command {
         let mut command = self.command();
         command
-            .args(["instance", "prepare"])
+            .args(["instance", "ensure"])
             .arg(&self.release)
             .args([
                 "--sha256",
@@ -134,22 +134,22 @@ fn assert_installed_content(fixture: &Fixture) {
 
 #[test]
 fn journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys() {
-    for legacy in [false, true] {
-        instance_roundtrip(Fixture::new(), legacy, |_, _| {});
+    for prefix in [false, true] {
+        instance_roundtrip(Fixture::new(), prefix, |_, _| {});
     }
 }
 
 fn instance_roundtrip(
     fixture: Fixture,
-    legacy: bool,
+    prefix: bool,
     after_suspend: impl FnOnce(&Fixture, &Value),
 ) {
     let before = snapshot(fixture.project.dir()).files;
     fixture.prepare().arg("--dry-run").assert().success();
     assert_eq!(snapshot(fixture.project.dir()).files, before);
     assert!(!fixture.state.exists());
-    fixture.suspend(legacy);
-    if !legacy {
+    fixture.suspend(prefix);
+    if !prefix {
         let initial = fixture.pending();
         let inputs = initial["inputs"].as_array().unwrap();
         assert!(inputs.iter().all(|input| input["needed"] == true));
@@ -266,8 +266,8 @@ fn instance_roundtrip(
     assert_eq!(fixture.pending(), operation);
     fs::write(&supplied, TWO).unwrap();
     let mut command = fixture.command();
-    if legacy {
-        command.args(["instance", "continue"]);
+    if prefix {
+        command.args(["pending", "resume", &id[..12]]);
     } else {
         command.args(
             operation["next"]
@@ -295,7 +295,7 @@ fn instance_roundtrip(
 
 #[test]
 fn journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work() {
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         let fixture = Fixture::new();
         fixture.suspend(false);
         let original = fixture.pending();
@@ -329,7 +329,7 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         fs::write(&descriptor, &bytes).unwrap();
         fixture
             .command()
-            .args(["instance", "prepare"])
+            .args(["instance", "ensure"])
             .arg(&descriptor)
             .args([
                 "--sha256",
@@ -355,20 +355,17 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
             .stderr(contains("stale"));
         assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(snapshot(fixture.project.dir()).files, before);
-        let args = if legacy {
-            vec!["instance", "discard-pending"]
-        } else {
-            vec!["pending", "discard", id]
-        };
+        let selected_id = if prefix { &id[..12] } else { id };
+        let args = ["pending", "discard", selected_id];
         fixture
             .command()
             .arg("--dry-run")
-            .args(&args)
+            .args(args)
             .assert()
             .success();
         assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(snapshot(fixture.project.dir()).files, before);
-        fixture.command().args(&args).assert().success();
+        fixture.command().args(args).assert().success();
         assert_eq!(fixture.list()["operations"], json!([]));
         assert_eq!(snapshot(fixture.project.dir()).files, before);
         let after = snapshot(&fixture.state).files;
@@ -577,10 +574,10 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
 #[ignore = "opt-in native APFS images; no GUI, Java or normal instances"]
 fn journey_pending_instance_survives_native_remount_with_retained_inputs() {
     let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
-    for legacy in [false, true] {
+    for prefix in [false, true] {
         instance_roundtrip(
             Fixture::new_in(volume.root()),
-            legacy,
+            prefix,
             |fixture, operation| {
                 let project = snapshot(fixture.project.dir()).files;
                 let host = snapshot(fixture.host.path()).files;

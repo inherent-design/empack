@@ -4,7 +4,9 @@ use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         BuildArgs, InitArgs,
-        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
+        session_mocks::{
+            MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
+        },
     },
     engine::{
         api::RemovalSelector,
@@ -178,7 +180,10 @@ fn sync_request(project: &ResolvedProject) -> SyncRequest {
 }
 fn removal(query: &str) -> RemoveRequest {
     RemoveRequest {
-        selections: NonEmpty::new(vec![RemovalSelector::Query(query.into())]).unwrap(),
+        selections: NonEmpty::new(vec![RemovalSelector::Key(
+            empack_core::model::DependencyKey::parse(query).unwrap(),
+        )])
+        .unwrap(),
         mode: RemovalMode::RemoveContent,
         evidence: RemovalEvidencePolicy::RequireComplete,
     }
@@ -349,12 +354,12 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     }
     let before = snapshot(root.path());
     for (yes, dry) in [(true, true), (false, false)] {
-        remove(&session(root.path(), yes, dry), removal("renderer"))
+        remove(&session(root.path(), yes, dry), removal("my-alias"))
             .await
             .unwrap();
         assert_eq!(snapshot(root.path()), before);
     }
-    remove(&session(root.path(), true, false), removal("renderer"))
+    remove(&session(root.path(), true, false), removal("my-alias"))
         .await
         .unwrap();
     let retained = read(&project);
@@ -444,7 +449,7 @@ async fn incomplete_required_evidence_is_a_decision_without_partial_publication(
     .await
     .unwrap_err();
     assert!(
-        format!("{error:#}").contains("required dependency evidence needs a decision"),
+        format!("{error:#}").contains("Dependency check could not finish"),
         "{error:#}"
     );
     assert_eq!(snapshot(root.path()), before);
@@ -653,7 +658,12 @@ async fn update_mixed(
         NonEmpty::new(inputs)?,
         ReleasePolicy::PreferStable,
         SourceEvidencePolicy::Compatibility,
-        Change::Update,
+        Change::Update {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
+            pins: Default::default(),
+            mode: ApplicationMode::Apply,
+            output: Default::default(),
+        },
         AdditionServices {
             catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
             transport: HttpAcquisition::for_loopback_tests(),
@@ -764,17 +774,14 @@ async fn native_update_preserves_authored_intent_and_converges_across_mixed_cont
     .await
     .unwrap();
     assert_eq!(snapshot(&project), before);
-    // The public direct-only entry shares the same exact update lifecycle.
-    super::update(
+    // The public command selects the existing local dependency by its exact key.
+    super::super::cli::update_command(
         &session(root.path(), true, false),
-        NonEmpty::new(vec![local_batch_input(
-            "settings.cfg",
-            "settings",
-            "config/settings.cfg",
-        )])
-        .unwrap(),
-        ReleasePolicy::PreferStable,
-        SourceEvidencePolicy::Compatibility,
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["settings".into()],
+            apply: true,
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -877,7 +884,7 @@ async fn native_update_binds_resolution_to_the_captured_raw_lock() {
     changed.extend_from_slice(b"\n# independent edit during resolution\n");
     let bytes = changed.clone();
     let mut next = Server::new_async().await;
-    next.mock("GET", "/project/renderer").with_body_from_request(move |_| {
+    next.mock("GET", "/project/Root0001").with_body_from_request(move |_| {
         fs::write(&path, &bytes).unwrap();
         json!({"id":"Root0001","slug":"renderer","title":"renderer","project_type":"mod","loaders":["fabric"]}).to_string().into_bytes()
     }).create_async().await;
@@ -921,7 +928,7 @@ async fn native_update_checks_retained_dependents_without_promoting_selected_tra
         json!([{"project_id":"Need0001","version_id":"NeedVer2","dependency_type":"required"}]),
     )
     .await;
-    let mut required = input("required-library", Some("required-library"));
+    let mut required = input("Need0001", Some("required-library"));
     required.pin = Some(PinSelector::ModrinthVersion(
         ModrinthVersionId::parse("NeedVer2").unwrap(),
     ));
@@ -1326,4 +1333,429 @@ async fn separated_conflicts_preserve_evidence_and_project_distinct_build_invent
         assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
         assert_eq!(snapshot(&root), before);
     }
+}
+
+#[test]
+fn provider_failure_advice_uses_typed_deadlines_and_keeps_original_causes() {
+    use crate::engine::providers::CatalogError;
+    for deadline in [true, false] {
+        let cause = if deadline {
+            CatalogError::Deadline
+        } else {
+            CatalogError::Unauthorized
+        };
+        let error = super::provider_failure(cause.into(), Duration::from_secs(17), false);
+        let text = format!("{error:#}");
+        assert_eq!(text.contains("--net-timeout"), deadline, "{text}");
+        assert!(!text.contains("--continue-independent"));
+        assert!(error.downcast_ref::<CatalogError>().is_some());
+    }
+    let error =
+        super::provider_failure(CatalogError::NotFound.into(), Duration::from_secs(17), true);
+    assert!(format!("{error:#}").contains("--continue-independent cannot skip a failed lookup"));
+    assert!(matches!(
+        error.downcast_ref::<CatalogError>(),
+        Some(CatalogError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn update_json_preserves_provider_observations_and_prepared_proposal_without_effects() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut next = Server::new_async().await;
+    next_records(&mut next).await;
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    change_with_services(
+        &host,
+        NonEmpty::new(vec![AddHostInput::Provider(selected)]).unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&next.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await
+    .unwrap();
+    let messages = messages.lock().unwrap();
+    assert_eq!(
+        messages.len(),
+        1,
+        "JSON must not be mixed with a human plan: {messages:?}"
+    );
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["requested"], json!(["alias"]));
+    assert_eq!(
+        report["discovery"]["dependencies"][0]["current"]["selection"],
+        "RootVer1"
+    );
+    assert_eq!(
+        report["discovery"]["dependencies"][0]["permitted"]["selection"],
+        "RootVer2"
+    );
+    assert_eq!(report["discovery"]["required_dependencies"], "validated");
+    assert_eq!(report["discovery"]["scope"]["roots"], json!(["alias"]));
+    assert_eq!(report["discovery"]["scope"]["total_roots"], 1);
+    assert_eq!(report["discovery"]["complete"], true);
+    assert_eq!(report["discovery"]["summary"]["change_available"], 1);
+    assert!(report["discovery"].get("candidate_compatibility").is_none());
+    assert_eq!(report["changed_selections"], json!(["alias"]));
+    assert!(!report["file_changes"].as_array().unwrap().is_empty());
+    assert_eq!(
+        snapshot(root.path()),
+        before,
+        "Even --yes must leave project and operation state unchanged"
+    );
+}
+
+#[tokio::test]
+async fn failed_update_json_retains_provider_field_evidence_before_failure() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut failed = Server::new_async().await;
+    failed.mock("GET", "/project/Root0001").with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    let mut malformed = version("Root0001", "RootVer2", json!([]));
+    malformed["files"] = json!([]);
+    failed
+        .mock("GET", "/project/Root0001/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([malformed]).to_string())
+        .create_async()
+        .await;
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    let error = change_with_services(
+        &host,
+        NonEmpty::new(vec![AddHostInput::Provider(selected)]).unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&failed.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            error.downcast_ref::<crate::engine::providers::CatalogError>(),
+            Some(crate::engine::providers::CatalogError::InvalidRecord)
+        ),
+        "{error:#}"
+    );
+    let messages = messages.lock().unwrap();
+    assert_eq!(messages.len(), 1);
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(report["proposal"], "incomplete");
+    assert_eq!(report["discovery"]["complete"], false);
+    assert_eq!(report["discovery"]["summary"]["unknown"], 1);
+    assert_eq!(report["discovery"]["scope"]["roots"], json!(["alias"]));
+    assert_eq!(
+        report["discovery"]["blocking_dependencies"],
+        json!(["alias"])
+    );
+    assert_eq!(report["requested"], json!(["alias"]));
+    let row = &report["discovery"]["dependencies"][0];
+    assert_eq!(row["key"], "alias");
+    assert_eq!(row["current"]["selection"], "RootVer1");
+    assert_eq!(row["reasons"], json!(["invalid-evidence"]));
+    assert_eq!(row["provider_problem"]["field"], "files");
+    assert_eq!(row["provider_problem"]["invariant"], "non-empty");
+    assert!(!row["catalog_complete"].as_bool().unwrap());
+    assert_eq!(report["file_changes"], json!([]));
+    assert_eq!(snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn update_json_distinguishes_known_required_conflict_from_missing_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut next = Server::new_async().await;
+    // Both requested versions exist, but the renderer requires a different exact
+    // library version. This is a known unsatisfied relationship, not a failed lookup.
+    records_for_selections(
+        &mut next,
+        "RootVer2",
+        "NeedVer2",
+        json!([{"project_id":"Need0001","version_id":"NeedVer1","dependency_type":"required"}]),
+    )
+    .await;
+    let mut library = input("Need0001", Some("required-library"));
+    library.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("NeedVer2").unwrap(),
+    ));
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    let result = change_with_services(
+        &host,
+        NonEmpty::new(vec![
+            AddHostInput::Provider(selected),
+            AddHostInput::Provider(library),
+        ])
+        .unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&next.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await;
+    let error = result.unwrap_err();
+    let diagnostic = format!("{error:#}");
+    assert!(diagnostic.contains("Selected dependency requirements cannot be satisfied"));
+    assert!(diagnostic.contains("Root0001@RootVer2"));
+    assert!(diagnostic.contains("Need0001@NeedVer2"));
+    assert!(diagnostic.contains("Need0001@NeedVer1"));
+    let messages = messages.lock().unwrap();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(
+        report["discovery"]["reasons"],
+        json!(["dependency-conflict"])
+    );
+    assert!(
+        report["discovery"]["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["catalog_complete"] == true)
+    );
+    assert_eq!(report["proposal"], "blocked");
+    assert_eq!(
+        report["diagnostic"]["code"],
+        "dependency-resolution-required"
+    );
+    assert_eq!(report["file_changes"], json!([]));
+    assert_eq!(snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn interactive_update_uses_observed_versions_and_requires_separate_application() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let selected = input("renderer", Some("alias"));
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut next = Server::new_async().await;
+    next.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+        .create_async().await;
+    let mut installed = version("Root0001", "RootVer1", json!([]));
+    installed["version_number"] = json!("1.0 stable");
+    let mut beta = version("Root0001", "RootVer2", json!([]));
+    beta["version_number"] = json!("2.0 beta 日本\nnot an action\u{202e}");
+    beta["version_type"] = json!("beta");
+    let mut other_runtime = version("Root0001", "OtherVer", json!([]));
+    other_runtime["game_versions"] = json!(["1.20.1"]);
+    let catalog = next
+        .mock("GET", "/project/Root0001/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([other_runtime, beta.clone(), installed]).to_string())
+        .expect(2)
+        .create_async()
+        .await;
+    next.mock("GET", "/version/RootVer2")
+        .with_body(beta.to_string())
+        .expect(2)
+        .create_async()
+        .await;
+    let before = snapshot(root.path());
+    for mode in [ApplicationMode::Preview, ApplicationMode::Apply] {
+        let (host, messages) = session(root.path(), false, false)
+            .with_interactive(
+                MockInteractiveProvider::new()
+                    .with_fuzzy_select(1)
+                    .with_confirm(true),
+            )
+            .record_status_messages();
+        change_with_services(
+            &host,
+            NonEmpty::new(vec![AddHostInput::Provider(selected.clone())]).unwrap(),
+            ReleasePolicy::StableOnly,
+            SourceEvidencePolicy::Compatibility,
+            Change::Update {
+                selection: UpdateSelection::Interactive,
+                pins: Default::default(),
+                mode,
+                output: UpdateOutput::default(),
+            },
+            AdditionServices {
+                catalog: ProviderCatalog::for_loopback_tests(&next.url(), None),
+                transport: HttpAcquisition::for_loopback_tests(),
+                files: DirectFileLimits::default(),
+            },
+            BatchPolicy::AllRequested,
+        )
+        .await
+        .unwrap();
+        let choices = host
+            .interactive_provider
+            .fuzzy_select_options
+            .lock()
+            .unwrap();
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].len(), 2);
+        assert!(
+            choices[0][0].contains("1.0 stable (release) [modrinth:Root0001@RootVer1] — installed")
+        );
+        assert!(choices[0][1].contains(
+            "2.0 beta 日本\\nnot an action\\u{202e} (beta) [modrinth:Root0001@RootVer2]"
+        ));
+        assert!(!choices[0][1].contains('\n') && !choices[0][1].contains('\u{202e}'));
+        let messages = messages.lock().unwrap();
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("Pin alias to RootVer2")),
+            "{messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.starts_with("Repeat this selection")
+                    && message.contains("update alias --pin 'alias=RootVer2'")),
+            "{messages:?}"
+        );
+        if mode == ApplicationMode::Preview {
+            assert_eq!(
+                snapshot(root.path()),
+                before,
+                "A version choice is not approval to apply"
+            );
+        }
+    }
+    catalog.assert_async().await;
+    let after = read(&root.path().join("project"));
+    let key = DependencyKey::parse("alias").unwrap();
+    let pin = PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap());
+    assert_eq!(
+        after.intent().roots[&key].selection,
+        DependencySelection::ProviderPin(pin.clone())
+    );
+    assert_eq!(
+        after.lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        pin
+    );
+    assert_eq!(after.lock().dependencies.len(), 2);
+    assert_eq!(
+        after.lock().dependencies[&DependencyKey::parse("required-library").unwrap()]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("NeedVer1").unwrap())
+    );
+    assert_eq!(
+        after.intent().roots.len(),
+        1,
+        "Retained libraries must not become authored roots"
+    );
+}
+
+#[tokio::test]
+async fn interactive_update_cancellation_preserves_author_and_host_state() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = Server::new_async().await;
+    records(&mut server).await;
+    let selected = input("renderer", Some("alias"));
+    add(root.path(), &server, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let before = snapshot(root.path());
+    let host = session(root.path(), false, false)
+        .with_interactive(MockInteractiveProvider::new().queue_fuzzy_select(None));
+    let error = change_with_services(
+        &host,
+        NonEmpty::new(vec![AddHostInput::Provider(selected)]).unwrap(),
+        None,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            selection: UpdateSelection::Interactive,
+            pins: Default::default(),
+            mode: ApplicationMode::Apply,
+            output: UpdateOutput::default(),
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::application::exit::classify_error(&error),
+        crate::application::exit::EmpackExitCode::Interrupted
+    );
+    assert_eq!(snapshot(root.path()), before);
 }

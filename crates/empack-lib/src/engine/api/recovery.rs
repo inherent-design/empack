@@ -202,11 +202,13 @@ pub(super) async fn run(
         resources.scratch_bytes = resources
             .scratch_bytes
             .max(prepared.recovery.scratch_bytes());
+        let progress = scope.progress_reporter();
         let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
             cancel.check()?;
             let (prepared, _reservation) = prepared.into_parts();
             let publisher = Publisher::open_existing(&config.state_root)?
                 .context("Recovery state disappeared")?;
+            progress(WorkProgress::RecoveringChanges);
             let publication = prepared.recovery.execute(&publisher)?;
             Ok::<_, anyhow::Error>(RecoveryReceipt {
                 plan: prepared.view.plan,

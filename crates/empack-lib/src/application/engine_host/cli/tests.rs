@@ -43,7 +43,6 @@ pub(super) async fn fixture(root: &Path) {
 fn options(value: &str) -> AddOptions {
     AddOptions {
         inputs: vec![value.into()],
-        force: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
         version_id: Some("RootVer1".into()),
@@ -126,14 +125,26 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
             .create_async().await;
     }
-    server.mock("GET", "/version/RootVer1").with_body(json!({
+    let version = json!({
         "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
         "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{
             "sha1":"f07e5a815613c5abeddc4b682247a4c42d8a95df",
             "sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
             "url":"https://example.invalid/renderer.jar"}],"dependencies":[],
         "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-    }).to_string()).create_async().await;
+    });
+    server
+        .mock("GET", "/version/RootVer1")
+        .with_body(version.to_string())
+        .create_async()
+        .await;
+    let catalog_page = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([version]).to_string())
+        .expect(3)
+        .create_async()
+        .await;
     let mut prior: Option<empack_core::model::ResolutionLock> = None;
     for input in ["renderer", "Root0001", "https://modrinth.com/mod/renderer"] {
         let root = tempfile::tempdir().unwrap();
@@ -185,9 +196,11 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
         update::update_with_services(
             &session(root.path(), false),
-            keys,
-            None,
-            BatchPolicy::AllRequested,
+            crate::application::cli::UpdateArgs {
+                dependencies: keys,
+                apply: true,
+                ..Default::default()
+            },
             dependencies::AdditionServices {
                 transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
                 catalog,
@@ -212,6 +225,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             before
         );
     }
+    catalog_page.assert_async().await;
 }
 
 #[tokio::test]
@@ -248,12 +262,184 @@ async fn direct_cli_files_publish_together_and_failed_member_keeps_previous_tree
 }
 
 #[tokio::test]
-async fn interactive_search_preserves_selected_identity_without_publishing() {
-    use crate::application::session_mocks::MockInteractiveProvider;
-    let root = tempfile::tempdir().unwrap();
-    fixture(root.path()).await;
-    let mut selected_session = session(root.path(), false);
-    selected_session = selected_session
+async fn reviewed_update_pin_changes_only_the_named_author_selection() {
+    use empack_core::{digest::ExpectedDigest, identity::*, model::*};
+    let mut server = mockito::Server::new_async().await;
+    for selector in ["renderer", "Root0001"] {
+        server.mock("GET", format!("/project/{selector}").as_str())
+            .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+            .create_async().await;
+    }
+    let mut listed = Vec::new();
+    for (version, payload) in [("RootVer1", b"payload"), ("RootVer2", b"updated")] {
+        let record = json!({
+            "id":version,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(payload).into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        });
+        server
+            .mock("GET", format!("/version/{version}").as_str())
+            .with_body(record.to_string())
+            .create_async()
+            .await;
+        listed.push(record);
+    }
+    server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!(listed).to_string())
+        .create_async()
+        .await;
+    for (policy, selected_version) in [BatchPolicy::AllRequested, BatchPolicy::ContinueIndependent]
+        .into_iter()
+        .flat_map(|policy| ["RootVer1", "RootVer2"].map(|version| (policy, version)))
+    {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        add_with_catalog(
+            &session(root.path(), false),
+            options("renderer"),
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+        )
+        .await
+        .unwrap();
+        let current = project(root.path());
+        let previous_key = current.intent().roots.keys().next().unwrap().clone();
+        let key = if policy == BatchPolicy::AllRequested && selected_version == "RootVer1" {
+            DependencyKey::parse("renderer=client").unwrap()
+        } else {
+            previous_key.clone()
+        };
+        // Exact selection replaces this root's automatic preference, including when
+        // the chosen version is already installed. Other author fields must survive.
+        let mut intent = current.intent().clone();
+        let author = intent.roots.remove(&previous_key).unwrap();
+        intent.roots.insert(key.clone(), author);
+        let author = intent.roots.get_mut(&key).unwrap();
+        author.selection = DependencySelection::Automatic;
+        author.releases = Some(ReleasePolicy::Any);
+        let source = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "author")
+            .unwrap();
+        let mut lock = current.lock().clone();
+        let dependency = lock.dependencies.remove(&previous_key).unwrap();
+        lock.dependencies.insert(key.clone(), dependency);
+        let coverage = lock.coverage.remove(&previous_key).unwrap();
+        lock.coverage.insert(key.clone(), coverage);
+        assert!(lock.required_edges.is_empty(), "isolated root fixture");
+        lock.intent_revision = source.semantic_revision();
+        let current = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+        fs::write(root.path().join("project/empack.yml"), source.original()).unwrap();
+        fs::write(
+            root.path().join("project/empack.lock"),
+            DocumentCodec.encode_lock(&current).unwrap(),
+        )
+        .unwrap();
+        let selected_keys = vec![key.as_str().to_owned()];
+        let services = || {
+            let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+            dependencies::AdditionServices {
+                transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
+                catalog,
+                files: DirectFileLimits::default(),
+            }
+        };
+        let before = crate::test_support::file_bytes(root.path());
+        for pins in [
+            vec![
+                format!("{}=RootVer2", key.as_str()),
+                format!("{}=RootVer1", key.as_str()),
+            ],
+            vec!["missing=RootVer2".into()],
+            vec![format!("{}=not a version", key.as_str())],
+        ] {
+            let error = update::update_with_services(
+                &session(root.path(), false),
+                crate::application::cli::UpdateArgs {
+                    dependencies: selected_keys.clone(),
+                    apply: true,
+                    continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                    pins,
+                    ..Default::default()
+                },
+                services(),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                crate::application::exit::classify_error(&error),
+                crate::application::exit::EmpackExitCode::Usage
+            );
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        }
+        let pins = vec![format!("{}={selected_version}", key.as_str())];
+        update::update_with_services(
+            &session(root.path(), true),
+            crate::application::cli::UpdateArgs {
+                dependencies: selected_keys.clone(),
+                apply: false,
+                continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                pins: pins.clone(),
+                ..Default::default()
+            },
+            services(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        let (applying, messages) = session(root.path(), false).record_status_messages();
+        update::update_with_services(
+            &applying,
+            crate::application::cli::UpdateArgs {
+                dependencies: selected_keys,
+                apply: true,
+                continue_independent: matches!(policy, BatchPolicy::ContinueIndependent),
+                pins,
+                ..Default::default()
+            },
+            services(),
+        )
+        .await
+        .unwrap();
+        let after = project(root.path());
+        let selected =
+            PinSelector::ModrinthVersion(ModrinthVersionId::parse(selected_version).unwrap());
+        let mut expected = current.intent().clone();
+        expected.roots.get_mut(&key).unwrap().selection =
+            DependencySelection::ProviderPin(selected.clone());
+        expected.roots.get_mut(&key).unwrap().releases = None;
+        assert_eq!(after.intent(), &expected);
+        let messages = messages.lock().unwrap();
+        assert!(
+            messages
+                .iter()
+                .any(|text| text.contains("Updated 1 pin; other author settings were kept.")),
+            "{messages:?}"
+        );
+        let changed = usize::from(selected_version == "RootVer2");
+        assert!(
+            messages
+                .iter()
+                .any(|text| text
+                    .contains(&format!("Changed  {changed}\n    Kept     {}", 1 - changed))),
+            "{messages:?}"
+        );
+        assert_eq!(
+            after.lock().dependencies[&key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            selected
+        );
+    }
+}
+
+fn search_session(
+    root: &Path,
+    interactive: crate::application::session_mocks::MockInteractiveProvider,
+) -> MockCommandSession {
+    session(root, false)
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
@@ -262,7 +448,17 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
             curseforge_api_client_key: None,
             ..Default::default()
         }))
-        .with_interactive(MockInteractiveProvider::new().with_fuzzy_select(1));
+        .with_interactive(interactive)
+}
+
+#[tokio::test]
+async fn interactive_search_preserves_selected_identity_without_publishing() {
+    use crate::application::session_mocks::MockInteractiveProvider;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let interactive = MockInteractiveProvider::new().with_fuzzy_select(1);
+    let prompts = interactive.fuzzy_select_calls.clone();
+    let selected_session = search_session(root.path(), interactive);
     let mut server = mockito::Server::new_async().await;
     let hit = |id: &str| json!({"project_id":id,"slug":id,"title":id,"project_type":"mod","all_project_types":["mod"],"categories":["fabric"],"versions":["1.21.1"]});
     let request = server
@@ -298,6 +494,7 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
     .await
     .unwrap();
     assert_eq!(resolved.id.to_string(), "Right001");
+    assert_eq!(*prompts.lock().unwrap(), vec!["Choose a mod for renderer"]);
     request.assert_async().await;
     resolution.assert_async().await;
     assert_eq!(crate::test_support::file_bytes(root.path()), before);
@@ -349,7 +546,6 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             .create_async().await;
         let selected = || AddOptions {
             inputs: vec!["renamed.jar".into()],
-            force: false,
             platform: Some(SearchPlatform::Modrinth),
             kind: None,
             version_id: None,
@@ -620,7 +816,6 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
     server.mock("GET", "/project/Assets01").with_body(json!({"id":"Assets01","slug":"assets","title":"Assets","project_type":"resourcepack","loaders":["minecraft"]}).to_string()).create_async().await;
     let selected = || AddOptions {
         inputs: vec!["renamed.zip".into()],
-        force: false,
         platform: Some(SearchPlatform::Modrinth),
         kind: None,
         version_id: None,
@@ -749,7 +944,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     };
     let selected = || AddOptions {
         inputs: vec!["adventure.zip".into()],
-        force: false,
         platform: None,
         kind: Some(CliProjectType::World),
         version_id: None,
@@ -890,7 +1084,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
             mods: vec!["adventure".into()],
-            deps: false,
             forget: true,
             acknowledge_unknown: false,
         },
@@ -899,9 +1092,16 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     .await
     .unwrap();
     assert!(project(root.path()).intent().roots.is_empty());
-    update(&session(root.path(), false), vec!["adventure".into()])
-        .await
-        .unwrap();
+    update_command(
+        &session(root.path(), false),
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["adventure".into()],
+            apply: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     fs::write(world.join("region/r.0.0.mca"), b"demoted edit").unwrap();
     adopt(&session(root.path(), false), vec!["adventure".into()])
         .await
@@ -918,7 +1118,6 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
             mods: vec!["adventure".into()],
-            deps: false,
             forget: false,
             acknowledge_unknown: true,
         },
@@ -998,7 +1197,6 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
         &session(root.path(), false),
         AddOptions {
             inputs: vec!["first.zip".into(), "second.zip".into()],
-            force: false,
             platform: None,
             kind: Some(CliProjectType::World),
             version_id: None,
@@ -1012,9 +1210,16 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
     .unwrap();
     assert_eq!(project(root.path()).lock().dependencies.len(), 2);
     let before = crate::test_support::file_bytes(&root.path().join("project"));
-    update(&session(root.path(), false), vec!["first".into()])
-        .await
-        .unwrap();
+    update_command(
+        &session(root.path(), false),
+        crate::application::cli::UpdateArgs {
+            dependencies: vec!["first".into()],
+            apply: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
@@ -1789,9 +1994,21 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
     for (by_role, releases, selected) in [false, true].into_iter().flat_map(|by_role| {
         [
             (by_role, None, "RootVer2"),
-            (by_role, Some(ReleasePolicy::Any), "RootVer2"),
-            (by_role, Some(ReleasePolicy::StableOnly), "RootVer1"),
-            (by_role, Some(ReleasePolicy::PreferStable), "RootVer1"),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::Any),
+                "RootVer2",
+            ),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::StableOnly),
+                "RootVer1",
+            ),
+            (
+                by_role,
+                Some(crate::application::cli::CliReleasePolicy::PreferStable),
+                "RootVer1",
+            ),
         ]
     }) {
         let root = tempfile::tempdir().unwrap();
@@ -1844,9 +2061,12 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
             let (host, messages) = session(root.path(), dry).record_status_messages();
             update::update_with_services(
                 &host,
-                vec![key.as_str().into()],
-                releases,
-                BatchPolicy::AllRequested,
+                crate::application::cli::UpdateArgs {
+                    dependencies: vec![key.as_str().into()],
+                    apply: !dry,
+                    release_policy: releases,
+                    ..Default::default()
+                },
                 dependencies::AdditionServices {
                     transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
                     catalog,
@@ -1858,23 +2078,29 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
             let messages = messages.lock().unwrap();
             let changed = usize::from(selected == "RootVer2");
             let preview = format!(
-                "Check {0} as {0}: selection {1}",
+                "{}: {}",
                 key.as_str(),
-                if changed == 1 { "changed" } else { "retained" }
+                if changed == 1 {
+                    "will change"
+                } else {
+                    "no change"
+                }
             );
             assert!(messages.contains(&preview), "{messages:?}");
             let receipt = format!(
-                "Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent",
+                "    Changed  {changed}\n    Kept     {}\nAuthor settings were kept.",
                 1 - changed
             );
-            assert_eq!(
-                messages
-                    .iter()
-                    .filter(|message| **message == receipt)
-                    .count(),
-                usize::from(!dry),
-                "{messages:?}"
-            );
+            for expected in ["Checked 1 dependency", receipt.as_str()] {
+                assert_eq!(
+                    messages
+                        .iter()
+                        .filter(|message| message.as_str() == expected)
+                        .count(),
+                    usize::from(!dry),
+                    "{messages:?}"
+                );
+            }
             if dry {
                 assert_eq!(crate::test_support::file_bytes(&project_dir), before_update);
             }
@@ -1915,3 +2141,66 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
 }
 
 mod file_roles;
+
+#[test]
+fn search_labels_escape_external_controls_without_changing_provider_identity() {
+    use empack_core::identity::{ModrinthProjectId, ProviderProjectId};
+    let candidate = ProjectCandidate {
+        project: ProviderProjectId::Modrinth(ModrinthProjectId::parse("Root0001").unwrap()),
+        title: "Renderer\nFAKE\u{1b}[2J".into(),
+        slug: "slug\u{202e}".into(),
+        similarity: 0,
+        provider_rank: 0,
+    };
+    let label = search_label(&candidate);
+    assert!(label.contains("Root0001"));
+    assert!(!label.contains(['\n', '\u{1b}', '\u{202e}']));
+}
+
+#[tokio::test]
+async fn search_distinguishes_explicit_cancel_and_escape_from_no_matches_without_writes() {
+    use crate::application::session_mocks::MockInteractiveProvider;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    for mode in ["cancel", "escape", "empty"] {
+        let response = if mode == "escape" { None } else { Some(1) };
+        let interactive = MockInteractiveProvider::new().queue_fuzzy_select(response);
+        let host = search_session(root.path(), interactive);
+        let mut server = mockito::Server::new_async().await;
+        let hits = if mode == "empty" {
+            json!([])
+        } else {
+            json!([{"project_id":"Only0001","slug":"renderer","title":"Renderer","project_type":"mod","all_project_types":["mod"],"categories":["fabric"],"versions":["1.21.1"]}])
+        };
+        let request = server.mock("GET", "/search").match_query(mockito::Matcher::Any)
+            .with_body(json!({"total_hits":hits.as_array().unwrap().len(),"offset":0,"limit":20,"hits":hits}).to_string())
+            .expect(1).create_async().await;
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        let before = crate::test_support::file_bytes(root.path());
+        let error = search(
+            &host,
+            &catalog,
+            &project(root.path()),
+            "renderer",
+            Some(ContentKind::Mod),
+            None,
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.is::<crate::application::process_runtime::Interrupted>(),
+            mode != "empty",
+            "{mode}: {error:#}"
+        );
+        if mode == "empty" {
+            assert!(
+                error
+                    .to_string()
+                    .contains("No matching dependencies found for renderer")
+            );
+        }
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        request.assert_async().await;
+    }
+}

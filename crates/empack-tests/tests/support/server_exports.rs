@@ -282,6 +282,13 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
         Some(PROPERTIES)
     );
     let release_hash = if managed {
+        expected.extend([
+            ".empack-tools/empack-bootstrap.jar".into(),
+            ".empack-tools/prepare.json".into(),
+            ".empack-tools/launch.json".into(),
+        ]);
+        let bootstrap = &members[".empack-tools/empack-bootstrap.jar"];
+        assert!(bootstrap.bytes > 0 && bootstrap.bytes <= 8 << 20);
         let path = ".empack-consumer/release.json";
         expected.insert(path.into());
         let release: Value = serde_json::from_slice(members[path].small.as_ref().unwrap()).unwrap();
@@ -372,26 +379,69 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
             "{name}"
         );
     }
+    if let Some(hash) = release_hash {
+        let prepare: Value = serde_json::from_slice(
+            members[".empack-tools/prepare.json"]
+                .small
+                .as_ref()
+                .unwrap(),
+        )
+        .unwrap();
+        let launch: Value =
+            serde_json::from_slice(members[".empack-tools/launch.json"].small.as_ref().unwrap())
+                .unwrap();
+        assert_eq!(prepare["schema"], "empack-bootstrap-invocation/1");
+        assert_eq!(
+            prepare["arguments"],
+            json!([
+                "--workdir",
+                ".",
+                "--yes",
+                "instance",
+                "ensure",
+                ".empack-consumer/release.json",
+                "--sha256",
+                hash,
+                "--layout",
+                "game",
+                "--side",
+                "server"
+            ])
+        );
+        assert_eq!(
+            launch["arguments"],
+            json!([
+                "--workdir",
+                ".",
+                "--yes",
+                "instance",
+                "launch",
+                "--server",
+                "--"
+            ])
+        );
+        assert_eq!(prepare["append_arguments"], false);
+        assert_eq!(launch["append_arguments"], true);
+        assert_eq!(prepare["engine_version"], launch["engine_version"]);
+    }
     for name in scripts {
         let script = text(&members[name]);
+        assert_eq!(script.contains("empack-bootstrap.jar"), managed);
+        assert_eq!(script.contains("-Dfile.encoding=UTF-8"), managed);
+        assert_eq!(script.contains("--invocation-file"), managed);
         assert!(!script.contains("eula=true"));
         if name.ends_with(".bat") {
             assert!(!script.replace("\r\n", "").contains('\n'));
         }
         if name.starts_with("install_pack") {
-            assert_eq!(script.contains("instance prepare"), managed);
-            if let Some(hash) = release_hash {
-                assert!(script.contains(&format!("--sha256 {hash} --layout game --side server")));
-            }
+            assert_eq!(script.contains("prepare.json"), managed);
             assert!(script.contains("EULA"));
         } else {
             assert!(script.contains("JAVA_HOME"));
-            assert_eq!(script.contains("instance launch --server"), managed);
+            assert_eq!(script.contains("launch.json"), managed);
             assert_eq!(script.contains("nogui"), !name.starts_with("start_gui"));
             if managed {
-                assert!(
-                    script.find("install_pack").unwrap() < script.find("instance launch").unwrap()
-                );
+                assert!(script.find("install_pack").unwrap() < script.find("launch.json").unwrap());
             } else {
                 assert!(script.contains("-jar server.jar"));
             }

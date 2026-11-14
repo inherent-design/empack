@@ -1,6 +1,7 @@
 """Execute the release workflow's channel classification against supported tags."""
 import os
 import fnmatch
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -94,6 +95,26 @@ class ReleaseChannelContracts(unittest.TestCase):
         root = Path(__file__).parents[2]
         release = (root / ".github/workflows/release.yml").read_text()
         pr = (root / ".github/workflows/pr-ci.yml").read_text()
+        # Artifact availability follows the job graph, not step order in YAML.
+        # Every downloader must wait for the producer, directly or transitively.
+        headers = list(re.finditer(r"^  ([\w-]+):\n", release, re.MULTILINE))
+        jobs = {
+            match[1]: release[match.end():headers[index + 1].start() if index + 1 < len(headers) else len(release)]
+            for index, match in enumerate(headers)
+        }
+        def dependencies(job, seen=None):
+            seen = set() if seen is None else seen
+            needs = re.search(r"^    needs: (.+)$", jobs[job], re.MULTILINE)
+            for dependency in re.findall(r"[\w-]+", needs[1] if needs else ""):
+                self.assertIn(dependency, jobs)
+                if dependency not in seen:
+                    seen.add(dependency)
+                    dependencies(dependency, seen)
+            return seen
+        consumers = [name for name, body in jobs.items() if "name: bootstrap-jar" in body]
+        self.assertTrue(consumers)
+        for name in consumers:
+            self.assertIn("bootstrap", dependencies(name), f"{name} can download before bootstrap finishes")
         build = release.split("  build:", 1)[1].split("  test-archives:", 1)[0]
         self.assertEqual(build.count("scripts/release-artifacts.py build "), 1)
         self.assertIn('--compilation "$PRODUCT_COMPILATION"', build)
@@ -122,6 +143,20 @@ class ReleaseChannelContracts(unittest.TestCase):
                              "diagnostic uploads must not enter the strict archive-evidence input set")
         for workflow in (release, pr):
             self.assertIn("tool: cross@0.2.5", workflow)
+            self.assertIn("uses: ./.github/workflows/bootstrap.yml", workflow)
+            self.assertNotIn("bootstrap/tests/test_bootstrap.py", workflow,
+                             "packaged host checks belong to the earlier shared bootstrap gate")
+        bootstrap = (root / ".github/workflows/bootstrap.yml").read_text()
+        hosts = bootstrap.split("  hosts:", 1)[1]
+        self.assertIn("needs: build", hosts)
+        self.assertIn("if: inputs.test", hosts)
+        self.assertIn("os: windows-latest", hosts)
+        self.assertIn('java: "8"', hosts)
+        self.assertIn('java: "25"', hosts)
+        self.assertIn("os: macos-26", hosts)
+        self.assertIn("name: bootstrap-jar", hosts)
+        self.assertIn("bootstrap/tests/test_bootstrap.py", hosts)
+        self.assertIn("if: always()", hosts)
         self.assertIn("--builder cross --output .git/cross-product-build", pr)
         self.assertIn("name: verification-cross-product-build", pr)
 

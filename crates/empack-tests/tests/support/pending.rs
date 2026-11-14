@@ -63,7 +63,7 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
         "build" => ("pending-builds", 5_u32),
         "import" => ("pending-imports", 1),
         "sync" => ("pending-sync", 2),
-        "instance" => ("pending-instances", 2),
+        "instance" => ("pending-instances", 3),
         _ => panic!("unsupported fixture family"),
     };
     let records: Vec<_> = fs::read_dir(state.join(directory))
@@ -115,10 +115,10 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
                 .clone();
             let text = String::from_utf8(output).unwrap();
             assert!(
-                text.contains("unavailable") && text.contains(diagnostic),
+                text.contains("cannot read saved work") && text.contains(diagnostic),
                 "{text}"
             );
-            assert!(text.contains("Metadata only"), "{text}");
+            assert!(!text.contains("Next: empack pending resume"), "{text}");
             assert_eq!(snapshot(state), preserved);
             assert_eq!(snapshot(invocation), author);
             assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);

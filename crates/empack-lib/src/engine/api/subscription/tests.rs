@@ -94,6 +94,24 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
             .await
             .is_err()
     );
+    let before_observation = fs::read(root.path().join(".empack/subscription.json")).unwrap();
+    let Preparation::Ready(first_offer) = engine
+        .prepare(root.path().to_owned(), observe(&key, 7, &"a".repeat(64)))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let OperationPreview::Subscription(first_view) = first_offer.view() else {
+        panic!()
+    };
+    assert_eq!(first_view.previous_floor, None);
+    assert_eq!(first_view.record.floor.as_ref().unwrap().sequence, 7);
+    drop(first_offer);
+    assert_eq!(
+        fs::read(root.path().join(".empack/subscription.json")).unwrap(),
+        before_observation
+    );
     apply(&engine, root.path(), observe(&key, 7, &"a".repeat(64))).await;
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
@@ -114,6 +132,7 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     let OperationPreview::Subscription(view) = reopened.view() else {
         panic!()
     };
+    assert_eq!(view.previous_floor.as_ref().unwrap().sequence, 7);
     assert_eq!(view.record.pack, "fixture");
     assert_eq!(view.record.channel, "stable");
     assert_eq!(view.record.url, "https://publisher.test/stable.json");
@@ -134,6 +153,30 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
             .await
             .is_err()
     );
+    for sequence in [7, 8] {
+        let before = fs::read(root.path().join(".empack/subscription.json")).unwrap();
+        let Preparation::Ready(preview) = engine
+            .prepare(
+                root.path().to_owned(),
+                observe(&key, sequence, &"a".repeat(64)),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let OperationPreview::Subscription(view) = preview.view() else {
+            panic!()
+        };
+        assert_eq!(view.previous_floor.as_ref().unwrap().sequence, 7);
+        assert_eq!(view.record.floor.as_ref().unwrap().sequence, sequence);
+        assert_eq!(view.previous_floor == view.record.floor, sequence == 7);
+        drop(preview);
+        assert_eq!(
+            fs::read(root.path().join(".empack/subscription.json")).unwrap(),
+            before
+        );
+    }
     apply(&engine, root.path(), observe(&key, 7, &"a".repeat(64))).await;
     let rotated = apply(
         &engine,
@@ -414,9 +457,10 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             member: "world/level.dat".into(),
         },
     ];
-    for (source, bad_asset) in sources
+    for (index, (source, bad_asset)) in sources
         .into_iter()
         .flat_map(|s| [(s.clone(), false), (s, true)])
+        .enumerate()
     {
         let mut server = mockito::Server::new_async().await;
         let root = tempfile::tempdir().unwrap();
@@ -461,10 +505,22 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         });
         let release = DecodedRelease::encode(document).unwrap();
         let signed = sign(EnvelopeKind::Release, release.bytes(), &[&key]).unwrap();
+        let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let replacement =
+            std::sync::Arc::new(std::sync::Mutex::new(None::<(std::path::PathBuf, Vec<u8>)>));
+        let response_requests = requests.clone();
+        let response_replacement = replacement.clone();
+        let response_bytes = signed.clone();
         let response = server
             .mock("GET", "/release.json")
-            .with_body(&signed)
-            .expect(1)
+            .with_chunked_body(move |writer| {
+                response_requests.fetch_add(1, Ordering::SeqCst);
+                if let Some((path, bytes)) = response_replacement.lock().unwrap().take() {
+                    fs::write(path, bytes).unwrap();
+                }
+                std::io::Write::write_all(writer, &response_bytes)
+            })
+            .expect(if index == 0 { 2 } else { 1 })
             .create_async()
             .await;
         let asset = server
@@ -491,7 +547,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         };
         let channel_bytes =
             sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap();
-        apply(
+        let accepted = apply(
             &engine,
             root.path(),
             SubscriptionRequest::Observe {
@@ -507,6 +563,119 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             ..Default::default()
         });
         let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut expected_offer = accepted.floor.unwrap();
+        if !bad_asset {
+            let before = crate::test_support::file_bytes(root.path());
+            let before_host = crate::test_support::file_bytes(host.path());
+            let selected = root.path().to_owned();
+            let selected_state = state.clone();
+            let selected_transport = transport.clone();
+            let mut next_channel = channel;
+            next_channel.sequence = 2;
+            let Preparation::Ready(next) = engine
+                .prepare(
+                    root.path().to_owned(),
+                    SubscriptionRequest::Observe {
+                        envelope: sign(
+                            EnvelopeKind::Channel,
+                            &next_channel.encode().unwrap(),
+                            &[&key],
+                        )
+                        .unwrap(),
+                        engine: semver::Version::parse(crate::engine::compatibility_version())
+                            .unwrap(),
+                    },
+                )
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            let OperationPreview::Subscription(next_view) = next.view() else {
+                panic!()
+            };
+            assert_eq!(next_view.previous_floor.as_ref(), Some(&expected_offer));
+            let next_floor = next_view.record.floor.clone().unwrap();
+            let next_bytes = serde_json::to_vec(&next_view.record).unwrap();
+            drop(next);
+            let wrong_offer = next_floor.clone();
+            let mut rejected = runtime
+                .start(move |mut scope| async move {
+                    Ok(subscription::fetch_release(
+                        &mut scope,
+                        selected,
+                        selected_state,
+                        &selected_transport,
+                        semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
+                        wrong_offer,
+                    )
+                    .await
+                    .map(|proof| proof.map(std::sync::Arc::new)))
+                })
+                .unwrap();
+            let rejected_output = rejected.wait().await;
+            let OperationOutcome::Completed(Err(error)) = &*rejected_output else {
+                panic!("wrong offer must refuse")
+            };
+            assert!(format!("{error:#}").contains("Recorded update offer changed"));
+            assert_eq!(
+                requests.load(Ordering::SeqCst),
+                0,
+                "an unaccepted offer cannot fetch a release"
+            );
+            assert!(!response.matched_async().await);
+            assert!(!asset.matched_async().await);
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
+            assert_eq!(crate::test_support::file_bytes(host.path()), before_host);
+            drop(rejected_output);
+            assert!(runtime.release_completed(rejected.id()));
+            drop(rejected);
+            if index == 0 {
+                // Publish the real native-prepared next record at response time. The release
+                // ID is unchanged: only comparing release IDs would miss this offer change.
+                *replacement.lock().unwrap() = Some((
+                    root.path().join(".empack/subscription.json"),
+                    next_bytes.clone(),
+                ));
+                let selected = root.path().to_owned();
+                let selected_state = state.clone();
+                let selected_transport = transport.clone();
+                let selected_offer = expected_offer.clone();
+                let mut changed = runtime
+                    .start(move |mut scope| async move {
+                        Ok(subscription::fetch_release(
+                            &mut scope,
+                            selected,
+                            selected_state,
+                            &selected_transport,
+                            semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
+                            selected_offer,
+                        )
+                        .await
+                        .map(|proof| proof.map(std::sync::Arc::new)))
+                    })
+                    .unwrap();
+                let changed_output = changed.wait().await;
+                let OperationOutcome::Completed(Err(error)) = &*changed_output else {
+                    panic!("a changed offer cannot yield a release proof")
+                };
+                assert!(format!("{error:#}").contains("Recorded update offer changed"));
+                assert_eq!(requests.load(Ordering::SeqCst), 1);
+                assert!(!asset.matched_async().await);
+                let mut expected_root = before;
+                expected_root.insert(
+                    std::path::PathBuf::from(".empack/subscription.json"),
+                    next_bytes,
+                );
+                assert_eq!(crate::test_support::file_bytes(root.path()), expected_root);
+                assert_eq!(crate::test_support::file_bytes(host.path()), before_host);
+                drop(changed_output);
+                assert!(runtime.release_completed(changed.id()));
+                drop(changed);
+                expected_offer = next_floor;
+            }
+        }
+        let expected_sequence = expected_offer.sequence;
         let selected = root.path().to_owned();
         let mut handle = runtime
             .start(move |mut scope| async move {
@@ -516,6 +685,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                     state,
                     &transport,
                     semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
+                    expected_offer,
                 )
                 .await
                 .map(|proof| proof.map(std::sync::Arc::new)))
@@ -577,7 +747,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             &crate::application::process_runtime::Cancellation::default(),
         )
         .unwrap();
-        assert_eq!(record.floor.unwrap().sequence, 1);
+        assert_eq!(record.floor.unwrap().sequence, expected_sequence);
         asset.assert_async().await;
         drop(result);
         engine.release_completed(operation.id());
@@ -907,7 +1077,7 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
                 "{message}"
             );
             assert!(
-                !message.contains("SeedOwnership"),
+                !error.is::<crate::engine::instance::InstanceConflicts>(),
                 "must fail before offering conflict decisions"
             );
             assert_eq!(
@@ -985,4 +1155,90 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
         );
     }
     engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn damaged_subscription_after_restart_cannot_reset_publisher_history() {
+    for damage in [
+        "empty",
+        "truncated",
+        "schema",
+        "unknown-field",
+        "missing-floor",
+        "missing-observation",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        let key = SigningKey::from_bytes(&[91; 32]);
+        let (engine, _) = super::super::tests::engine(state.clone());
+        apply(&engine, root.path(), enroll(&key)).await;
+        let saved = apply(&engine, root.path(), observe(&key, 5, &"a".repeat(64))).await;
+        assert_eq!(saved.floor.as_ref().unwrap().sequence, 5);
+        engine.shutdown().await;
+        let path = root.path().join(".empack/subscription.json");
+        let original = fs::read(&path).unwrap();
+        let mut invalid: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        match damage {
+            "schema" => invalid["schema"] = 999.into(),
+            "unknown-field" => invalid["unexpected"] = true.into(),
+            "missing-floor" => invalid["floor"] = serde_json::Value::Null,
+            "missing-observation" => invalid["observed"] = serde_json::Value::Null,
+            "empty" | "truncated" => {}
+            _ => unreachable!(),
+        }
+        let damaged = match damage {
+            "empty" => Vec::new(),
+            "truncated" => original[..original.len() / 2].to_vec(),
+            _ => serde_json::to_vec(&invalid).unwrap(),
+        };
+        fs::write(&path, &damaged).unwrap();
+        let before = crate::test_support::file_bytes(root.path());
+        let before_host = crate::test_support::file_bytes(host.path());
+        let (engine, _) = super::super::tests::engine(state);
+        for request in [
+            enroll(&key),
+            observe(&key, 6, &"b".repeat(64)),
+            SubscriptionRequest::ReplaceKeys { keys: vec![] },
+        ] {
+            let error = match engine.prepare(root.path().to_owned(), request).await {
+                Err(error) => error,
+                Ok(_) => panic!("damaged subscription accepted: {damage}"),
+            };
+            let text = format!("{error:#}");
+            assert!(
+                text.contains(match damage {
+                    "empty" | "truncated" | "unknown-field" => "Invalid subscription record",
+                    "schema" => "Unsupported subscription schema",
+                    _ => "Subscription observation and floor disagree",
+                }),
+                "{damage}: {text}"
+            );
+            assert_eq!(
+                crate::test_support::file_bytes(root.path()),
+                before,
+                "{damage}"
+            );
+            assert_eq!(
+                crate::test_support::file_bytes(host.path()),
+                before_host,
+                "{damage}"
+            );
+        }
+        // A controlled fixture restores its exact pre-damage backup. The
+        // product never infers, reconstructs or resets publisher authority.
+        fs::write(&path, &original).unwrap();
+        let restored = apply(&engine, root.path(), observe(&key, 6, &"b".repeat(64))).await;
+        assert_eq!(restored.keys, saved.keys);
+        assert_eq!(restored.floor.as_ref().unwrap().sequence, 6);
+        assert_eq!(
+            SubscriptionRecord::decode(&fs::read(&path).unwrap())
+                .unwrap()
+                .floor
+                .unwrap()
+                .sequence,
+            6
+        );
+        engine.shutdown().await;
+    }
 }

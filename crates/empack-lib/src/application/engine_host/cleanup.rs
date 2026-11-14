@@ -103,7 +103,7 @@ async fn clean_selected(
             let view = prepared.view().clean().context("Missing cleanup preview")?;
             show_changes(session, &view.files)?;
             session.display().status().info(&format!(
-                "Remove {} bytes from dist; recovery retains before-images",
+                "Remove {} bytes of build artifacts; recovery backups are kept",
                 view.removed_bytes
             ));
             if !view.files.changes().is_empty() {
@@ -121,17 +121,11 @@ async fn clean_selected(
                     .view()
                     .cache_clean()
                     .context("Missing cache cleanup preview")?;
-                for object in &view.objects {
-                    session.display().status().info(&format!(
-                        "Evict {} ({} bytes)",
-                        object.name(),
-                        object.bytes
-                    ));
-                }
                 session.display().status().info(&format!(
-                    "Evict up to {} bytes from {} content-store entries",
-                    view.bytes,
-                    view.objects.len()
+                    "Content cache: {}", cache.as_ref().context("Missing selected cache directory")?.display()
+                ));
+                session.display().status().info(&format!(
+                    "Remove {} (up to {} bytes)", counted(view.objects.len(), "cached file", "cached files"), view.bytes
                 ));
                 if !view.objects.is_empty() {
                     plans.push(("Content cache cleanup", prepared));
@@ -140,7 +134,7 @@ async fn clean_selected(
                 session
                     .display()
                     .status()
-                    .info("No initialized content cache to clean");
+                    .info("No cached content found");
             }
         }
         let saved = if selected.continuation {
@@ -203,10 +197,7 @@ async fn apply_cleanup(
         && pending_sync.is_none()
         && retained.is_none()
     {
-        session
-            .display()
-            .status()
-            .complete("No selected cleanup changes");
+        session.display().status().complete("Nothing to clean.");
         return Ok(());
     }
     if plans.len()
@@ -240,10 +231,7 @@ async fn apply_cleanup(
     if let Some(saved) = saved {
         let result = cancellable(session, engine.discard_saved_build(saved)).await;
         match result {
-            Ok(true) => session
-                .display()
-                .status()
-                .complete("Discarded saved build recipe"),
+            Ok(true) => session.display().status().complete("Discarded saved build"),
             Ok(false) => anyhow::bail!(
                 "Saved build record changed or disappeared; no record was discarded; earlier completed scopes: {}",
                 completed.join(", ")
@@ -338,20 +326,33 @@ async fn apply_cleanup(
 fn describe_receipt(receipt: &ExecutionReceipt) -> Result<String> {
     match receipt {
         ExecutionReceipt::Clean(receipt) => Ok(format!(
-            "Removed {} artifact files ({} bytes); recovery data retained",
-            receipt.publication.changed_files, receipt.removed_bytes
+            "Removed {} ({} bytes); recovery data retained",
+            counted(
+                receipt.publication.changed_files,
+                "artifact file",
+                "artifact files"
+            ),
+            receipt.removed_bytes
         )),
-        ExecutionReceipt::CacheClean(receipt) => Ok(format!(
-            "Evicted {} content objects ({} bytes); retained {} objects",
-            receipt.objects.removed.len(),
-            receipt
-                .objects
-                .removed
-                .iter()
-                .map(|object| u128::from(object.bytes))
-                .sum::<u128>(),
-            receipt.objects.retained.len()
-        )),
+        ExecutionReceipt::CacheClean(receipt) => {
+            let mut summary = format!(
+                "Removed {} ({} bytes)",
+                counted(receipt.objects.removed.len(), "cached file", "cached files"),
+                receipt
+                    .objects
+                    .removed
+                    .iter()
+                    .map(|object| u128::from(object.bytes))
+                    .sum::<u128>()
+            );
+            if !receipt.objects.retained.is_empty() {
+                summary.push_str(&format!(
+                    "; kept {}",
+                    counted(receipt.objects.retained.len(), "file", "files")
+                ));
+            }
+            Ok(summary)
+        }
         _ => anyhow::bail!("Unexpected cleanup receipt"),
     }
 }

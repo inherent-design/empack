@@ -15,8 +15,8 @@ use crate::{
 use empack_core::{
     distribution::Recipe,
     model::{
-        DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent, GameVersion,
-        LoaderKind, PackMetadata,
+        ContentLayer, DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent,
+        GameVersion, LoaderKind, PackMetadata,
     },
     path::{InstallDestination, PortableRelPath},
     requirements::{ChoiceKey, OptionalChoice},
@@ -24,46 +24,15 @@ use empack_core::{
 use std::collections::BTreeMap;
 
 pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
-    initialize_selected(session, args, None).await
-}
-pub(in crate::application::engine_host) async fn initialize_selected(
-    session: &dyn Session,
-    args: &InitArgs,
-    pending_id: Option<String>,
-) -> Result<()> {
-    if args.from_source.is_none() && !args.continue_import {
+    let Some(source) = args.from_source.as_deref() else {
         return super::super::initialize(session, args).await;
-    }
-    let source = args.from_source.as_deref().unwrap_or_default();
-    ensure!(
-        args.import_files.len() <= 128,
-        "At most 128 import-file associations are allowed"
-    );
-    let local_files = args
-        .import_files
-        .iter()
-        .map(|value| {
-            let (selector, path) = value
-                .split_once('=')
-                .context("Import file association must be SELECTOR=PATH")?;
-            ensure!(
-                !selector.is_empty() && !path.is_empty(),
-                "Import file association needs a selector and source path"
-            );
-            Ok(ImportLocalFile {
-                selector: selector.into(),
-                source: path.into(),
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
+    };
     let expected = ExpectedContent {
         digests: None,
         size: None,
         accepted_observation: None,
     };
-    let source = if args.continue_import {
-        pending_id.map_or(ImportSource::Saved, ImportSource::SavedSelected)
-    } else if let Some(provider) = url_provider(source)? {
+    let source = if let Some(provider) = url_provider(source)? {
         ImportSource::Provider {
             selector: ModpackSelector::parse(provider, source)?,
             releases: ReleasePolicy::PreferStable,
@@ -88,6 +57,37 @@ pub(in crate::application::engine_host) async fn initialize_selected(
             expected,
         }
     };
+    import_source(session, args, source).await
+}
+pub(in crate::application::engine_host) async fn resume_saved_import(
+    session: &dyn Session,
+    args: &InitArgs,
+    pending_id: &str,
+) -> Result<()> {
+    import_source(session, args, ImportSource::Saved(pending_id.to_owned())).await
+}
+async fn import_source(session: &dyn Session, args: &InitArgs, source: ImportSource) -> Result<()> {
+    ensure!(
+        args.import_files.len() <= 128,
+        "At most 128 import-file associations are allowed"
+    );
+    let local_files = args
+        .import_files
+        .iter()
+        .map(|value| {
+            let (selector, path) = value
+                .split_once('=')
+                .context("Import file association must be SELECTOR=PATH")?;
+            ensure!(
+                !selector.is_empty() && !path.is_empty(),
+                "Import file association needs a selector and source path"
+            );
+            Ok(ImportLocalFile {
+                selector: selector.into(),
+                source: path.into(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     super::super::import(
         session,
         ImportHostRequest {
@@ -171,12 +171,18 @@ fn loader(
     }
     let labels = candidates
         .iter()
-        .map(|(_, value)| format!("{:?} {}", value.kind, value.version.as_str()))
+        .map(|(_, value)| {
+            format!(
+                "{} {}",
+                crate::application::labels::loader(value.kind),
+                crate::terminal::display_line(value.version.as_str())
+            )
+        })
         .collect::<Vec<_>>();
     Ok(Some(
         candidates[choose(
             session,
-            "Select imported loader (or supply --modloader/--loader-version)",
+            "Choose the imported mod loader (or supply --modloader/--loader-version)",
             &labels,
         )?]
         .0,
@@ -327,7 +333,18 @@ fn decisions(
                 } else {
                     &source.overrides[*index]
                 };
-                let label = format!("{:?}:{}", file.layer, file.destination.relative().as_str());
+                // These names are authored dependency/choice identities, not
+                // presentation labels. Preserve the namespace and raw path.
+                let namespace = match file.layer {
+                    ContentLayer::Common => "Common",
+                    ContentLayer::CommonOverride => "CommonOverride",
+                    ContentLayer::Client => "Client",
+                    ContentLayer::Server => "Server",
+                };
+                let key = DependencyKey::parse(&format!(
+                    "{namespace}:{}",
+                    file.destination.relative().as_str()
+                ))?;
                 let persistence = match &file.acquisition {
                     ImportedAcquisition::Embedded(_) => ImportPersistence::Local,
                     ImportedAcquisition::Downloads(urls) if !args.import_local_files => {
@@ -339,10 +356,11 @@ fn decisions(
                     }
                     _ => ImportPersistence::Local,
                 };
+                let requirements = requirements(&file.requirements, key.as_str(), default)?;
                 ImportFileDecision {
-                    key: DependencyKey::parse(&label)?,
+                    key,
                     kind: file_kind(file.destination.relative().as_str(), &layout),
-                    requirements: requirements(&file.requirements, &label, default)?,
+                    requirements,
                     persistence,
                     provider_destination: None,
                 }
@@ -365,10 +383,10 @@ fn decisions(
                 } else {
                     kinds[choose(
                         session,
-                        "Select imported provider content kind",
+                        "Choose the imported dependency type",
                         &kinds
                             .iter()
-                            .map(|kind| format!("{kind:?}"))
+                            .map(|kind| crate::application::labels::content(*kind).to_owned())
                             .collect::<Vec<_>>(),
                     )?]
                 };
@@ -388,8 +406,9 @@ fn decisions(
                             _ => "this content kind has no supported import folder",
                         };
                         format!(
-                            "Imported {kind:?} project {} needs a destination: {choice}",
-                            record.project.slug.as_str()
+                            "Imported {} project {} needs a destination: {choice}",
+                            crate::application::labels::content(kind),
+                            crate::terminal::display_line(record.project.slug.as_str())
                         )
                     })?;
                 let namespace = match pin.project {
@@ -468,6 +487,7 @@ mod tests {
         for (name, bytes) in [
             ("modrinth.index.json", manifest.as_slice()),
             ("overrides/config/example.toml", b"common"),
+            ("overrides/config/café 日本.toml", b"keep unicode"),
             ("client-overrides/config/example.toml", b"client"),
             ("server-overrides/config/example.toml", b"server"),
         ] {
@@ -511,6 +531,21 @@ mod tests {
         let current = project(root.path());
         assert_eq!(current.intent().metadata.name, "Imported");
         assert_eq!(
+            current
+                .intent()
+                .roots
+                .keys()
+                .map(DependencyKey::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "Client:config/example.toml",
+                "CommonOverride:config/café 日本.toml",
+                "CommonOverride:config/example.toml",
+                "Server:config/example.toml",
+            ],
+            "Human layer labels must not change imported dependency identities"
+        );
+        assert_eq!(
             current.intent().runtime.acceptable_versions,
             vec![GameVersion::parse("1.21").unwrap()]
         );
@@ -550,6 +585,7 @@ mod tests {
         // Export represents each effective environment; the common bytes remain authored
         // in the project but are shadowed in both distributions.
         assert!(output.by_name("overrides/config/example.toml").is_err());
+        assert!(output.by_name("overrides/config/café 日本.toml").is_ok());
         for (path, expected) in [
             ("client-overrides/config/example.toml", "client"),
             ("server-overrides/config/example.toml", "server"),
@@ -606,6 +642,7 @@ mod tests {
             let Requirement::Optional(choice) = selected.client else {
                 panic!("optional was lost")
             };
+            assert_eq!(choice.key.as_str(), "theme");
             assert_eq!(choice.default_enabled, default);
             assert_eq!(selected.server, Requirement::Unsupported);
         }
@@ -694,6 +731,13 @@ mod tests {
         for (index, (_, kind, folder)) in cases.iter().enumerate() {
             let key = DependencyKey::parse(&format!("curseforge:{}", 100 + index)).unwrap();
             let locked = &project.lock().dependencies[&key];
+            assert!(matches!(
+                project.intent().roots[&key].selection,
+                empack_core::model::DependencySelection::Automatic
+            ));
+            assert!(
+                matches!(&locked.selected.as_ref().unwrap().selection, empack_core::identity::PinSelector::CurseForgeFile(id) if id.get() == (200 + index) as u64)
+            );
             assert_eq!(locked.kind, *kind);
             assert_eq!(
                 locked.selected.as_ref().unwrap().project.to_string(),
@@ -764,6 +808,61 @@ mod tests {
         }
         for (index, name) in ["empack.yml", "empack.lock"].into_iter().enumerate() {
             assert_eq!(fs::read(target.join(name)).unwrap(), original[index]);
+        }
+
+        // A newer resource-pack record must not alter ordinary synchronization.
+        // Deliberate update uses the same public command path and explicit mode.
+        let next = json!({"id":301,"gameId":432,"modId":101,"fileName":"fixture.zip","fileLength":7,
+            "hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],
+            "downloadUrl":"https://example.invalid/101/different.bin","gameVersions":["1.21.1"],
+            "dependencies":[],"isAvailable":true,"releaseType":1,"fileDate":"2026-02-01T00:00:00Z"});
+        server
+            .mock("GET", "/mods/101/files/301")
+            .with_body(json!({"data":next.clone()}).to_string())
+            .create_async()
+            .await;
+        let page = server.mock("GET", "/mods/101/files")
+            .match_query(mockito::Matcher::Any)
+            .with_body(json!({"data":[next],"pagination":{"index":0,"pageSize":50,"resultCount":1,"totalCount":1}}).to_string())
+            .expect(3).create_async().await;
+        let before = crate::test_support::file_bytes(&target);
+        super::super::synchronize(&session, false).await.unwrap();
+        assert_eq!(crate::test_support::file_bytes(&target), before);
+        let key = DependencyKey::parse("curseforge:101").unwrap();
+        for apply in [false, true, false] {
+            let before = crate::test_support::file_bytes(root.path());
+            let catalog =
+                ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into()));
+            super::super::update::update_with_services(
+                &session,
+                crate::application::cli::UpdateArgs {
+                    dependencies: vec![key.as_str().into()],
+                    apply,
+                    ..Default::default()
+                },
+                crate::application::engine_host::dependencies::AdditionServices {
+                    transport: catalog.configure_acquisition(HttpAcquisition::for_loopback_tests()),
+                    catalog,
+                    files: crate::engine::addition::DirectFileLimits::default(),
+                },
+            )
+            .await
+            .unwrap();
+            if !apply {
+                assert_eq!(crate::test_support::file_bytes(root.path()), before);
+            }
+            assert_eq!(fs::read(target.join("empack.yml")).unwrap(), original[0]);
+        }
+        page.assert_async().await;
+        let updated = super::super::tests::project(root.path());
+        assert_eq!(updated.intent(), project.intent());
+        assert!(
+            matches!(&updated.lock().dependencies[&key].selected.as_ref().unwrap().selection, empack_core::identity::PinSelector::CurseForgeFile(id) if id.get() == 301)
+        );
+        for (other, dependency) in &project.lock().dependencies {
+            if other != &key {
+                assert_eq!(&updated.lock().dependencies[other], dependency);
+            }
         }
     }
     #[tokio::test]

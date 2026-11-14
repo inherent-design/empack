@@ -16,12 +16,17 @@
 //! ## Quick Start
 //!
 //! ```no_run
+//! use empack_lib::application::{CliConfig, execute_command};
+//!
 //! #[tokio::main]
-//! async fn main() {
-//! // Initialize and run empack
-//! empack_lib::main().await.unwrap();
+//! async fn main() -> empack_lib::Result<()> {
+//!     execute_command(CliConfig::load()?).await
 //! }
 //! ```
+//!
+//! The host owns logging, signals and process exit. The command adapter creates a
+//! session; hosts with an existing session use
+//! [`application::commands::execute_invocation`] to retain its services and cancellation.
 
 pub mod application;
 pub mod display;
@@ -46,46 +51,6 @@ pub use terminal::TerminalCapabilities;
 
 pub type Result<T> = anyhow::Result<T>;
 
-use application::CliConfig;
-pub async fn main() -> Result<()> {
-    let config = CliConfig::load()?;
-    run_with_config(config).await
-}
-
-pub async fn process_main() -> std::process::ExitCode {
-    match CliConfig::load_for_process() {
-        Ok(CliLoad::Ready(config)) => match run_with_config(*config).await {
-            Ok(()) => EmpackExitCode::Success.as_process_exit_code(),
-            Err(error) => {
-                let exit_code = application::classify_error(&error);
-                eprintln!("{}", process_error_message(&error));
-                exit_code.as_process_exit_code()
-            }
-        },
-        Ok(CliLoad::Display(message)) => {
-            print!("{message}");
-            EmpackExitCode::Success.as_process_exit_code()
-        }
-        Err(ConfigError::ParseError { reason, .. }) => {
-            eprint!("{reason}");
-            EmpackExitCode::Usage.as_process_exit_code()
-        }
-        Err(error) => {
-            eprintln!("Error: {error}");
-            EmpackExitCode::Usage.as_process_exit_code()
-        }
-    }
-}
-
-pub async fn run_with_config(mut config: CliConfig) -> Result<()> {
-    config.app_config.validate()?;
-    execute_command(config).await
-}
-
-fn process_error_message(error: &anyhow::Error) -> String {
-    format!("Error: {error:#}")
-}
-
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::{
@@ -103,12 +68,20 @@ pub(crate) mod test_support {
         fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
             for entry in fs::read_dir(dir).unwrap() {
                 let entry = entry.unwrap();
-                if entry.file_type().unwrap().is_dir() {
+                let kind = entry.file_type().unwrap();
+                if kind.is_dir() {
                     visit(root, &entry.path(), files);
                 } else {
+                    // Windows byte-range locks can block reads of empty coordination files.
+                    // Keep their paths and empty contents without reading a locked byte.
+                    let bytes = if kind.is_file() && entry.metadata().unwrap().len() == 0 {
+                        Vec::new()
+                    } else {
+                        fs::read(entry.path()).unwrap()
+                    };
                     files.insert(
                         entry.path().strip_prefix(root).unwrap().to_path_buf(),
-                        fs::read(entry.path()).unwrap(),
+                        bytes,
                     );
                 }
             }
@@ -120,12 +93,10 @@ pub(crate) mod test_support {
         files
     }
 
-    const CLI_ENV_VARS: [&str; 20] = [
+    const CLI_ENV_VARS: [&str; 18] = [
         "EMPACK_WORKDIR",
         "EMPACK_CPU_JOBS",
         "EMPACK_NET_TIMEOUT",
-        "EMPACK_ID_MODRINTH",
-        "EMPACK_KEY_MODRINTH",
         "EMPACK_KEY_CURSEFORGE",
         "EMPACK_LOG_LEVEL",
         "EMPACK_LOG_FORMAT",
@@ -196,19 +167,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn process_error_messages_preserve_each_failure() {
-        let first = anyhow::anyhow!("first cause").context("first operation");
-        let second = anyhow::anyhow!("second cause").context("second operation");
-        assert_eq!(
-            process_error_message(&first),
-            "Error: first operation: first cause"
-        );
-        assert_eq!(
-            process_error_message(&second),
-            "Error: second operation: second cause"
-        );
-    }
+    use application::CliConfig;
 
     #[tokio::test]
     async fn live_uninitialized_build_errors_classify_as_usage() {

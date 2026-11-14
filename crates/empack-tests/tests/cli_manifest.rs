@@ -7,12 +7,11 @@ use std::{fs, path::Path, process::Output};
 
 const HEADER: &str = "# Author note: retain this text exactly.\nschema: 6\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: {preferred: 21}\n";
 
-fn inspect(root: &Path, args: &[&str]) -> Output {
+fn inspect_command(root: &Path, args: &[&str]) -> Output {
     let before = snapshot(root);
     let output = offline_command(root)
         .env("EMPACK_STATE_DIR", root.join("unused-manifest-state"))
         .env("EMPACK_CACHE_DIR", root.join("unused-manifest-cache"))
-        .arg("manifest")
         .args(args)
         .output()
         .unwrap();
@@ -24,11 +23,37 @@ fn inspect(root: &Path, args: &[&str]) -> Output {
     output
 }
 
+fn inspect(root: &Path, args: &[&str]) -> Output {
+    let mut command = vec!["manifest"];
+    command.extend_from_slice(args);
+    inspect_command(root, &command)
+}
+fn check(root: &Path) -> Output {
+    inspect_command(root, &["check", "--documents", "--quiet", "--json"])
+}
+fn checked_authoring(output: &Output) -> Value {
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["scope"], "documents");
+    assert_eq!(response["complete"], true);
+    response["authoring"].clone()
+}
+fn rejected_check(output: &Output) {
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["complete"], false);
+    assert!(
+        response["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["state"] == "failed")
+    );
+}
+
 fn report(root: &Path) -> Value {
-    let output = inspect(root, &["check", "--json"]);
+    let output = check(root);
     assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report = checked_authoring(&output);
     assert_eq!(report["schema"], 1);
     assert_eq!(report["author_schema"], 6);
     assert_eq!(report["pack"], "Literal Pack");
@@ -65,10 +90,10 @@ fn cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_reque
         if let Some(binding) = binding {
             fs::write(root.join("empack.bindings.yml"), binding).unwrap();
         }
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(output.status.success(), "{pack}: {output:?}");
         assert!(output.stderr.is_empty(), "{pack}: {output:?}");
-        let observed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let observed = checked_authoring(&output);
         assert_eq!(observed["schema"], 1);
         assert_eq!(observed["author_schema"], 6);
         assert_eq!(observed["pack"], pack);
@@ -190,6 +215,30 @@ fn cli_manifest_equivalent_source_forms_preserve_literal_authoring() {
             assert_eq!(row["selection_satisfied"], false);
             assert_eq!(row["reason"], "No recorded selection");
             assert!(row["locked_selection"].is_null());
+            let human = inspect(root, &["explain", "example"]);
+            assert!(human.status.success(), "{human:?}");
+            assert!(human.stderr.is_empty(), "{human:?}");
+            let human = String::from_utf8(human.stdout).unwrap();
+            assert!(human.starts_with("example\n"));
+            assert!(human.contains("Next: empack sync"));
+            match expected_source["kind"].as_str().unwrap() {
+                "provider-selector" => {
+                    assert!(human.contains("Source: Modrinth Example1"));
+                    assert!(human.contains("The project has not been resolved for this source."));
+                    assert!(!human.contains("Source changed"));
+                    assert!(human.contains("Version choice: resolve during sync"));
+                }
+                "local" => {
+                    assert!(human.contains("Local file: absent-private.jar"));
+                    assert!(!human.contains("Version choice:"));
+                }
+                "url" => {
+                    assert!(human.contains("Source: download URL"));
+                    assert!(!human.contains("https://example.invalid"));
+                    assert!(!human.contains("Version choice:"));
+                }
+                _ => unreachable!(),
+            }
             rows.push(row.clone());
         }
         assert_eq!(rows[0], rows[1]);
@@ -217,9 +266,9 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
         "dependencies:\n  example: {url: 'https://example.invalid/custom.jar', accept-observed: true, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\n",
     ] {
         fs::write(root.join("empack.yml"), format!("{HEADER}{suffix}")).unwrap();
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(!output.status.success(), "accepted {suffix}: {output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
+        rejected_check(&output);
         assert!(!output.stderr.is_empty(), "{output:?}");
     }
     fs::write(
@@ -235,9 +284,9 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
         "schema: 1\nbindings: {}\npolicies:\n  icon.png: seed\n  icon.png: managed\n",
     ] {
         fs::write(root.join("empack.bindings.yml"), binding).unwrap();
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(!output.status.success(), "accepted {binding}: {output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
+        rejected_check(&output);
         assert!(!output.stderr.is_empty(), "{output:?}");
     }
 }
@@ -258,9 +307,9 @@ fn cli_manifest_composes_bindings_and_rejects_competing_placement_authority() {
         ])
     );
     fs::write(root.join("empack.yml"), format!("{source}    placement:\n      - destination: mods/competing.jar\n        layer: common\n        environment: {{client: required, server: required}}\n")).unwrap();
-    let output = inspect(root, &["check", "--json"]);
+    let output = check(root);
     assert!(!output.status.success(), "{output:?}");
-    assert!(output.stdout.is_empty(), "{output:?}");
+    rejected_check(&output);
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
@@ -295,11 +344,13 @@ fn cli_manifest_reports_explicit_url_observation_and_editing_limits() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(
         text.contains(
-            "URL evidence: accept-first-observation; retained observations remain binding"
+            "Download policy: accept the first downloaded bytes, then require the recorded content on later syncs."
         )
     );
-    assert!(text.contains("Editing limitations (input remains readable):"));
-    assert!(text.contains("Local metadata only: no provider queries or file verification."));
+    assert!(text.contains("setting needs simpler YAML for automatic edits (--json lists them)."));
+    assert!(text.starts_with("custom\n"));
+    assert!(text.contains("Next: empack sync"));
+    assert!(!text.contains("https://example.invalid/custom.jar"));
 }
 
 fn fixture_jar() -> Vec<u8> {
@@ -395,16 +446,30 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
             assert!(output.status.success(), "{output:?}");
             assert!(output.stderr.is_empty(), "{output:?}");
             let text = String::from_utf8(output.stdout).unwrap();
-            assert!(
-                text.contains("Local metadata only: no provider queries or file verification.")
+            assert!(!text.contains("Local metadata only:"));
+            if args == ["explain", "example"] {
+                assert!(text.starts_with("example\n"), "{change}: {text}");
+            }
+            assert_eq!(
+                text.contains("Next: empack sync"),
+                change != "unchanged",
+                "{change}: {text}"
             );
             if let Some(reason) = expected_row["reason"].as_str() {
                 assert!(text.contains(reason), "{change}: {text}");
             }
-            if args == ["diff"]
-                && let Some(reason) = diff["lock_reason"].as_str()
-            {
-                assert!(text.contains(reason), "{change}: {text}");
+            if args == ["diff"] {
+                let expected = if change == "unchanged" {
+                    "Dependency settings match the lock."
+                } else if change == "display" {
+                    "Author files changed; recorded dependency choices still match."
+                } else {
+                    "Author files changed; the lock needs sync."
+                };
+                assert!(text.starts_with(expected), "{change}: {text}");
+                assert!(!text.contains("Lock resolves a different intent revision"));
+                // The complete retained cause is still present in the structured report above.
+                assert_eq!(diff["lock_reason"].is_null(), change == "unchanged");
             }
         }
         let output = inspect(root, &["explain", "absent-key", "--json"]);
@@ -413,7 +478,7 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
         assert!(
             String::from_utf8(output.stderr)
                 .unwrap()
-                .contains("Unknown dependency key")
+                .contains("Dependency is not in the author files or lock")
         );
         if change == "missing-source" {
             let before = snapshot(root);

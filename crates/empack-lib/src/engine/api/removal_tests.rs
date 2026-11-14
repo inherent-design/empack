@@ -237,14 +237,17 @@ async fn removal_admission_failure_preserves_all_files_and_releases_reservations
 }
 
 #[tokio::test]
-async fn title_selection_previews_canonical_identity_and_unknown_batch_changes_nothing() {
+async fn logical_selection_previews_exact_identity_and_unknown_batch_changes_nothing() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     fixture(root.path());
     let before = fs::read(root.path().join("empack.yml")).unwrap();
     let (engine, _) = engine(state.path().join("state"));
     let mut request = request(RemovalMode::RemoveContent);
-    request.selections = NonEmpty::new(vec![RemovalSelector::Query("ASSETS".into())]).unwrap();
+    request.selections = NonEmpty::new(vec![RemovalSelector::Key(
+        empack_core::model::DependencyKey::parse("assets").unwrap(),
+    )])
+    .unwrap();
     let preview = engine
         .preview(root.path().to_path_buf(), request.clone())
         .await
@@ -253,8 +256,8 @@ async fn title_selection_previews_canonical_identity_and_unknown_batch_changes_n
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].key.as_str(), "assets");
     request.selections = NonEmpty::new(vec![
-        RemovalSelector::Query("ASSETS".into()),
-        RemovalSelector::Query("missing".into()),
+        RemovalSelector::Key(empack_core::model::DependencyKey::parse("assets").unwrap()),
+        RemovalSelector::Key(empack_core::model::DependencyKey::parse("missing").unwrap()),
     ])
     .unwrap();
     assert!(
@@ -431,8 +434,12 @@ async fn foreign_metadata_cannot_nominate_removal_even_with_uncertainty_acknowle
         ] {
             let request = RemoveRequest {
                 selections: NonEmpty::new(vec![
-                    RemovalSelector::Query("assets".into()),
-                    RemovalSelector::Query("untracked".into()),
+                    RemovalSelector::Key(
+                        empack_core::model::DependencyKey::parse("assets").unwrap(),
+                    ),
+                    RemovalSelector::Key(
+                        empack_core::model::DependencyKey::parse("untracked").unwrap(),
+                    ),
                 ])
                 .unwrap(),
                 mode,
