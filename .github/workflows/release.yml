@@ -379,7 +379,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         if: runner.os == 'Linux'
         with:
-          version: "0.13.7"
+          version: "0.13.8"
           cache-dependency-glob: scripts/check-authoring-schema.py
       - uses: taiki-e/install-action@v2
         with:
