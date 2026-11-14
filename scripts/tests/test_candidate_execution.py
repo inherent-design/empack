@@ -166,6 +166,22 @@ class CandidateDispatch(unittest.TestCase):
             self.assertTrue(command[-1].endswith("authoring-schema"))
 
     def test_fixed_dispatch_continues_after_blocked_phase_without_rebuilding_products(self):
+        requirements = json.loads((ci.SCRIPTS.parent / "tests/verification/requirements.json").read_text())
+        bindings = {row["id"]: row for row in json.loads(
+            (ci.SCRIPTS.parent / "tests/verification/test-bindings.json").read_text())["tests"]}
+        required = {identity for row in requirements["requirements"] if row["scope"] == "stable"
+                    for case in row["cases"] if case["boundary"] == "L" for identity in case["test_ids"]}
+        for identity in sorted(required):
+            binding = bindings[identity]
+            name = identity.split("::", 2)[2]
+            with self.subTest(required_live_test=identity):
+                self.assertTrue(any(
+                    (not suite.binaries or binding["binary_name"] in suite.binaries)
+                    and binding["binary_name"] not in suite.excluded_binaries
+                    and suite.ignored == binding["ignored"]
+                    and (not suite.cases or name in suite.cases)
+                    for suite in (SUITES[key] for key in PHASES["live"])),
+                    "Required live observation is omitted from candidate dispatch")
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             binaries = {name: root / name for name in GRAPHS}
