@@ -70,6 +70,7 @@ SUITES = {
         "live_cli_equivalent_provider_selectors_converge",
         "live_cli_pty_search_requires_choice_and_approval",
         "live_cli_selected_update_preserves_exact_pin_and_authoring",
+        "live_cli_complete_groups_report_partial_add_and_update",
         "live_cli_update_release_policy_overrides_authored_preference",
         "live_cli_direct_url_retains_observed_content",
         "live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs")),
