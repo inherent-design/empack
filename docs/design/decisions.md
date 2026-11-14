@@ -7,7 +7,7 @@ Empack owns authoring and native installed-instance management. Consumers receiv
 | Release version    | Tag-derived; the repository README identifies the documentation target                           |
 | Authoring          | Compact `empack.yml`, optional portable `empack.bindings.yml`, and generated exact `empack.lock` |
 | Identity           | Provider project, exact file, logical role, destination and ownership are distinct               |
-| Foreign backend    | No packwiz observation, metadata maintenance, import/export or JAR runtime                       |
+| Foreign backend    | No packwiz interpretation, observation, metadata maintenance or import/export                    |
 | Consumers          | Modrinth, CurseForge, Prism, dedicated server and native empack                                  |
 | Delivery           | Download on installation or bundled pack content, where the consumer permits it                  |
 | Default updates    | Fixed snapshot; subscriptions require explicit selection                                         |
@@ -21,7 +21,7 @@ Empack owns authoring and native installed-instance management. Consumers receiv
 | User data          | Unowned files, modified configuration and played worlds are protected                            |
 | Recovery           | Durable file-level publication with expected-old checks; no global atomic visibility claim       |
 | Runtime            | One host Tokio runtime and engine-owned task retirement                                          |
-| Program delivery   | Native binaries and thin launcher integration; no second installer engine                        |
+| Program delivery   | Java 8-compatible bootstrap selects exact native empack; native empack owns installation         |
 | Schema support     | Author schema 6; older schemas fail explicitly; no conversion command                            |
 | Selection          | Compatible provider selection or an exact pin; no universal version-range language               |
 | Release preference | Schema default `prefer-stable`, project policy, then dependency override                         |

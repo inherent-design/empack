@@ -4,6 +4,8 @@ use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
 
+mod help;
+
 /// Provider version stability policy, independent of a published pack channel.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
 pub enum CliReleasePolicy {
@@ -120,7 +122,17 @@ impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
         let dotenv = super::loader::load_dotenv_files();
-        let cli = Cli::parse();
+        let cli = match Cli::try_parse() {
+            Ok(cli) => cli,
+            Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
+                print!(
+                    "{}",
+                    crate::terminal::display_text(&help::group_root_commands(&error.to_string()))
+                );
+                std::process::exit(0);
+            }
+            Err(error) => error.exit(),
+        };
         dotenv?;
         Ok(Self {
             app_config: cli.config,
@@ -171,12 +183,15 @@ impl CliConfig {
                     // Clap's plain display removes ANSI styling, but inherited
                     // values can still contain active directional controls.
                     Ok(CliLoad::Display(
-                        crate::terminal::display_text(&error.to_string()).into_owned(),
+                        crate::terminal::display_text(&help::group_root_commands(
+                            &error.to_string(),
+                        ))
+                        .into_owned(),
                     ))
                 }
                 _ => Err(ConfigError::ParseError {
                     value: "command line".to_string(),
-                    reason: error.to_string(),
+                    reason: help::group_root_commands(&error.to_string()),
                 }),
             },
         }
@@ -190,7 +205,7 @@ impl CliConfig {
     {
         let cli = Cli::try_parse_from(args).map_err(|e| ConfigError::ParseError {
             value: "command line".to_string(),
-            reason: e.to_string(),
+            reason: help::group_root_commands(&e.to_string()),
         })?;
         Ok(Self {
             app_config: cli.config,
@@ -1688,16 +1703,74 @@ mod tests {
 
     #[test]
     fn cli_load_for_process_from_returns_display_for_help() {
-        let result = CliConfig::load_for_process_from(["empack", "--help"])
-            .expect("help should not be treated as a parse failure");
-
-        match result {
-            CliLoad::Display(message) => {
-                assert!(message.contains("Author, distribute and update Minecraft packs"));
-                assert!(message.contains("Usage:"));
+        let _cli_env = crate::test_support::isolate_cli_env();
+        let mut graph = Cli::command();
+        graph.build();
+        for args in [["empack", "--help"], ["empack", "-h"], ["empack", "help"]] {
+            let CliLoad::Display(message) = CliConfig::load_for_process_from(args)
+                .expect("help should not be treated as a parse failure")
+            else {
+                panic!("help should return a display payload");
+            };
+            assert!(message.contains("Author, distribute and update Minecraft packs"));
+            assert!(message.contains("Usage:"));
+            let headings = ["Author:", "Install:", "Publish:", "Tools:"]
+                .map(|heading| message.find(&format!("\n{heading}\n")).unwrap());
+            assert!(headings.windows(2).all(|pair| pair[0] < pair[1]));
+            for command in graph
+                .get_subcommands()
+                .filter(|command| !command.is_hide_set())
+            {
+                assert_eq!(
+                    message
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("  "))
+                        .filter(|row| !row.starts_with(char::is_whitespace))
+                        .filter(
+                            |row| row.split_ascii_whitespace().next() == Some(command.get_name())
+                        )
+                        .count(),
+                    1,
+                    "{} must remain visible exactly once in grouped help",
+                    command.get_name()
+                );
             }
-            CliLoad::Ready(_) => panic!("help should return a display payload"),
         }
+        // Reordering preserves the parser's descriptions, aliases and wrapping,
+        // including narrow help; only the command section headings change.
+        for width in [40, 100] {
+            for long in [false, true] {
+                let mut command = Cli::command().term_width(width);
+                let original = if long {
+                    command.render_long_help()
+                } else {
+                    command.render_help()
+                }
+                .to_string();
+                let grouped = help::group_root_commands(&original);
+                assert!(grouped.contains("\nPublish:\n"));
+                let content = |text: &str| {
+                    let mut lines: Vec<_> = text
+                        .lines()
+                        .filter(|line| !line.is_empty())
+                        .filter(|line| {
+                            !matches!(
+                                *line,
+                                "Commands:" | "Author:" | "Install:" | "Publish:" | "Tools:"
+                            )
+                        })
+                        .map(str::to_owned)
+                        .collect();
+                    lines.sort();
+                    lines
+                };
+                assert_eq!(content(&original), content(&grouped));
+            }
+        }
+        let nested = Cli::try_parse_from(["empack", "instance", "--help"])
+            .unwrap_err()
+            .to_string();
+        assert_eq!(help::group_root_commands(&nested), nested);
     }
 
     #[test]

@@ -155,6 +155,26 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
             }
             let output = fixture.invoke(&args, 0);
             let stdout = String::from_utf8(output.stdout).unwrap();
+            if matches!(*route, "empack" | "empack help") {
+                let headings = ["Author:", "Install:", "Publish:", "Tools:"]
+                    .map(|heading| stdout.find(&format!("\n{heading}\n")).unwrap());
+                assert!(headings.windows(2).all(|pair| pair[0] < pair[1]));
+                for (command, start, end) in [
+                    ("init", headings[0], headings[1]),
+                    ("instance", headings[1], headings[2]),
+                    ("build", headings[2], headings[3]),
+                    ("release", headings[2], headings[3]),
+                ] {
+                    assert!(
+                        stdout[start..end].lines().any(|line| {
+                            line.strip_prefix("  ").is_some_and(|row| {
+                                row.split_ascii_whitespace().next() == Some(command)
+                            })
+                        }),
+                        "{route}: {command} must be in its task group"
+                    );
+                }
+            }
             assert!(
                 stdout.lines().any(|line| line.starts_with(&expected_usage)),
                 "{route}: expected {expected_usage:?} in {stdout}"
