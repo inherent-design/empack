@@ -36,7 +36,7 @@ envy = "0.4.2"
 ed25519-dalek = "3.0.0"
 getrandom = "0.4.3"
 indicatif = { version = "0.18.6", features = ["rayon", "improved_unicode"] }
-vt100 = "0.16.2"
+vt100 = "0.18.0"
 percent-encoding = "2.3.2"
 reqwest = { version = "0.13.5", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.229", features = ["derive"] }
