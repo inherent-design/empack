@@ -13144,7 +13144,7 @@
           ],
           "assertions": [
             "Only a typed valid profile change before effects permits one fresh plan; malformed or incompatible profiles, changed enrollment/selection, cancellation, repeated writes and runtime failure retain refusal/outcome.",
-            "Controlled approval-boundary saves exercise ensure and launch with real native publication/process ownership; runtime starts exactly once and player seed bytes remain unchanged. Subscribed prelaunch fetches the selected offer once and shares its one retry with the wrapper; a retry cannot obtain another download allowance."
+            "Controlled approval-boundary saves exercise fresh-import and installed ensure plus launch with real native publication/process ownership; runtime starts exactly once and player seed bytes remain unchanged. Subscribed prelaunch fetches the selected offer once and shares its one retry with the wrapper; a retry cannot obtain another download allowance."
           ]
         },
         {

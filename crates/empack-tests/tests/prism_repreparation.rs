@@ -370,6 +370,54 @@ async fn prism_launch_reprepares_once_without_replaying_runtime_or_changing_sele
 #[tokio::test]
 async fn prism_ensure_reprepares_once_without_replaying_publication() {
     matrix("ensure").await;
+    // A fresh import already has Prism's profile and may have player settings,
+    // but no completed empack installation or persistent release selection yet.
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.root.join("mmc-pack.json"),
+        serde_json::to_vec(&json!({"formatVersion":1,"components":[
+            {"uid":"net.minecraft","version":"1.21.1","important":true}
+        ]}))
+        .unwrap(),
+    )
+    .unwrap();
+    let game = fixture.root.join(".minecraft");
+    fs::create_dir(&game).unwrap();
+    fs::write(game.join("options.txt"), b"player options").unwrap();
+    fs::write(game.join("prism-repreparation-runtime"), b"fixture").unwrap();
+    let driver = Driver {
+        session: fixture.session(false),
+        prompt: SaveAtApproval {
+            root: fixture.root.clone(),
+            case: "resolved",
+            calls: AtomicUsize::new(0),
+            cancellation: Cancellation::default(),
+        },
+    };
+    execute_command_with_session(fixture.command("ensure"), &driver)
+        .await
+        .unwrap();
+    assert_eq!(driver.prompt.calls.load(Ordering::SeqCst), 2);
+    let record: Value =
+        serde_json::from_slice(&fs::read(fixture.root.join(".empack/instance.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["release"], fixture.digest);
+    assert_eq!(
+        fs::read(game.join("options.txt")).unwrap(),
+        b"player options"
+    );
+    assert_eq!(fs::read(game.join("owned.txt")).unwrap(), b"publisher");
+    assert!(!game.join("runtime-invocations").exists());
+    execute_command_with_session(fixture.command("launch"), &fixture.session(true))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(game.join("runtime-invocations"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
