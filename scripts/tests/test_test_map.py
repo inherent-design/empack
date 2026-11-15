@@ -205,15 +205,22 @@ class ToolingOwnership(unittest.TestCase):
 class DoctestDiscovery(unittest.TestCase):
     def test_listing_preserves_ids_and_empty_crate_groups(self):
         text = "crates/core.rs - Type (line 1): test\n1 test, 0 benchmarks\n0 tests, 0 benchmarks\n"
-        self.assertEqual(checker.rustdoc_tests(text), {"crates/core.rs - Type (line 1)"})
+        timing = "all doctests ran in 1.21s; merged doctests compilation took 1.13s\n"
+        for listing in (text, text + timing, text.replace("0 tests, 0 benchmarks\n", timing + "0 tests, 0 benchmarks\n")):
+            with self.subTest(listing=listing):
+                self.assertEqual(checker.rustdoc_tests(listing), {"crates/core.rs - Type (line 1)"})
 
     def test_incomplete_duplicate_and_unknown_listings_fail(self):
         entry = "crates/core.rs - Type (line 1): test\n"
+        timing = "all doctests ran in 1.21s; merged doctests compilation took 1.13s\n"
         for text in (entry, entry + "2 tests, 0 benchmarks\n", entry * 2 + "2 tests, 0 benchmarks\n",
-                     "test passed\n", "0 tests, 0 benchmarks\n", ""):
+                     "test passed\n", "0 tests, 0 benchmarks\n", "", timing, entry + timing,
+                     entry + "1 test, 0 benchmarks\n" + timing + "unknown footer\n",
+                     entry + "1 test, 0 benchmarks\n" + timing.replace("1.21s", "1..21s")):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 checker.rustdoc_tests(text)
         self.assertEqual(checker.rustdoc_tests("0 tests, 0 benchmarks\n", allow_empty=True), set())
+        self.assertEqual(checker.rustdoc_tests("0 tests, 0 benchmarks\n" + timing, allow_empty=True), set())
 
     def test_newly_ignored_or_unowned_doctest_needs_review(self):
         name = "crates/core.rs - Type (line 1)"

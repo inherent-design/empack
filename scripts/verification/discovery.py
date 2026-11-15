@@ -1,6 +1,10 @@
 """Parse rustdoc's explicit test listing, never infer tests from Rust source."""
 import re
 
+MERGED_TIMING = re.compile(
+    r"all doctests ran in [0-9]+(?:\.[0-9]+)?s; merged doctests compilation took [0-9]+(?:\.[0-9]+)?s"
+)
+
 
 def rustdoc_identity(value):
     """Use repository separators for the source path, leaving item names exact."""
@@ -25,6 +29,9 @@ def rustdoc_tests(output, *, allow_empty=False):
             discovered.extend(group)
             group = []
             summaries += 1
+        elif MERGED_TIMING.fullmatch(line):
+            if group or not summaries:
+                raise ValueError("Premature merged rustdoc summary")
         else:
             raise ValueError(f"Unknown rustdoc listing line: {line}")
     if group or not summaries:

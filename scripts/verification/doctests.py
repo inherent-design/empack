@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from .discovery import rustdoc_identity, rustdoc_tests
+from .discovery import MERGED_TIMING, rustdoc_identity, rustdoc_tests
 from .evidence import aggregate_outcomes, sha256
 from .suites import TEST_FEATURES
 
@@ -79,7 +79,7 @@ def outcomes(output, expected):
                 raise ValueError("Rustdoc summary disagrees with observed results")
             summaries += 1
             count = None
-        elif re.fullmatch(r"all doctests ran in [0-9.]+s; merged doctests compilation took [0-9.]+s", line):
+        elif MERGED_TIMING.fullmatch(line):
             if count is not None or not summaries:
                 raise ValueError("Premature merged rustdoc summary")
         else:
