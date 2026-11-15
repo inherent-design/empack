@@ -31,12 +31,20 @@ fn invocation_bytes(prepare: bool, subscribed: bool, release: &str) -> Vec<u8> {
     file.content.lease().open().read_to_end(&mut bytes).unwrap();
     bytes
 }
-fn put_invocations(root: &Path, release: &str) {
+fn put_invocations(root: &Path, release: &str, engine_version: &str) {
+    semver::Version::parse(engine_version).unwrap();
     for (file, prepare) in [
         (super::super::bootstrap::PREPARE, true),
         (super::super::bootstrap::LAUNCH, false),
     ] {
-        put(root, file, &invocation_bytes(prepare, false, release));
+        let mut invocation: serde_json::Value =
+            serde_json::from_slice(&invocation_bytes(prepare, false, release)).unwrap();
+        assert_eq!(
+            invocation["engine_version"],
+            crate::engine::compatibility_version()
+        );
+        invocation["engine_version"] = serde_json::json!(engine_version);
+        put(root, file, &serde_json::to_vec(&invocation).unwrap());
     }
 }
 
@@ -74,7 +82,9 @@ fn generated_server_entrypoint_fixture() {
     let managed = input["managed"].as_bool().unwrap();
     let digest = input["release_sha256"].as_str().unwrap();
     if managed {
-        put_invocations(&root, digest);
+        // This component driver is compiled independently of the selected CLI.
+        // Keep its fixture commands bound to that product, including release qualification.
+        put_invocations(&root, digest, input["engine_version"].as_str().unwrap());
     }
     let java = crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap();
     let launch = ServerLaunch::Jar(path("server.jar").unwrap());
@@ -671,7 +681,7 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
     fs::create_dir(root.path().join("game")).unwrap();
 
     let id = "a".repeat(64);
-    put_invocations(root.path(), &id);
+    put_invocations(root.path(), &id, crate::engine::compatibility_version());
     put(
         root.path(),
         "install_pack.sh",
