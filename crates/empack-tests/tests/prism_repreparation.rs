@@ -346,7 +346,16 @@ async fn matrix(action: &str) {
                     .is::<empack_lib::application::process_runtime::Interrupted>()
             );
         } else if case == "runtime-failure" {
-            assert!(format!("{:#}", result.unwrap_err()).contains("exit status"));
+            let error = result.unwrap_err();
+            let runtime = error
+                .downcast_ref::<empack_lib::application::process_runtime::RuntimeExit>()
+                .unwrap_or_else(|| panic!("Expected the runtime exit result: {error:#}"));
+            assert_eq!(runtime.0.code(), Some(7), "{error:#}");
+            assert!(
+                format!("{error:#}")
+                    .contains(&format!("Instance runtime exited with {}", runtime.0)),
+                "{error:#}"
+            );
         }
         // A subsequent ordinary launch verifies that a rejected/retired attempt left no false runtime lease.
         if matches!(case, "resolved" | "cache" | "same" | "repeated" | "cancel") {
