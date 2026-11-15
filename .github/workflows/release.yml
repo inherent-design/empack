@@ -295,7 +295,7 @@ jobs:
           path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.15"
       - uses: taiki-e/install-action@v2
@@ -373,7 +373,7 @@ jobs:
           path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.15"
       - uses: astral-sh/setup-uv@v7
@@ -452,7 +452,7 @@ jobs:
         with:
           name: consumer-prism
           path: .git/candidate-consumer
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.15"
       - uses: actions/download-artifact@v8

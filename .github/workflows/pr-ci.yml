@@ -183,7 +183,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: matrix.target != 'x86_64-unknown-linux-gnu'
         with:
           python-version: "3.15"
