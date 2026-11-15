@@ -46,6 +46,9 @@ use std::{
 };
 use tokio::sync::oneshot;
 
+pub(crate) use super::instance::prism_selection_identity;
+pub(crate) use super::prism::ProfileChanged as PrismProfileChanged;
+
 #[derive(Debug, thiserror::Error)]
 #[error("Publication worker failed; inspect recovery before retrying")]
 struct PublicationWorkerFailed(#[source] RuntimeError);

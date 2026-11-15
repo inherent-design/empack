@@ -4,6 +4,12 @@ use empack_core::model::{LoaderKind, RuntimeResolution};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
+/// The current profile is valid for the selected runtime, but its other settings changed.
+/// Callers must discard the old plan before preparing against the new profile.
+#[derive(Debug, thiserror::Error)]
+#[error("Prism component settings changed")]
+pub(crate) struct ProfileChanged;
+
 fn loader(runtime: &RuntimeResolution) -> Result<Option<(&'static str, String)>> {
     let uid = match runtime.loader {
         LoaderKind::Vanilla => return Ok(None),
@@ -144,10 +150,7 @@ impl ProfileIdentity {
     pub(super) fn verify(&self, bytes: &[u8]) -> Result<()> {
         let checked = (|| {
             let current = Self::capture(bytes, self.runtime.clone())?;
-            ensure!(
-                current.meaning == self.meaning,
-                "Prism component settings changed"
-            );
+            ensure!(current.meaning == self.meaning, ProfileChanged);
             Ok(())
         })();
         checked.map_err(|error: anyhow::Error| {
@@ -219,6 +222,61 @@ pub(super) fn transition(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_preparation_reason_requires_a_valid_unchanged_locked_runtime() {
+        let runtime = super::super::release::ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: super::super::release::ReleaseLoader::Vanilla,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
+        }
+        .resolution()
+        .unwrap();
+        let bytes = profile(&runtime).unwrap();
+        let baseline = ProfileIdentity::capture(&bytes, runtime).unwrap();
+        let original: Value = serde_json::from_slice(&bytes).unwrap();
+        for change in [
+            "cache",
+            "resolved",
+            "game",
+            "disabled",
+            "duplicate",
+            "missing",
+            "malformed",
+        ] {
+            let mut value = original.clone();
+            match change {
+                "cache" => value["components"][0]["cachedName"] = json!("Minecraft label"),
+                "resolved" => value["components"].as_array_mut().unwrap().insert(
+                    0,
+                    json!({"uid":"org.lwjgl3","version":"3.3.3","dependencyOnly":true}),
+                ),
+                "game" => value["components"][0]["version"] = json!("1.21.2"),
+                "disabled" => value["components"][0]["disabled"] = json!(true),
+                "duplicate" => value["components"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(original["components"][0].clone()),
+                "missing" => {
+                    value["components"].as_array_mut().unwrap().clear();
+                }
+                _ => {}
+            }
+            let current = if change == "malformed" {
+                b"{".to_vec()
+            } else {
+                serde_json::to_vec(&value).unwrap()
+            };
+            match baseline.verify(&current) {
+                Ok(()) => assert_eq!(change, "cache"),
+                Err(error) => assert_eq!(
+                    error.is::<ProfileChanged>(),
+                    change == "resolved",
+                    "{change}: {error:#}"
+                ),
+            }
+        }
+    }
 
     #[test]
     fn runtime_transitions_switch_known_loaders_and_preserve_user_metadata() {

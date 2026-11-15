@@ -402,7 +402,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
                 .unwrap();
             assert_observation(&prior, &saved, &pointer);
             if accepted {
-                assert_eq!(result.unwrap(), Some(offered.id().to_owned()));
+                assert_eq!(result.unwrap(), Some((offered.id().to_owned(), false)));
                 assert_eq!(prompts.lock().unwrap().len(), 2);
                 assert_eq!(
                     fs::read(game.join("server.jar")).unwrap(),
@@ -476,7 +476,7 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
         )
         .await
         .unwrap(),
-        Some(release("A").id().into())
+        Some((release("A").id().into(), false))
     );
     assert_eq!(
         before,
@@ -607,7 +607,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         )
         .await
         .unwrap(),
-        Some(release.id().into())
+        Some((release.id().into(), false))
     );
     response.assert_async().await;
     pointer.remove_async().await;
@@ -1192,4 +1192,126 @@ async fn local_channel_update_preserves_preview_and_requires_authenticated_offer
     .unwrap();
     assert_eq!(saved.url, "https://publisher.test/channel.json");
     assert_eq!(saved.floor.unwrap().sequence, 1);
+}
+
+#[tokio::test]
+async fn prism_prelaunch_reuses_selected_offer_and_shares_one_repreparation_with_launch() {
+    use crate::application::session::{
+        ConfigProvider, InteractiveProvider, InvocationProvider, ProcessProvider,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct SavingSession {
+        inner: MockCommandSession,
+        profile: PathBuf,
+        approvals: AtomicUsize,
+        repeated: bool,
+    }
+    impl InteractiveProvider for SavingSession {
+        fn can_choose(&self) -> bool {
+            true
+        }
+        fn confirm(&self, _: &str, _: bool) -> Result<bool> {
+            let call = self.approvals.fetch_add(1, Ordering::SeqCst);
+            if call == 1 || (self.repeated && call == 2) || call == 3 {
+                let mut value: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&self.profile)?)?;
+                if call == 1 {
+                    value["components"].as_array_mut().unwrap().insert(0,
+                        serde_json::json!({"uid":"org.lwjgl3","version":"3.3.3","dependencyOnly":true}));
+                } else {
+                    value["components"][0]["version"] = serde_json::json!("3.3.4");
+                }
+                fs::write(&self.profile, serde_json::to_vec(&value)?)?;
+            }
+            Ok(true)
+        }
+        fn text_input(&self, _: &str, _: String) -> Result<String> {
+            anyhow::bail!("Unexpected input")
+        }
+        fn select(&self, _: &str, _: &[&str]) -> Result<usize> {
+            anyhow::bail!("Unexpected choice")
+        }
+        fn fuzzy_select(&self, _: &str, _: &[String]) -> Result<Option<usize>> {
+            anyhow::bail!("Unexpected choice")
+        }
+    }
+    impl Session for SavingSession {
+        fn display(&self) -> &dyn crate::display::DisplayProvider {
+            self.inner.display()
+        }
+        fn invocation(&self) -> &dyn InvocationProvider {
+            self.inner.invocation()
+        }
+        fn process(&self) -> &dyn ProcessProvider {
+            self.inner.process()
+        }
+        fn config(&self) -> &dyn ConfigProvider {
+            self.inner.config()
+        }
+        fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
+            self.inner.terminal()
+        }
+        fn interactive(&self) -> &dyn InteractiveProvider {
+            self
+        }
+    }
+    for repeated in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let key = fixture_side(root.path(), "client", Some("prism")).await;
+        let offered = release("B");
+        let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let pointer = server
+            .mock("GET", "/channel.json")
+            .with_body(channel(&offered, &key, envelope.len() as u64))
+            .expect(1)
+            .create_async()
+            .await;
+        let payload = server
+            .mock("GET", "/release.json")
+            .with_body(envelope)
+            .expect(1)
+            .create_async()
+            .await;
+        let host = SavingSession {
+            inner: session(root.path(), false, false),
+            profile: root.path().join("project/mmc-pack.json"),
+            approvals: AtomicUsize::new(0),
+            repeated,
+        };
+        let result = update_with_transport(&host, false, false, transport(&server.url())).await;
+        assert_eq!(host.approvals.load(Ordering::SeqCst), 3);
+        if repeated {
+            let error = result.unwrap_err();
+            assert!(
+                format!("{error:#}").contains("Launch settings kept changing"),
+                "{error:#}"
+            );
+        } else {
+            let (selected, used) = result.unwrap().unwrap();
+            assert_eq!(selected, offered.id());
+            assert!(used);
+            let record = root.path().join("project/.empack/instance.json");
+            let before = fs::read(&record).unwrap();
+            // A later valid save in this same logical wrapper cannot gain a second retry.
+            let error = super::super::launch(
+                &host,
+                vec![root.path().join("must-not-start").into_os_string()],
+                Some(selected),
+                false,
+                false,
+                used,
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                format!("{error:#}").contains("Launch settings kept changing"),
+                "{error:#}"
+            );
+            assert_eq!(host.approvals.load(Ordering::SeqCst), 4);
+            assert_eq!(fs::read(record).unwrap(), before);
+        }
+        pointer.assert_async().await;
+        payload.assert_async().await;
+    }
 }

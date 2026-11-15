@@ -6,6 +6,8 @@ For v0.8.4-beta, the maintainer has deferred the named operator-only cases in th
 
 For v0.8.5-beta, manual acceptance requires the managed Prism reference workflow and managed server console/GUI workflows on macOS, for both default and telemetry products. Automated Windows/Linux, native, package, parser, tooling and live-service checks remain required. Other manual cases and host variants retain their actual observations, including `NOT_RUN`; the candidate uses only the approved required variants when computing its release result. A supplied failed attempt still blocks qualification. This scope does not roll forward to another release or replace maintainer review of the records.
 
+For v0.8.6-beta, the maintainer separately approved fresh managed Prism reference and managed server console/GUI checks on macOS for default and telemetry, with Codex acting as the delegated maintainer operator. All automated platform gates remain required. Each record reports the actual candidate and observations; this authorization supplies no unperformed pass and does not change later release scope.
+
 The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 
 When required by the selected release scope, Prism, platform-import and server consumer records cover Linux, macOS, and Windows for default and telemetry products. The registered-browser handoff procedure is Windows-specific. The selected host for human tasks is macOS. A result on one host does not supply evidence for another. Actual-consumer and human tasks remain unperformed until their records exist; helper tests cannot supply them.
@@ -27,6 +29,8 @@ For platform imports, keep empack unavailable in the consumer's launch environme
 ## Prism runtime update
 
 The reference-instance procedure's signed update must change a supported Minecraft or loader requirement as well as selected content. Capture the old and proposed runtime/profile identities and independent inventories. Retain an unrelated user component, launcher-written icon and played-world sentinel so preservation is observable. A content-only update cannot establish the runtime-transition case.
+
+Import a fresh generated reference snapshot and launch it once through its shipped bootstrap preparation and wrapper commands. The first click must reach the selected runtime without a manual retry; repeat launch must also work. Retain redacted before/after component profiles, the selected native/JAR identities and observed preparation/startup counts. A controlled profile-save fixture does not replace this consumer observation.
 
 Use the default reference snapshot for the initial import, preparation and startup checks. For the runtime-update steps, prepare a separate reference fixture with `updates: empack` and complete its explicit local enrollment before initial preparation, following the [publishing procedure](publishing.md). Retain both distribution identities and their independent inventories. This exercises the snapshot default and the deliberately subscribed update workflow.
 
