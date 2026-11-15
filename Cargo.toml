@@ -54,8 +54,6 @@ toml = "1.1.8"
 tokio = { version = "1.54.0", features = ["full"] }
 console = "0.16"
 fuzzy-matcher = "0.3.7"
-tower = "0.5.3"
-tower_governor = "0.8.0" # Rate limiting middleware
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
     "env-filter",
@@ -81,7 +79,6 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 
 # Dev dependencies
 assert_cmd = "2.2"
-criterion = "0.8.2"
 expectrl = "0.9"
 mockito = "1.7.2"
 predicates = "3"

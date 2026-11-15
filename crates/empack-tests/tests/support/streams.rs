@@ -243,7 +243,11 @@ fn cli_progress_clears_narrow_screens_and_preserves_results_after_interrupt() {
             if mode == "quiet" {
                 assert!(!String::from_utf8_lossy(&rendered).contains("Checking selected Java"));
             }
-            let mut parser = vt100::Parser::new(30, width, 0);
+            let mut parser = vt100::Parser::new(
+                std::num::NonZeroU16::new(30).unwrap(),
+                std::num::NonZeroU16::new(width).unwrap(),
+                0,
+            );
             parser.process(&rendered);
             let screen = parser.screen().contents();
             assert!(

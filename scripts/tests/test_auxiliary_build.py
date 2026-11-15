@@ -55,12 +55,12 @@ class AuxiliaryBuild(unittest.TestCase):
         record = dict(schema=1, kind="candidate-auxiliary-build", source_revision=self.revision,
                       version=self.version, target=target, features="telemetry", profile="release", shipped=False,
                       created_at="2026-10-23T00:00:00+00:00", status="PASS", inputs=self.inputs,
-                      command=build_command(target), compiler=f"rustc fixture\nrelease: 1.99.1\nhost: {target}",
+                      command=build_command(target), compiler=f"rustc fixture\nrelease: {self.channel}\nhost: {target}",
                       build_exit_code=0, build_timed_out=False,
                       build_environment=dict(GIT_HASH=self.revision, BUILD_DATE=self.inputs["build_date"], CARGO_INCREMENTAL="0"),
                       executable=dict(sha256=sha256(executable), length=executable.stat().st_size),
                       compilation_sha256=compilation(bundle, target, sha256(executable), self.revision,
-                                                     self.inputs["stamped"], features="telemetry"),
+                                                     self.inputs["stamped"], features="telemetry", channel=self.channel),
                       suite_receipt_sha256=sha256(attempt / "receipt.json"))
         write_json(bundle / "build.json", record)
         return bundle / "build.json", record, attempt / "receipt.json"
@@ -89,7 +89,7 @@ class AuxiliaryBuild(unittest.TestCase):
         changes = [("source_revision", "f" * 40), ("version", "0.8.3-beta"), ("features", "default"),
                    ("shipped", True), ("profile", "dev"), ("build_exit_code", 1), ("build_timed_out", True),
                    ("command", build_command(original["target"]) + ["--all-features"]),
-                   ("compiler", original["compiler"].replace("1.99.1", "1.98.0")),
+                   ("compiler", original["compiler"].replace(f"release: {self.channel}", "release: 0.0.0-fixture-mismatch")),
                    ("build_environment", dict(original["build_environment"], RUSTFLAGS="--cfg fixture"))]
         for key, value in changes:
             changed = dict(original, **{key: value})

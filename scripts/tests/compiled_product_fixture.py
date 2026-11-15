@@ -6,7 +6,8 @@ from verification.product_build import build_command, metadata_command, retain_b
 from verification.evidence import sha256, write_json
 
 
-def compilation(directory, target, digest, revision, stamped, features="default", builder="cargo", bootstrap=None):
+def compilation(directory, target, digest, revision, stamped, features="default", builder="cargo", bootstrap=None,
+                channel="1.99.1"):
     path_type = PureWindowsPath if target.endswith("windows-msvc") else PurePosixPath
     target_dir = path_type("C:/fixture/target" if target.endswith("windows-msvc") else "/fixture/target")
     executable = target_dir / target / "release" / ("empack.exe" if target.endswith("windows-msvc") else "empack")
@@ -35,7 +36,7 @@ def compilation(directory, target, digest, revision, stamped, features="default"
     record = {"schema": 1, "kind": "compiled-product", "source": {"revision": revision, "stamped": stamped},
               "target": target, "features": features, "command": build_command(target, builder, features),
               "metadata_command": metadata_command(target, builder),
-              "builder_version": "cross 0.2.5\ncargo 1.99.1 (synthetic)" if builder == "cross" else "cargo 1.99.1 (synthetic)",
+              "builder_version": ("cross 0.2.5\n" if builder == "cross" else "") + f"cargo {channel} (synthetic)",
               "artifact": artifact}
     write_json(directory / "bootstrap-build.json", bootstrap)
     record["bootstrap_sha256"] = sha256(directory / "bootstrap-build.json")

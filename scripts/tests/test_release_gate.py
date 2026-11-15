@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -26,6 +27,7 @@ class ReleaseArchiveGate(unittest.TestCase):
 
     def setUp(self):
         input_fixtures.ReleaseInputs.setUp(self)
+        self.channel = tomllib.loads((self.root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
         registry = self.root / "tests/verification"
         registry.mkdir(parents=True)
         for name in ("requirements.json", "test-bindings.json", "python-bindings.json"):
@@ -69,9 +71,9 @@ class ReleaseArchiveGate(unittest.TestCase):
             build = {"schema": 1, "kind": "release-archive-build", "version": self.version,
                      "source_revision": self.revision, "target": target, "features": "default",
                      "profile": "release", "inputs": self.inputs,
-                     "compiler": f"rustc fixture\nrelease: 1.99.1\nhost: {target}",
+                     "compiler": f"rustc fixture\nrelease: {self.channel}\nhost: {target}",
                      "command": build_command(target),
-                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"], bootstrap=self.bootstrap),
+                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"], bootstrap=self.bootstrap, channel=self.channel),
                      "archive": {"name": archive.name, "sha256": sha256(archive), "length": archive.stat().st_size},
                      "executable": executable}
             write_json(build_dir / "build.json", build)
@@ -168,7 +170,7 @@ class ReleaseArchiveGate(unittest.TestCase):
         build = json.loads((build_dir / "build.json").read_text())
         build["executable"] = dict(sha256=digest, length=length)
         build["archive"].update(sha256=sha256(archive), length=archive.stat().st_size)
-        build["compilation_sha256"] = compilation(build_dir, target, digest, self.revision, self.inputs["stamped"])
+        build["compilation_sha256"] = compilation(build_dir, target, digest, self.revision, self.inputs["stamped"], channel=self.channel)
         write_json(build_dir / "build.json", build)
         receipt = json.loads((attempt / "receipt.json").read_text())
         receipt["artifact"]["sha256"] = digest
@@ -189,7 +191,7 @@ class ReleaseArchiveGate(unittest.TestCase):
         build["command"][0] = "cross"
         build["compiler"] = build["compiler"].replace(target, "x86_64-unknown-linux-gnu")
         build["compilation_sha256"] = compilation(build_dir, target, build["executable"]["sha256"],
-                                                  self.revision, self.inputs["stamped"], builder="cross")
+                                                  self.revision, self.inputs["stamped"], builder="cross", channel=self.channel)
         write_json(path, build)
         (execution / "package.json").unlink()
         with self.assertRaisesRegex(ValueError, "one archive execution"):

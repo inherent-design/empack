@@ -780,7 +780,11 @@ fn cli_update_terminal_clears_progress_before_one_final_report() {
             .env("TERM", "xterm-256color")
             .args(["update", "--all"]);
         let output = terminal::capture_output(command, columns, 40, 0);
-        let mut parser = vt100::Parser::new(40, columns, 0);
+        let mut parser = vt100::Parser::new(
+            std::num::NonZeroU16::new(40).unwrap(),
+            std::num::NonZeroU16::new(columns).unwrap(),
+            0,
+        );
         parser.process(&output);
         let screen = parser.screen().contents();
         assert!(
