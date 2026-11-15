@@ -388,8 +388,7 @@ async fn cli_prism_first_save_reprepares_and_starts_runtime_once() {
         .args(["instance", "launch", "--"])
         .arg(std::env::current_exe().unwrap())
         .args(["--exact", "runtime_fixture", "--nocapture"]);
-    let mut session =
-        expectrl::session::log(terminal::spawn_sized(command, 100, 30), std::io::stderr()).unwrap();
+    let mut session = expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
     session.set_expect_timeout(Some(Duration::from_secs(20)));
     session
         .expect(Regex("Apply this instance launch plan"))
