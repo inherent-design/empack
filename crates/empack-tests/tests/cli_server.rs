@@ -224,6 +224,7 @@ impl Server {
             serde_json::to_vec(&json!({
                 "managed":managed,
                 "release_sha256":file_sha256(&export.join("release.json")).unwrap(),
+                "engine_version":empack_tests::harness::process::expected_automation_version(),
             }))
             .unwrap(),
         )
@@ -237,6 +238,18 @@ impl Server {
             ])
             .assert()
             .success();
+        if managed {
+            for name in ["prepare.json", "launch.json"] {
+                let invocation: Value = serde_json::from_slice(
+                    &fs::read(root.join(".empack-tools").join(name)).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    invocation["engine_version"],
+                    empack_tests::harness::process::expected_automation_version()
+                );
+            }
+        }
         fs::remove_file(marker).unwrap();
     }
 
