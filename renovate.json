@@ -2,5 +2,14 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep CI runtime majors as explicit compatibility targets; review additions separately.",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["java-version"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
   ]
 }
