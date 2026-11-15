@@ -58,6 +58,18 @@
         "acceptance::server::managed-console",
         "acceptance::server::managed-gui"
       ]
+    },
+    "v086_manual_scope": {
+      "approved_on": "2026-11-15",
+      "reason": "Maintainer-approved focused first-launch release qualification uses fresh managed Prism/server checks on the available Mac for default and telemetry; Codex is the delegated operator. Retain every automated platform gate and actual unrun manual observations.",
+      "platforms": [
+        "macos"
+      ],
+      "procedures": [
+        "acceptance::prism::reference-instance",
+        "acceptance::server::managed-console",
+        "acceptance::server::managed-gui"
+      ]
     }
   },
   "requirements": [
@@ -17145,7 +17157,9 @@
             "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements",
             "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases",
             "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations",
-            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions"
+            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions",
+            "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations",
+            "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions"
           ],
           "required_platforms": [
             "linux",
@@ -17157,7 +17171,8 @@
           ],
           "assertions": [
             "Maintainer-approved v0.8.4 operator deferrals retain unrun observations and do not alter later release scope",
-            "Automated and unknown cases cannot be excluded through environment deferrals"
+            "Automated and unknown cases cannot be excluded through environment deferrals",
+            "Separately approved v0.8.5 and v0.8.6 manual scopes each require Mac managed Prism/server observations for both products; missing records block, supplied failures remain failures, and the scope never rolls forward"
           ]
         }
       ],

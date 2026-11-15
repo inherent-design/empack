@@ -153,12 +153,18 @@ class CandidatePolicy(unittest.TestCase):
                 self.evaluate()
 
     def test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
+        self._assert_manual_scope_requires_mac_consumers("0.8.5-beta", "v085_manual_scope", "2026-11-11")
+
+    def test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
+        self._assert_manual_scope_requires_mac_consumers("0.8.6-beta", "v086_manual_scope", "2026-11-15")
+
+    def _assert_manual_scope_requires_mac_consumers(self, release, key, approved):
         # Synthetic gate mechanics, never a consumer execution record.
         procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
                       "acceptance::server::managed-gui"]
-        scope = dict(approved_on="2026-11-11", reason="Synthetic approved scope fixture",
+        scope = dict(approved_on=approved, reason="Synthetic approved scope fixture",
                      platforms=["macos"], procedures=procedures)
-        self.document["gates"] = dict(v085_manual_scope=scope)
+        self.document["gates"] = {key: scope}
         row = next(row for row in self.document["requirements"] if row["id"] == "UX-001")
         row["evidence_tiers"].append("C")
         for index, identity in enumerate([*procedures, "acceptance::prism::bundled-instance"]):
@@ -174,7 +180,7 @@ class CandidatePolicy(unittest.TestCase):
                     created_at="2026-11-11T22:00:00+00:00", operator=dict(id="synthetic", role="maintainer"),
                     environment=dict(), evidence_scope="Synthetic policy data", procedures_sha256="e" * 64))
 
-        def evaluate(selected=records, version="0.8.5-beta"):
+        def evaluate(selected=records, version=release):
             return evaluate_requirements(self.document, self.classification, self.evidence,
                 REVISION, version, self.package_proofs, acceptance_evidence=selected)
 
@@ -197,14 +203,14 @@ class CandidatePolicy(unittest.TestCase):
         failed = dict(records[0], receipt_sha256="d" * 64, platform="windows",
                       target="x86_64-pc-windows-msvc", status="FAIL")
         self.assertEqual(evaluate([*records, failed])["status"], "FAIL", "out-of-scope failures remain failures")
-        self.assertEqual(evaluate(version="0.8.6-beta")["status"], "BLOCKED", "scope does not roll forward")
+        self.assertEqual(evaluate(version="0.8.6-beta" if release == "0.8.5-beta" else "0.8.7-beta")["status"], "BLOCKED", "scope does not roll forward")
 
         result.update(schema=1, kind="release-candidate-qualification", source_revision=REVISION,
-                      version="0.8.5-beta", archive_evidence_sha256="b" * 64)
+                      version=release, archive_evidence_sha256="b" * 64)
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "candidate.json"
             write_json(path, result)
-            check_qualification(path, sha256(path), REVISION, "0.8.5-beta", "b" * 64, document=self.document)
+            check_qualification(path, sha256(path), REVISION, release, "b" * 64, document=self.document)
             for target in ["automated", "selected-manual"]:
                 changed = copy.deepcopy(result)
                 first = next(row for row in changed["acceptance"]["requirements"] if row["id"] == "UX-001")
@@ -213,22 +219,28 @@ class CandidatePolicy(unittest.TestCase):
                 case.update(required_for_release=False, release_status="DEFERRED")
                 write_json(path, changed)
                 with self.subTest(target=target), self.assertRaisesRegex(ValueError, "required observations"):
-                    check_qualification(path, sha256(path), REVISION, "0.8.5-beta", "b" * 64, document=self.document)
+                    check_qualification(path, sha256(path), REVISION, release, "b" * 64, document=self.document)
 
     def test_v085_manual_scope_refuses_expansion_or_automated_exclusions(self):
-        scope = dict(approved_on="2026-11-11", reason="Synthetic negative fixture", platforms=["macos"],
+        self._assert_manual_scope_refuses_expansion("0.8.5-beta", "v085_manual_scope", "2026-11-11")
+
+    def test_v086_manual_scope_refuses_expansion_or_automated_exclusions(self):
+        self._assert_manual_scope_refuses_expansion("0.8.6-beta", "v086_manual_scope", "2026-11-15")
+
+    def _assert_manual_scope_refuses_expansion(self, release, key, approved):
+        scope = dict(approved_on=approved, reason="Synthetic negative fixture", platforms=["macos"],
                      procedures=["acceptance::prism::reference-instance", "acceptance::server::managed-console",
                                  "acceptance::server::managed-gui"])
         for change in [dict(platforms=[]), dict(procedures=["fixture::command"]),
                        dict(procedures=[]), dict(approved_on="2026-11-10"), dict(cases=["UX-001.fixture"])]:
-            self.document["gates"] = dict(v085_manual_scope=dict(scope, **change))
-            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "v0.8.5 manual scope"):
-                self.evaluate("0.8.5-beta")
+            self.document["gates"] = {key: dict(scope, **change)}
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, f"v{release.removesuffix('-beta')} manual scope"):
+                self.evaluate(release)
         from verification.acceptance import procedures
         from verification.requirements import release_deferrals, release_manual_scope, release_variant_required
         document = json.loads((SCRIPTS.parent / "tests/verification/requirements.json").read_text())
-        deferred = release_deferrals(document, "0.8.5-beta")
-        manual = release_manual_scope(document, "0.8.5-beta")
+        deferred = release_deferrals(document, release)
+        manual = release_manual_scope(document, release)
         operators = procedures()
         for row in document["requirements"]:
             for case in row["cases"]:

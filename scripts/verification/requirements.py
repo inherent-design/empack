@@ -71,24 +71,29 @@ def validate_requirements(document):
 
 
 def release_manual_scope(document, version):
-    """Fixed maintainer-approved v0.8.5 technical consumer scope, not a waiver."""
-    scope = document.get("gates", {}).get("v085_manual_scope")
-    if scope is None:
-        return None
+    """Fixed, separately approved technical consumer scopes, not a rolling waiver."""
     selected = {"acceptance::prism::reference-instance", "acceptance::server::managed-console",
                 "acceptance::server::managed-gui"}
-    if (not isinstance(scope, dict)
-            or set(scope) != {"approved_on", "reason", "platforms", "procedures"}
-            or scope["approved_on"] != "2026-11-11" or scope["platforms"] != ["macos"]
-            or not isinstance(scope["reason"], str) or not scope["reason"].strip()
-            or not isinstance(scope["procedures"], list)
-            or not all(isinstance(value, str) for value in scope["procedures"])
-            or len(scope["procedures"]) != len(selected) or set(scope["procedures"]) != selected):
-        raise ValueError("Invalid maintainer-approved v0.8.5 manual scope")
-    operators = procedures()
-    if any(identity not in operators or operators[identity]["boundary"] != "C" for identity in selected):
-        raise ValueError("Manual scope must retain the selected consumer procedures")
-    return scope if version == "0.8.5-beta" else None
+    chosen = None
+    for release, key, approved in [("0.8.5-beta", "v085_manual_scope", "2026-11-11"),
+                                   ("0.8.6-beta", "v086_manual_scope", "2026-11-15")]:
+        scope = document.get("gates", {}).get(key)
+        if scope is None:
+            continue
+        if (not isinstance(scope, dict)
+                or set(scope) != {"approved_on", "reason", "platforms", "procedures"}
+                or scope["approved_on"] != approved or scope["platforms"] != ["macos"]
+                or not isinstance(scope["reason"], str) or not scope["reason"].strip()
+                or not isinstance(scope["procedures"], list)
+                or not all(isinstance(value, str) for value in scope["procedures"])
+                or len(scope["procedures"]) != len(selected) or set(scope["procedures"]) != selected):
+            raise ValueError(f"Invalid maintainer-approved v{release.removesuffix('-beta')} manual scope")
+        operators = procedures()
+        if any(identity not in operators or operators[identity]["boundary"] != "C" for identity in selected):
+            raise ValueError("Manual scope must retain the selected consumer procedures")
+        if version == release:
+            chosen = scope
+    return chosen
 
 
 def release_deferrals(document, version):
@@ -97,7 +102,7 @@ def release_deferrals(document, version):
     Only named operator procedures may be deferred. Native, package, parser,
     tooling and other automated obligations cannot be excluded through this field.
     Other release versions retain their full declared obligations. The separate
-    v0.8.5 policy additionally limits selected consumer variants to macOS.
+    v0.8.5 and v0.8.6 policies additionally limit selected consumer variants to macOS.
     """
     scope = document.get("gates", {}).get("v084_environment_deferrals")
     if scope is not None and (not isinstance(scope, dict) or set(scope) != {"approved_on", "reason", "cases"}
