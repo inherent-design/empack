@@ -10,7 +10,7 @@ pub(super) async fn update(
     session: &dyn Session,
     allow_offline: bool,
     server: bool,
-) -> Result<Option<String>> {
+) -> Result<Option<(String, bool)>> {
     update_with_transport(
         session,
         allow_offline,
@@ -24,7 +24,7 @@ async fn update_with_transport(
     allow_offline: bool,
     server: bool,
     transport: crate::engine::acquisition::HttpAcquisition,
-) -> Result<Option<String>> {
+) -> Result<Option<(String, bool)>> {
     let (invocation, root) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
     // A fallback is meaningful only for an existing completed installation. Launch later
@@ -54,7 +54,7 @@ async fn update_with_transport(
                 "Channel unavailable ({error:#}); checking completed release {} for offline launch",
                 record.release
             ));
-            return Ok(Some(record.release.clone()));
+            return Ok(Some((record.release.clone(), false)));
         }
     };
     let version = semver::Version::parse(crate::engine::compatibility_version())?;
@@ -109,7 +109,7 @@ async fn update_with_transport(
             });
         let expected = proof.release().id().to_owned();
         let proof = proof.map(std::sync::Arc::new);
-        let request = InstallInstanceRequest {
+        let request = || InstallInstanceRequest {
             require_subscription: false,
             conflicts: Vec::new(),
             action: InstanceAction::Apply,
@@ -121,18 +121,32 @@ async fn update_with_transport(
             local_files: BTreeMap::new(),
             assets: None,
         };
-        let Some(prepared) = require_instance_ready(
-            session, &engine, cancellable(session, engine.prepare(root, request)).await?, ApplicationMode::Apply, false
-        ).await? else { return Ok(None); };
-        if !approve(session, "Prelaunch update")? {
-            return Ok(None);
+        let mut retry = repreparation::Repreparation::capture(session, &root, record.layout == InstanceLayout::Prism).await?;
+        loop {
+            session.process().check_cancelled()?;
+            let attempt = async {
+                let Some(prepared) = require_instance_ready(
+                    session, &engine, cancellable(session, engine.prepare(root.clone(), request())).await?, ApplicationMode::Apply, false
+                ).await? else { return Ok(false); };
+                let OperationPreview::Instance(view) = prepared.view() else { anyhow::bail!("Unexpected instance preview"); };
+                retry.bind(session, &root, &view.record).await?;
+                retry.check_downloads(&view.downloads)?;
+                if !approve(session, "Prelaunch update")? {
+                    return Ok(false);
+                }
+                execute_approved(session, &engine, prepared, "Prelaunch update", |receipt| {
+                    let ExecutionReceipt::Instance(receipt) = receipt else { anyhow::bail!("Unexpected instance receipt"); };
+                    ensure!(receipt.record.release == expected, "Prelaunch installed another release");
+                    Ok(text::completed(&receipt.record, &receipt.release_version))
+                }).await?;
+                Ok(true)
+            }.await;
+            match attempt {
+                Err(error) if retry.retry(session, &root, &error).await? => continue,
+                Err(error) => return Err(retry.explain(error)),
+                Ok(applied) => return Ok(applied.then(|| (expected, retry.used()))),
+            }
         }
-        execute_approved(session, &engine, prepared, "Prelaunch update", |receipt| {
-            let ExecutionReceipt::Instance(receipt) = receipt else { anyhow::bail!("Unexpected instance receipt"); };
-            ensure!(receipt.record.release == expected, "Prelaunch installed another release");
-            Ok(text::completed(&receipt.record, &receipt.release_version))
-        }).await?;
-        Ok(Some(expected))
     }.await;
     engine.shutdown().await;
     result

@@ -237,6 +237,25 @@ impl ReadOnlyPrismProfile {
         self.identity.verify(bytes.as_deref().unwrap_or_default())
     }
 }
+
+/// Bind the installed selection and publisher enrollment across a host's fresh preparation.
+/// The launcher-owned component file is checked separately by each prepared operation.
+pub(crate) fn prism_selection_identity(
+    selected_root: &Path,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<[u8; 32]> {
+    let root = ProjectReadRoot::open(selected_root)?;
+    root.capture(
+        &[
+            ProjectLayout::path(&ManagedPath::InstanceRecord)?,
+            ProjectLayout::path(&ManagedPath::InstanceSubscription)?,
+        ],
+        document_limits(limits),
+        cancel,
+    )?
+    .fingerprint()
+}
 impl PreparedInstance {
     pub(super) fn publish(
         self,

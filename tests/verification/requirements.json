@@ -12942,6 +12942,7 @@
       "required_assertions": "Literal args/cwd; no remote executable authority; runtime lease blocks cooperating mutation; stale release/preparation rejected.",
       "required_work": "Real child and concurrent update; paths with spaces/non-ASCII; shell metacharacters treated literally.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "N",
@@ -13108,6 +13109,71 @@
             "Empty arguments, quotes, dollar/percent expansions, command substitutions, backticks, semicolons, leading-option spellings, newline and trailing backslash remain literal; no sentinel shell command executes",
             "A live owned child prevents update, repair, artifact cleanup and duplicate launch until explicit retirement; installation/player/ownership bytes and portable attributes remain intact while only exact verified acquisition may be retained",
             "This real native child is a compiler-bound fixture, not Java or a consumer; final actual-runtime acceptance remains separately required"
+          ]
+        },
+        {
+          "id": "UX-072.prism-fresh-preparation-policy",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::repreparation::tests::profile_repreparation_is_bounded_and_cancellation_is_terminal",
+            "empack-lib::application::engine_host::instance::repreparation::tests::repreparation_binds_selection_but_leaves_launcher_and_player_files_independent",
+            "empack-tests::prism_repreparation::prism_launch_reprepares_once_without_replaying_runtime_or_changing_selection",
+            "empack-tests::prism_repreparation::prism_ensure_reprepares_once_without_replaying_publication",
+            "empack-lib::application::engine_host::instance::prelaunch::tests::prism_prelaunch_reuses_selected_offer_and_shares_one_repreparation_with_launch"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only a typed valid profile change before effects permits one fresh plan; malformed or incompatible profiles, changed enrollment/selection, cancellation, repeated writes and runtime failure retain refusal/outcome.",
+            "Controlled approval-boundary saves exercise ensure and launch with real native publication/process ownership; runtime starts exactly once and player seed bytes remain unchanged. Subscribed prelaunch fetches the selected offer once and shares its one retry with the wrapper; a retry cannot obtain another download allowance."
+          ]
+        },
+        {
+          "id": "UX-072.prism-cli-first-save",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::prism_repreparation::cli_prism_first_save_reprepares_and_starts_runtime_once"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected native executable under a real terminal prepares again after a controlled Prism profile save, reports recovery without a false terminal error, and starts exactly one fixture runtime.",
+            "This controlled executable fixture does not substitute for actual fresh Prism import/first-launch acceptance."
+          ]
+        },
+        {
+          "id": "UX-072.prism-profile-classification",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::repreparation::tests::only_valid_profile_changes_before_effects_are_eligible",
+            "empack-lib::engine::prism::tests::fresh_preparation_reason_requires_a_valid_unchanged_locked_runtime"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Profile parsing emits the fresh-preparation reason only after validating the selected runtime; cached metadata is tolerated while malformed or changed required components remain errors.",
+            "Constructed outcome categories establish retry eligibility only before effects and refuse recovery, uncertainty, interruption, and a matching error string without the typed cause; this unit does not execute a process or publication."
           ]
         }
       ],

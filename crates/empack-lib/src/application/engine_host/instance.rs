@@ -12,6 +12,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 mod prelaunch;
+mod repreparation;
 mod text;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
@@ -242,60 +243,84 @@ async fn install_with_transport(
         .await?;
         ReleaseInput::Snapshot(Box::new(decoded))
     };
-    let release = match &input {
-        ReleaseInput::Snapshot(decoded) => SelectedRelease::Snapshot(SelectedSnapshot::select(
-            decoded.bytes(),
-            &sha256.context("Snapshot requires an expected digest")?,
-            &version,
-        )?),
-        ReleaseInput::Subscribed(proof) => {
-            SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
-        }
+    // Retain the exact snapshot or subscribed proof; a retry never reselects an offer.
+    let request = || -> Result<InstallInstanceRequest> {
+        let release = match &input {
+            ReleaseInput::Snapshot(decoded) => SelectedRelease::Snapshot(SelectedSnapshot::select(
+                decoded.bytes(),
+                sha256
+                    .as_deref()
+                    .context("Snapshot requires an expected digest")?,
+                &version,
+            )?),
+            ReleaseInput::Subscribed(proof) => {
+                SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
+            }
+        };
+        Ok(InstallInstanceRequest {
+            require_subscription,
+            conflicts: conflicts.clone(),
+            action: if ensure_current {
+                crate::engine::instance::InstanceAction::Ensure
+            } else {
+                crate::engine::instance::InstanceAction::Apply
+            },
+            layout: Some(layout),
+            release,
+            side,
+            choices: choices.clone(),
+            supplied: BTreeMap::new(),
+            local_files: local_files.clone(),
+            assets: assets.clone(),
+        })
     };
-    let request = InstallInstanceRequest {
-        require_subscription,
-        conflicts,
-        action: if ensure_current {
-            crate::engine::instance::InstanceAction::Ensure
-        } else {
-            crate::engine::instance::InstanceAction::Apply
-        },
-        layout: Some(layout),
-        release,
-        side,
-        choices,
-        supplied: BTreeMap::new(),
-        local_files,
-        assets,
-    };
+    let mut retry =
+        repreparation::Repreparation::capture(session, &root, layout == InstanceLayout::Prism)
+            .await?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let Some(prepared) = require_instance_ready(
-            session,
-            &engine,
-            cancellable(session, engine.prepare(root, request)).await?,
-            mode,
-            show_selected_identity,
-        )
-        .await?
-        else {
-            return Ok(());
-        };
-        apply_in_mode(
-            session,
-            &engine,
-            prepared,
-            "Instance content",
-            mode,
-            false,
-            |receipt| {
-                let ExecutionReceipt::Instance(receipt) = receipt else {
-                    anyhow::bail!("Unexpected instance receipt");
+        loop {
+            session.process().check_cancelled()?;
+            let attempt = async {
+                let Some(prepared) = require_instance_ready(
+                    session,
+                    &engine,
+                    cancellable(session, engine.prepare(root.clone(), request()?)).await?,
+                    mode,
+                    show_selected_identity,
+                )
+                .await?
+                else {
+                    return Ok(());
                 };
-                Ok(text::completed(&receipt.record, &receipt.release_version))
-            },
-        )
-        .await
+                let OperationPreview::Instance(view) = prepared.view() else {
+                    anyhow::bail!("Unexpected instance preview");
+                };
+                retry.bind(session, &root, &view.record).await?;
+                retry.check_downloads(&view.downloads)?;
+                apply_in_mode(
+                    session,
+                    &engine,
+                    prepared,
+                    "Instance content",
+                    mode,
+                    false,
+                    |receipt| {
+                        let ExecutionReceipt::Instance(receipt) = receipt else {
+                            anyhow::bail!("Unexpected instance receipt");
+                        };
+                        Ok(text::completed(&receipt.record, &receipt.release_version))
+                    },
+                )
+                .await
+            }
+            .await;
+            match attempt {
+                Err(error) if retry.retry(session, &root, &error).await? => continue,
+                Err(error) => return Err(retry.explain(error)),
+                Ok(()) => return Ok(()),
+            }
+        }
     }
     .await;
     engine.shutdown().await;
@@ -334,15 +359,25 @@ pub(in crate::application) async fn dispatch(
             check_updates,
             allow_offline,
         } => {
-            let expected_release = if check_updates {
-                let Some(release) = prelaunch::update(session, allow_offline, server).await? else {
+            let (expected_release, reprepared) = if check_updates {
+                let Some((release, used)) =
+                    prelaunch::update(session, allow_offline, server).await?
+                else {
                     return Ok(());
                 };
-                Some(release)
+                (Some(release), used)
             } else {
-                None
+                (None, false)
             };
-            launch(session, command, expected_release, server, java_runtime).await
+            launch(
+                session,
+                command,
+                expected_release,
+                server,
+                java_runtime,
+                reprepared,
+            )
+            .await
         }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
@@ -827,6 +862,7 @@ async fn launch(
     expected_release: Option<String>,
     server: bool,
     java_runtime: bool,
+    reprepared: bool,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut args = command.into_iter();
@@ -847,41 +883,71 @@ async fn launch(
             .context("Runtime executable was not found on PATH")?;
         absolute(&invocation, Path::new(&found))
     };
+    let installed = inspect(
+        session,
+        root.clone(),
+        None,
+        state_root(session.config().app_config(), &invocation)?,
+    )
+    .await?;
+    let initial = installed.0.clone();
+    let expected_release = Some(expected_release.unwrap_or_else(|| initial.release.clone()));
+    drop(installed);
+    let mut retry = repreparation::Repreparation::capture(
+        session,
+        &root,
+        initial.layout == InstanceLayout::Prism,
+    )
+    .await?;
+    retry.inherit_used(reprepared);
+    retry.bind(session, &root, &initial).await?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let Preparation::Ready(prepared) = cancellable(
-            session,
-            engine.prepare(
-                root,
-                crate::engine::api::LaunchInstanceRequest {
-                    server,
-                    java_runtime,
-                    expected_release,
-                    program,
-                    arguments: args.collect(),
-                },
-            ),
-        )
-        .await?
-        else {
-            anyhow::bail!("Instance launch requires input")
-        };
-        let OperationPreview::Launch(view) = prepared.view() else {
-            anyhow::bail!("Unexpected launch preview")
-        };
-        session.display().status().info(&format!(
-            "Run {} against completed release {}",
-            view.program.display(),
-            view.record.release
-        ));
-        apply(session, &engine, prepared, "Instance launch", |receipt| {
-            let ExecutionReceipt::Launch(receipt) = receipt else {
-                anyhow::bail!("Unexpected runtime receipt")
-            };
-            require_runtime_success(receipt.status)?;
-            Ok(format!("Runtime completed for release {}", receipt.release))
-        })
-        .await
+        loop {
+            session.process().check_cancelled()?;
+            let attempt = async {
+                let Preparation::Ready(prepared) = cancellable(
+                    session,
+                    engine.prepare(
+                        root.clone(),
+                        crate::engine::api::LaunchInstanceRequest {
+                            server,
+                            java_runtime,
+                            expected_release: expected_release.clone(),
+                            program: program.clone(),
+                            arguments: args.clone().collect(),
+                        },
+                    ),
+                )
+                .await?
+                else {
+                    anyhow::bail!("Instance launch requires input")
+                };
+                let OperationPreview::Launch(view) = prepared.view() else {
+                    anyhow::bail!("Unexpected launch preview")
+                };
+                retry.bind(session, &root, &view.record).await?;
+                session.display().status().info(&format!(
+                    "Run {} against completed release {}",
+                    view.program.display(),
+                    view.record.release
+                ));
+                apply(session, &engine, prepared, "Instance launch", |receipt| {
+                    let ExecutionReceipt::Launch(receipt) = receipt else {
+                        anyhow::bail!("Unexpected runtime receipt")
+                    };
+                    require_runtime_success(receipt.status)?;
+                    Ok(format!("Runtime completed for release {}", receipt.release))
+                })
+                .await
+            }
+            .await;
+            match attempt {
+                Err(error) if retry.retry(session, &root, &error).await? => continue,
+                Err(error) => return Err(retry.explain(error)),
+                Ok(()) => return Ok(()),
+            }
+        }
     }
     .await;
     engine.shutdown().await;
