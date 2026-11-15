@@ -154,7 +154,12 @@ async fn verify_live_distribution(
             version.status.success(),
             "Fixture engine version probe failed"
         );
-        if String::from_utf8_lossy(&version.stdout).trim() == "empack 0.0.0-dev" {
+        let version = std::str::from_utf8(&version.stdout)?
+            .trim()
+            .strip_prefix("empack ")
+            .context("Fixture engine omitted its version")?;
+        semver::Version::parse(version)?;
+        if version == "0.0.0-dev" {
             // Ordinary PR products are explicitly untagged. Only this local
             // fixture opts into them; stamped candidates use unchanged scripts
             // and the matching distribution-local engine above.
@@ -179,6 +184,21 @@ async fn verify_live_distribution(
                     "Managed fixture script omits bootstrap delegation"
                 );
                 fs::write(path, altered)?;
+            }
+        } else {
+            // The library driver is compiled separately from the selected
+            // release product. Bind only its fixture invocation version; keep
+            // the generated scripts, arguments and release descriptor intact.
+            for name in ["prepare.json", "launch.json"] {
+                let path = tools.join(name);
+                let mut invocation: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+                semver::Version::parse(
+                    invocation["engine_version"]
+                        .as_str()
+                        .context("Fixture invocation omitted its engine version")?,
+                )?;
+                invocation["engine_version"] = serde_json::json!(version);
+                fs::write(path, serde_json::to_vec(&invocation)?)?;
             }
         }
         command
@@ -213,6 +233,14 @@ async fn verify_live_distribution(
             installed.error_output()
         );
         anyhow::ensure!(
+            !installed
+                .stderr
+                .contains("distribution-local engine refused")
+                && !installed.stderr.contains("Finding empack "),
+            "Managed fixture did not use the supplied candidate: {}",
+            installed.error_output()
+        );
+        anyhow::ensure!(
             root.path().join(".empack/instance.json").is_file(),
             "Installer omitted completed ownership"
         );
@@ -238,6 +266,14 @@ async fn verify_live_distribution(
         "Actual server launcher failed: {}",
         output.error_output()
     );
+    if managed {
+        anyhow::ensure!(
+            !output.stderr.contains("distribution-local engine refused")
+                && !output.stderr.contains("Finding empack "),
+            "Managed launcher did not use the supplied candidate: {}",
+            output.error_output()
+        );
+    }
     anyhow::ensure!(
         fs::read(root.path().join("game/config/runtime-check.txt"))? == b"current content",
         "Distribution omitted current game content"

@@ -196,18 +196,28 @@ class AcceptanceAssets(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_github_client_uses_only_get_requests(self):
-        github = GitHub()
-        def run(command, **kwargs):
-            self.assertEqual(command[:4], ["gh", "api", "--method", "GET"])
-            self.assertNotIn("input", kwargs)
-            if "stdout" in kwargs:
-                kwargs["stdout"].write(b"synthetic bytes")
-                return SimpleNamespace(returncode=0)
-            return SimpleNamespace(stdout="[[]]")
-        with patch("verification.acceptance_assets.subprocess.run", side_effect=run) as calls:
-            self.assertEqual(github.pages("repos/owner/repo/releases"), [])
-            github.download("repos/owner/repo/releases/assets/1", self.root / "download")
-        self.assertEqual(calls.call_count, 2)
+        for guarded in (False, True):
+            with self.subTest(escape_guard=guarded):
+                github = GitHub()
+                raw = b"\x89PNG\r\n\x1b[31mretained terminal observation\x1b[0m\n"
+                def run(command, **kwargs):
+                    self.assertNotIn("input", kwargs)
+                    if command == ["gh", "api", "--help"]:
+                        return SimpleNamespace(stdout="--allow-escape-sequences" if guarded else "")
+                    self.assertEqual(command[:4], ["gh", "api", "--method", "GET"])
+                    if "stdout" in kwargs:
+                        self.assertEqual("--allow-escape-sequences" in command, guarded)
+                        kwargs["stdout"].write(raw)
+                        return SimpleNamespace(returncode=0)
+                    self.assertNotIn("--allow-escape-sequences", command)
+                    return SimpleNamespace(stdout="[[]]")
+                with patch("verification.acceptance_assets.subprocess.run", side_effect=run) as calls:
+                    self.assertEqual(github.pages("repos/owner/repo/releases"), [])
+                    for number in (1, 2):
+                        target = self.root / f"download-{guarded}-{number}"
+                        github.download(f"repos/owner/repo/releases/assets/{number}", target)
+                        self.assertEqual(target.read_bytes(), raw)
+                self.assertEqual(calls.call_count, 4, "one capability check per client")
 
     def test_command_arguments_wire_both_operations_without_product_execution(self):
         spec = importlib.util.spec_from_file_location("acceptance_command",

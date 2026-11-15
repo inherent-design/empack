@@ -68,6 +68,9 @@ def stage(paths, output, revision, version, archive_digest):
 
 class GitHub:
     """Every request is GET; this helper cannot create, edit or publish a release."""
+    def __init__(self):
+        self._binary_flags = None
+
     def pages(self, endpoint):
         result = subprocess.run(["gh", "api", "--method", "GET", "--paginate", "--slurp", endpoint],
                                 check=True, capture_output=True, text=True, timeout=120)
@@ -78,8 +81,16 @@ class GitHub:
         return [row for page in pages for row in page]
 
     def download(self, endpoint, path):
+        if self._binary_flags is None:
+            help_result = subprocess.run(["gh", "api", "--help"], check=True,
+                                         capture_output=True, text=True, timeout=30)
+            self._binary_flags = (["--allow-escape-sequences"]
+                                  if "--allow-escape-sequences" in help_result.stdout else [])
         with path.open("xb") as stream:
-            subprocess.run(["gh", "api", "--method", "GET", "--header", "Accept: application/octet-stream", endpoint],
+            # Binary evidence can include terminal controls. Preserve those bytes
+            # only in this file sink; metadata and terminal output keep gh's guard.
+            subprocess.run(["gh", "api", "--method", "GET", "--header", "Accept: application/octet-stream",
+                            *self._binary_flags, endpoint],
                            check=True, stdout=stream, timeout=120)
 
 
