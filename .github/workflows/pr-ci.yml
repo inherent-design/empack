@@ -60,7 +60,7 @@ jobs:
           path: bootstrap/target
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "0.13.7"
           cache-dependency-glob: scripts/check-authoring-schema.py
