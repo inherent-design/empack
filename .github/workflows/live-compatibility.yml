@@ -30,16 +30,16 @@ jobs:
         id: java8
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '25'
       - uses: actions/setup-java@v6
         id: java17
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '25'
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
       - name: Check pinned corpus and official services
         env:
           EMPACK_TEST_JAVA8_HOME: ${{ steps.java8.outputs.path }}
