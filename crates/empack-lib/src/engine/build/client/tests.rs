@@ -727,10 +727,7 @@ fn managed_prism_consumer_format_fixtures_use_shared_validator() {
             .replace("@WRAPPER@", "wrapper");
         let result = verify_managed_commands(configuration.as_bytes(), generated);
         if let Some(diagnostic) = fixture["diagnostic"].as_str() {
-            let error = result
-                .as_ref()
-                .err()
-                .expect("invalid managed configuration");
+            let error = result.as_ref().expect_err("invalid managed configuration");
             assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
         }
         assert_eq!(
