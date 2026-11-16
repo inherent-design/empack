@@ -15,6 +15,7 @@ class Suite:
     cases: tuple[str, ...] = ()
     required_env: tuple[str, ...] = ()
     optional_env: tuple[str, ...] = ()
+    integration_only: bool = False
 
     def inapplicable_reason(self, target):
         if self.unix_only and target == "x86_64-pc-windows-msvc":
@@ -83,7 +84,7 @@ SUITES = {
         "curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes",
         "live_cli_curseforge_selectors_converge"),
         optional_env=("EMPACK_KEY_CURSEFORGE",)),
-    "server-cli": Suite(("live_server_cli",), ignored=True, java=True),
+    "server-cli": Suite(("live_server_cli",), ignored=True, java=True, integration_only=True),
     "live-runtime": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=3600,
                           required_env=("EMPACK_TEST_JAVA8_HOME", "EMPACK_TEST_JAVA17_HOME")),
     "runtime-current": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=1800,
@@ -102,9 +103,19 @@ def nextest_command(action, suite, config, test_features):
     """One reviewed discovery/execution selection, including its feature graph."""
     if action not in {"list", "run"} or test_features not in TEST_FEATURES:
         raise ValueError("Unknown test action or feature graph")
+    compilation = ["--workspace"]
+    if suite.integration_only:
+        if not suite.binaries or suite.excluded_binaries:
+            raise ValueError("Integration-only compilation needs explicit test binaries")
+        # Selecting empack-lib preserves its workspace feature activation, even
+        # though only integration targets are compiled. Private crash-driver
+        # suites retain workspace discovery, including the library test binary.
+        compilation = ["-p", "empack-tests", "-p", "empack-lib"]
+        for binary in suite.binaries:
+            compilation += ["--test", binary]
     command = ["cargo", "nextest", action, "--config-file", str(config),
                "--user-config-file", "none", "--profile", "verification",
-               "--locked", "--workspace", *TEST_FEATURES[test_features],
+               "--locked", *compilation, *TEST_FEATURES[test_features],
                "-E", suite.filter, "--ignore-default-filter", "--run-ignored",
                "ignored-only" if suite.ignored else "default"]
     if action == "list":

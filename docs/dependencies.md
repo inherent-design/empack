@@ -16,6 +16,8 @@ Update dependencies as a reviewed change to existing behavior. Choose the depend
 
 Read the actual manifests and workflow selections. Some references use tags, floating versions, or distribution packages; record the resolved tools used by a relevant run rather than assuming every input is pinned. Cargo metadata and `cargo tree` help inspect dependencies, but they do not replace the compiler-unit audit of an ordinary product build.
 
+Fixed integration-only compilation must preserve package feature activation as well as test names. The server CLI selection includes `empack-lib` so the expanded graph still enables its optional dependencies. Private crash-driver suites require the compiler-discovered library test binary and retain workspace discovery. After Cargo or Nextest changes, compare complete selected identities and ignored policy, the actual compiled binary/graph, and driver discovery; do not infer equivalence from matching test counts.
+
 Cargo's intermediate build layout is not a stable interface. Use compiler JSON messages and Nextest's inventory to locate compiled units; retain the ordinary product's executable and feature audit when changing the toolchain. CI action upgrades also need input and runner checks: `setup-uv` publishes complete version tags rather than major-only tags, and `setup-python` no longer accepts the removed `pip-install` input.
 
 CI's Java majors are deliberate compatibility targets. Keep the historical bootstrap/runtime jobs on their named major; replacing them all with the newest JDK removes coverage. Renovate disables major changes for these workflow runtime selections. Build-JDK maintenance remains separate, and new runtime majors need matching fixture labels, prerequisites and qualification.

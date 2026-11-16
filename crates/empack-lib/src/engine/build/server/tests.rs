@@ -396,6 +396,78 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
     }
 }
 #[test]
+fn server_template_failures_preserve_captured_inputs_with_prepared_runtime() {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::{distribution::Recipe, model::NonEmpty};
+
+    // No transport/acquisition port is supplied: template rejection must not need
+    // Mojang, a loader service or a previously warmed runtime cache.
+    for recipe in [Recipe::SERVER_REFERENCES, Recipe::SERVER_BUNDLED] {
+        for (name, invalid, diagnostic) in [
+            (
+                "bad.template",
+                b"{{MISSING}}".as_slice(),
+                "Template rendering failed",
+            ),
+            ("bad.template", &[0xff, 0], "Explicit template is not UTF-8"),
+            (
+                "generated.properties",
+                b"duplicate destination",
+                "Two templates produce the same destination",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let external = fixture(root.path());
+            put(
+                root.path(),
+                "templates/server/generated.properties.template",
+                b"name={{NAME}}",
+            );
+            let invalid_path = format!("templates/server/{name}");
+            put(root.path(), &invalid_path, invalid);
+            put(root.path(), "dist/server.zip", b"previous archive");
+            let before: Vec<_> = [
+                "empack.yml",
+                "empack.lock",
+                "templates/server/generated.properties.template",
+                invalid_path.as_str(),
+                "dist/server.zip",
+            ]
+            .into_iter()
+            .map(|name| {
+                let file = root.path().join(name);
+                (
+                    name,
+                    fs::read(&file).unwrap(),
+                    fs::metadata(file).unwrap().permissions(),
+                )
+            })
+            .collect();
+            let result = prepare_build_batch(
+                capture(root.path(), host.path(), "server.zip"),
+                NonEmpty::new(vec![DistributionRequest::Server {
+                    recipe,
+                    artifact: path("server.zip").unwrap(),
+                    options: options(DistributionArchive::Zip),
+                    runtime: Box::new(prepared_fixture()),
+                }])
+                .unwrap(),
+                &external,
+                &Cancellation::default(),
+            );
+            let error = result.err().expect("invalid server template must fail");
+            assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
+            for (name, bytes, permissions) in before {
+                let file = root.path().join(name);
+                assert_eq!(fs::read(&file).unwrap(), bytes, "{name}");
+                assert_eq!(fs::metadata(file).unwrap().permissions(), permissions);
+            }
+        }
+    }
+}
+
+#[test]
 fn wrong_runtime_and_colliding_templates_preserve_previous_distribution() {
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();

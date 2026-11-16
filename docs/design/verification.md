@@ -101,6 +101,8 @@ Also inject disk-full, permission changes, antivirus/in-use-file failures where 
 
 ### Feature and conformance fixtures
 
+Put exhaustive syntax and value cases at the production interpreter. Retain representative public controls for every authorization predicate, meaningful rejection family and preservation rule; prove those controls catch an omitted interpreter call. Run independent consumer checks where interpretation or execution belongs to an external application. Pure rejection tests must not depend on unrelated live acquisition; keep the actual acquisition, archived output and runtime checks separately.
+
 Retain real pack fixtures and cross-platform smoke tests. Compare semantic artifacts rather than trusting archive file size or success logs. Hash verification should be tested with deliberately different bytes served under the same URL/name.
 
 Run both minimum dependency/tool versions and the supported managed toolchain where practical. Record exactly which head/tool digest a live E2E result tested. Coverage percentage is supplemental evidence; it does not establish that every workflow uses the shared contract.

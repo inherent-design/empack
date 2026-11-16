@@ -1,12 +1,14 @@
 # Consumer and human acceptance records
 
-The candidate gate accepts operator-recorded tasks separately from native suites and the headless Prism parser probe. Reading a record does not run the task or independently establish that its description is true. The maintainer reviews the operator's observations and retained files before selecting the record for a gate.
+The candidate gate accepts operator-recorded tasks separately from native suites and the headless Prism parser probe. Reading a record does not run the task or independently establish that its description is true. Review the observations and retained files before selecting the record for a gate; an automated operator can perform the approved procedures.
 
 For v0.8.4-beta, the maintainer has deferred the named operator-only cases in the [release scope registry](../tests/verification/requirements.json). They remain unrun unless actual records establish otherwise, but they do not block this beta. The procedures below remain available for voluntary and later qualification; this scope decision does not grant a pass or alter v0.9 requirements.
 
 For v0.8.5-beta, manual acceptance requires the managed Prism reference workflow and managed server console/GUI workflows on macOS, for both default and telemetry products. Automated Windows/Linux, native, package, parser, tooling and live-service checks remain required. Other manual cases and host variants retain their actual observations, including `NOT_RUN`; the candidate uses only the approved required variants when computing its release result. A supplied failed attempt still blocks qualification. This scope does not roll forward to another release or replace maintainer review of the records.
 
 For v0.8.6-beta, the maintainer separately approved fresh managed Prism reference and managed server console/GUI checks on macOS for default and telemetry, with Codex acting as the delegated maintainer operator. All automated platform gates remain required. Each record reports the actual candidate and observations; this authorization supplies no unperformed pass and does not change later release scope.
+
+For v0.8.7-beta, the maintainer approved the same six Mac checks: managed Prism reference and managed server console/GUI for default and telemetry, with all automated platform gates retained. Perform Prism checks in the host launcher profile using disposable test instances, then remove those instances. Record the actual operator and observations; automated acceptance does not require an additional attribution or approval stage. This approval applies only to this release.
 
 The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 

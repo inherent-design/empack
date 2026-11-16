@@ -716,6 +716,34 @@ fn managed_prism_templates_preserve_unrelated_custom_settings() {
 }
 
 #[test]
+fn managed_prism_consumer_format_fixtures_use_shared_validator() {
+    let generated = b"[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=wrapper\n";
+    let fixtures: Vec<Value> = serde_json::from_str(include_str!("fixtures.json")).unwrap();
+    for fixture in fixtures {
+        let configuration = fixture["configuration"]
+            .as_str()
+            .unwrap()
+            .replace("@PREPARE@", "prepare")
+            .replace("@WRAPPER@", "wrapper");
+        let result = verify_managed_commands(configuration.as_bytes(), generated);
+        if let Some(diagnostic) = fixture["diagnostic"].as_str() {
+            let error = result
+                .as_ref()
+                .err()
+                .expect("invalid managed configuration");
+            assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
+        }
+        assert_eq!(
+            result.is_ok(),
+            fixture["accepted"].as_bool().unwrap(),
+            "{}: {:?}",
+            fixture["name"],
+            result.err()
+        );
+    }
+}
+
+#[test]
 fn managed_prism_consumer_format_fixtures_use_public_preparation() {
     use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
     use empack_core::model::NonEmpty;
@@ -729,7 +757,29 @@ fn managed_prism_consumer_format_fixtures_use_public_preparation() {
             .with_update_authority(UpdateAuthority::Empack)
             .unwrap(),
     ] {
-        for fixture_case in &fixtures {
+        // Exhaustive syntax is checked at the production validator above and by the
+        // pinned consumer probe. Here each managed predicate must actually invoke it,
+        // retain accepted customization and preserve inputs on every rejection family.
+        for name in [
+            "supported-1.2",
+            "supported-1.3",
+            "legacy-no-version",
+            "unsupported-'2.0'",
+            "duplicate-version",
+            "misplaced-version",
+            "encoded-WrapperCommand",
+            "unterminated-value",
+            "multiline-value",
+            "hash-quote-1.2",
+            "hash-continuation-1.3",
+            "nbsp-key-prefix-1.2",
+            "bare-cr-comment-1.3",
+            "unicode-display-value-1.3",
+        ] {
+            let fixture_case = fixtures
+                .iter()
+                .find(|case| case["name"] == name)
+                .expect("representative shared fixture must exist");
             let root = tempfile::tempdir().unwrap();
             let host = tempfile::tempdir().unwrap();
             let external = fixture(root.path());
