@@ -158,6 +158,9 @@ class CandidatePolicy(unittest.TestCase):
     def test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
         self._assert_manual_scope_requires_mac_consumers("0.8.6-beta", "v086_manual_scope", "2026-11-15")
 
+    def test_v087_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
+        self._assert_manual_scope_requires_mac_consumers("0.8.7-beta", "v087_manual_scope", "2026-11-15")
+
     def _assert_manual_scope_requires_mac_consumers(self, release, key, approved):
         # Synthetic gate mechanics, never a consumer execution record.
         procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
@@ -203,7 +206,7 @@ class CandidatePolicy(unittest.TestCase):
         failed = dict(records[0], receipt_sha256="d" * 64, platform="windows",
                       target="x86_64-pc-windows-msvc", status="FAIL")
         self.assertEqual(evaluate([*records, failed])["status"], "FAIL", "out-of-scope failures remain failures")
-        self.assertEqual(evaluate(version="0.8.6-beta" if release == "0.8.5-beta" else "0.8.7-beta")["status"], "BLOCKED", "scope does not roll forward")
+        self.assertEqual(evaluate(version=f"0.8.{int(release.split('.')[2].split('-')[0]) + 1}-beta")["status"], "BLOCKED", "scope does not roll forward")
 
         result.update(schema=1, kind="release-candidate-qualification", source_revision=REVISION,
                       version=release, archive_evidence_sha256="b" * 64)
@@ -226,6 +229,9 @@ class CandidatePolicy(unittest.TestCase):
 
     def test_v086_manual_scope_refuses_expansion_or_automated_exclusions(self):
         self._assert_manual_scope_refuses_expansion("0.8.6-beta", "v086_manual_scope", "2026-11-15")
+
+    def test_v087_manual_scope_refuses_expansion_or_automated_exclusions(self):
+        self._assert_manual_scope_refuses_expansion("0.8.7-beta", "v087_manual_scope", "2026-11-15")
 
     def _assert_manual_scope_refuses_expansion(self, release, key, approved):
         scope = dict(approved_on=approved, reason="Synthetic negative fixture", platforms=["macos"],
@@ -417,7 +423,8 @@ class CandidateCommand(unittest.TestCase):
         result = json.loads(output.read_text())
         row = next(r for r in result["acceptance"]["requirements"] if r["id"] == "UX-053")
         self.assertEqual(row["status"], "NOT_RUN")
-        self.assertEqual(row["cases"][0]["status"], "PASS")
+        parser_case = next(case for case in row["cases"] if case["id"] == "UX-053.prism-parser")
+        self.assertEqual(parser_case["status"], "PASS")
         self.assertFalse(result["qualification"])
         self.assertEqual(result["consumer_evidence"][0]["receipt_sha256"], sha256(parser))
         data["fixtures"][0]["consumer"]["wrapper"] = "wrong wrapper"

@@ -76,7 +76,8 @@ def release_manual_scope(document, version):
                 "acceptance::server::managed-gui"}
     chosen = None
     for release, key, approved in [("0.8.5-beta", "v085_manual_scope", "2026-11-11"),
-                                   ("0.8.6-beta", "v086_manual_scope", "2026-11-15")]:
+                                   ("0.8.6-beta", "v086_manual_scope", "2026-11-15"),
+                                   ("0.8.7-beta", "v087_manual_scope", "2026-11-15")]:
         scope = document.get("gates", {}).get(key)
         if scope is None:
             continue
@@ -101,8 +102,9 @@ def release_deferrals(document, version):
 
     Only named operator procedures may be deferred. Native, package, parser,
     tooling and other automated obligations cannot be excluded through this field.
-    Other release versions retain their full declared obligations. The separate
-    v0.8.5 and v0.8.6 policies additionally limit selected consumer variants to macOS.
+    Other release versions retain their full declared obligations. Separately
+    approved release policies limit selected consumer variants to macOS without
+    excluding automated obligations.
     """
     scope = document.get("gates", {}).get("v084_environment_deferrals")
     if scope is not None and (not isinstance(scope, dict) or set(scope) != {"approved_on", "reason", "cases"}

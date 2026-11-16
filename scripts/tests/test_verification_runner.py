@@ -11,6 +11,23 @@ from verification.process import redact, run
 
 
 class SuiteEvidence(unittest.TestCase):
+    def test_server_compilation_preserves_graph_selection_and_private_driver_suites(self):
+        from verification.suites import SUITES, TEST_FEATURES, Suite, nextest_command
+        for graph, features in TEST_FEATURES.items():
+            for action in ("list", "run"):
+                command = nextest_command(action, SUITES["server-cli"], "fixture.toml", graph)
+                packages = [command[i + 1] for i, value in enumerate(command) if value == "-p"]
+                targets = [command[i + 1] for i, value in enumerate(command) if value == "--test"]
+                self.assertEqual(packages, ["empack-tests", "empack-lib"])
+                self.assertEqual(targets, ["live_server_cli"])
+                self.assertTrue(all(value in command for value in features))
+                for name in ("cli", "candidate-native", "deterministic", "native-remount"):
+                    self.assertIn("--workspace", nextest_command(action, SUITES[name], "fixture.toml", graph))
+        for suite in (Suite(integration_only=True),
+                      Suite(("live_server_cli",), excluded_binaries=("other",), integration_only=True)):
+            with self.assertRaisesRegex(ValueError, "explicit test binaries"):
+                nextest_command("list", suite, "fixture.toml", "all")
+
     def inventory(self, ignored=False):
         return {"test-count": 1, "rust-suites": {"pkg::cli": {
             "status": "listed", "binary-name": "cli", "testcases": {

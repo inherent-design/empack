@@ -58,6 +58,12 @@ The fixed `consumer::prism::managed-config-grammar` identity belongs to the Qt p
 
 `mise run coverage` uses [run-coverage.py](../../scripts/run-coverage.py) to obtain the instrumentation environment, build the product, and capture the instrumented Nextest inventory before execution. Its digest is supplied to test processes; product children still receive no fixture controls. Test and report failures remain separate, and a successful report cannot erase a failed test run. Coverage does not produce release qualification receipts.
 
+## Fixture responsibilities
+
+The complete [Prism grammar corpus](../../crates/empack-lib/src/engine/build/client/fixtures.json) runs at the production managed-command validator and the independent supported-consumer probe. Public batch preparation selects rejection families across all three managed recipes and checks accepted customization plus unchanged author documents, templates, attributes and prior artifacts. Separate executable controls protect command wiring. A validator pass does not establish launcher import or startup.
+
+Server template refusals use the real batch preparer with locally prepared runtime and content, without a transport port. Missing values, invalid UTF-8 and duplicate destinations must report their specific cause while preserving captured inputs and the previous artifact. The public archive checks retain all delivery/format inventories, entry-point modes and actual Java properties readback; runtime startup and consumer acceptance remain separate obligations.
+
 ## Package context and candidate qualification
 
 A `P` case can reference an `X` executable test, provided the archive gate has bound that execution to the built and extracted final artifact. Ordinary suite receipts cannot assert this context themselves. `required_targets` enumerates the exact five release triples alongside the required OS and feature variants; missing ARM64 or Intel execution remains `NOT_RUN` independently of other hosts on the same OS.

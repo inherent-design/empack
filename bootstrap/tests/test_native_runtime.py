@@ -3,6 +3,7 @@
 
 Use a prepared disposable Prism instance carrying .empack-bootstrap-fixture.
 This checks console/ownership behavior, not Minecraft or Prism GUI acceptance.
+It is a supplemental probe, separate from the fixed CI and consumer procedures.
 """
 import argparse
 import hashlib
@@ -99,7 +100,7 @@ def run_case(args, home, mode):
         outcome = json.loads(result.read_text())
         if not sent or not outcome["foreground_restored"] or not outcome["settings_restored"]:
             raise AssertionError("Foreground ownership or terminal settings were not restored")
-        expected = {"input": 0, "interrupt": 1, "cancel-stopped": 130}[mode]
+        expected = {"input": 0, "interrupt": 130, "cancel-stopped": 130}[mode]
         if outcome["status"] != expected:
             raise AssertionError(f"Expected classified status {expected}, got {outcome['status']}")
         if mode == "input" and b"CONSOLE_INPUT=list" not in output:

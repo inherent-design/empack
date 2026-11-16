@@ -2,6 +2,7 @@
   "schema": 1,
   "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
   "tests": [
+    {"id": "python::test_verification_runner.SuiteEvidence.test_server_compilation_preserves_graph_selection_and_private_driver_suites", "boundary": "U", "requirements": ["UX-080"]},
     {"id": "python::test_reporting.VerificationReports.test_compact_summary_preserves_gate_truth_under_github_limit", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_suite_worker_isolates_application_state_without_copying_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
@@ -1983,7 +1984,9 @@
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations", "boundary": "U", "requirements": ["UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_requires_mac_consumers_without_erasing_other_observations", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]},
-    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]}
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]}
   ]
 }

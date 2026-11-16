@@ -70,6 +70,18 @@
         "acceptance::server::managed-console",
         "acceptance::server::managed-gui"
       ]
+    },
+    "v087_manual_scope": {
+      "approved_on": "2026-11-15",
+      "reason": "Maintainer approved six fresh Mac checks for default/telemetry with all automated platform gates retained; use host Prism profile with disposable test instances and accept the actual automated observations without a separate attribution approval stage",
+      "platforms": [
+        "macos"
+      ],
+      "procedures": [
+        "acceptance::prism::reference-instance",
+        "acceptance::server::managed-console",
+        "acceptance::server::managed-gui"
+      ]
     }
   },
   "requirements": [
@@ -9146,8 +9158,26 @@
             "Public server builds preserve independent complete inventories, copy/binary templates and exact properties scalar bytes across reference and bundled delivery in ZIP, TAR.GZ and 7z",
             "The real JDK parses the actual archived scalar with Properties.load(InputStream) and Properties.load(Reader), recovering original Unicode code points, literal backslash-u, whitespace, controls and empty values without extra keys",
             "The JDK reports each input's real parent-directory code points matching the original Unicode fixture directory; ASCII relative probe arguments keep that file-access assertion separate from native launcher argument encoding",
-            "A changed scalar control produces different consumer observations; author sources/attributes, previous artifacts and captured Java inputs remain unchanged; this does not establish game startup or GUI acceptance",
-            "Missing values, explicit non-UTF-8 templates and duplicate output paths refuse every server delivery/format before changing author bytes/attributes or any previous archive"
+            "A changed scalar control produces different consumer observations; author sources/attributes, previous artifacts and captured Java inputs remain unchanged; this does not establish game startup or GUI acceptance"
+          ]
+        },
+        {
+          "id": "UX-048.server-template-refusal-with-prepared-runtime",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::server_template_failures_preserve_captured_inputs_with_prepared_runtime"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference and bundled server batch preparation with locally prepared runtime and no transport port rejects missing values, explicit non-UTF-8 templates and duplicate output paths with the specific cause before changing author/lock/template/prior-artifact bytes or permissions; archive codecs remain covered by the six positive public outputs"
           ]
         }
       ],
@@ -9623,7 +9653,7 @@
           ],
           "assertions": [
             "Both server deliveries in ZIP, TAR.GZ and 7z preserve complete independent script/template/runtime/configuration inventories, portable modes, lengths and digests using the pinned vanilla runtime",
-            "All six format/delivery combinations agree on selected contents and required entrypoint attributes; independent JDK properties readback and failed-rebuild preservation do not substitute for real console or GUI acceptance"
+            "All six format/delivery combinations agree on selected contents and required entrypoint attributes; independent JDK properties readback and separately bound template-refusal preservation do not substitute for real console or GUI acceptance"
           ]
         },
         {
@@ -10020,6 +10050,7 @@
       "required_assertions": "Reference snapshot and subscribed recipes retain mandatory hooks; accepted custom syntax matches actual supported consumer parser; standalone flexibility preserved.",
       "required_work": "The shared Prism grammar, supported consumer parser, managed-server replacement/attribute checks and unmodified generated entrypoint execution are bound separately. Execute all required host/product variants; actual consumer import/startup remains mandatory under UX-084 and is not established by these fixtures.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "C"
@@ -10029,6 +10060,25 @@
       "scope": "stable",
       "variant_axes": "",
       "cases": [
+        {
+          "id": "UX-053.shared-grammar-validator",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::managed_prism_consumer_format_fixtures_use_shared_validator"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Every shared grammar fixture exercises the production managed-command validator, including accepted Unicode values and all rejected format, authority, quote, comment, continuation, whitespace and control cases; declared diagnostics match the actual error"
+          ]
+        },
         {
           "id": "UX-053.prism-parser",
           "boundary": "C",
@@ -10062,7 +10112,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The shared configuration fixtures pass or fail through public batch preparation for reference snapshots and both subscribed Prism variants while preserving author/lock/template/prior-artifact bytes; standalone bundled configuration retains its separately supported customization"
+            "Representative shared grammar cases exercise public batch preparation for reference snapshots and both subscribed Prism variants, covering each rejection family and preserving author/lock/template/prior-artifact bytes and attributes; standalone bundled configuration retains its separately supported customization"
           ]
         },
         {
@@ -15380,6 +15430,24 @@
             "Author, previous-artifact, world and host-neighbor bytes, readonly flags and an empty author directory survive; dropping the remaining preparation restores capacity and permits a fresh preparation"
           ],
           "remaining_group_evidence": "Controlled CLI-host/library execution through an existing test-only transport; not binary signal handling, an external provider or actual consumer execution. CLI batch/backpressure and other resource obligations remain separate."
+        },
+        {
+          "id": "UX-080.fixed-compilation-selection",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_verification_runner.SuiteEvidence.test_server_compilation_preserves_graph_selection_and_private_driver_suites"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Fixed server-only compilation preserves library feature activation and identical discovery/execution targets; full workspace and private-driver suites retain their separate compilation boundaries"
+          ]
         }
       ],
       "owner_now": [
@@ -15724,6 +15792,7 @@
       "required_assertions": "Accepted custom configuration has required meaning in real supported consumer source/runtime; rejected syntax does not mutate artifact.",
       "required_work": "Pinned source+Qt+fixture digest receipt; separate actual import/startup from headless parser.",
       "evidence_tiers": [
+        "U",
         "H",
         "C"
       ],
@@ -15732,6 +15801,25 @@
       "scope": "stable",
       "variant_axes": "",
       "cases": [
+        {
+          "id": "UX-083.shared-grammar-validator",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::managed_prism_consumer_format_fixtures_use_shared_validator"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Every shared grammar fixture exercises the production managed-command validator, including accepted Unicode values and all rejected format, authority, quote, comment, continuation, whitespace and control cases; declared diagnostics match the actual error"
+          ]
+        },
         {
           "id": "UX-083.supported-prism-parser-observations",
           "boundary": "C",
@@ -15768,7 +15856,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Each shared fixture exercises public build preparation for reference snapshots and both subscribed managed recipes, with acceptance/refusal and specific diagnostics matching its declared grammar policy",
+            "Representative shared fixtures exercise public build preparation for reference snapshots and both subscribed managed recipes, covering format selection, authority spelling/placement, required settings, quotes, comments/continuations and structural whitespace/controls; acceptance/refusal and specific diagnostics match the declared grammar policy",
             "Author documents, templates and prior artifact bytes and portable file permissions remain unchanged by preparation, including rejected configuration",
             "Standalone bundled customization remains outside the stricter managed lifecycle grammar"
           ],
@@ -17159,7 +17247,9 @@
             "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations",
             "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions",
             "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations",
-            "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions"
+            "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions",
+            "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_requires_mac_consumers_without_erasing_other_observations",
+            "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_refuses_expansion_or_automated_exclusions"
           ],
           "required_platforms": [
             "linux",
@@ -17172,7 +17262,7 @@
           "assertions": [
             "Maintainer-approved v0.8.4 operator deferrals retain unrun observations and do not alter later release scope",
             "Automated and unknown cases cannot be excluded through environment deferrals",
-            "Separately approved v0.8.5 and v0.8.6 manual scopes each require Mac managed Prism/server observations for both products; missing records block, supplied failures remain failures, and the scope never rolls forward"
+            "Separately approved v0.8.5, v0.8.6 and v0.8.7 manual scopes each require Mac managed Prism/server observations for both products; missing records block, supplied failures remain failures, and the scope never rolls forward"
           ]
         }
       ],
