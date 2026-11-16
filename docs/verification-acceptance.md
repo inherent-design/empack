@@ -129,7 +129,7 @@ python3 scripts/acceptance-assets.py stage \
 
 Repeat `--record` for the other reviewed records and attempts. Staging preserves their bytes and checks supporting files and candidate coordinates; the gate still establishes the product, procedure and outcome bindings. The output directory must be new. Its `staging.json` lists the files to upload. Record asset names contain the archive-evidence digest and the record's own digest; supporting assets use their content digest. Different attempts have different names, and shared supporting bytes need only one asset.
 
-The container is a dedicated draft release named `acceptance-v<version>`, such as `acceptance-v0.8.4-beta`. Create it once, with maintainer authorization, or reuse the existing draft. It contains acceptance data and remains separate from the shipping release. For example, using Bash:
+The container is a temporary dedicated draft release named `acceptance-v<version>`, such as `acceptance-v0.8.4-beta`. Create or reuse it as part of the authorized release task. It contains acceptance data and remains separate from the shipping release. Remove it after completing the release as described below. For example, using Bash:
 
 ```bash
 EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"
@@ -150,3 +150,15 @@ Supporting files are downloaded as exact binary bytes directly to files. When Gi
 GitHub limits draft-release listings to callers with repository push access. The trusted qualification job therefore has `contents: write` permission, while the collector issues only GET requests. Publication stays in the separate tag-only job; manual workflow dispatch does not publish. See [GitHub's release API permissions](https://docs.github.com/en/rest/releases/releases#list-releases).
 
 When native, parser and candidate-execution phases have succeeded and the gate is blocked only by missing operator tasks, complete those tasks, upload the reviewed records and rerun the failed gate in the same workflow run. Its successful build artifacts are reused. Gate reports have attempt-specific artifact names, and publication consumes the artifact selected by the successful gate output, including when only publication is retried. Earlier blocked reports remain available. Actual failed observations still fail the candidate; collection and a gate retry cannot erase them. Hosted execution of this handoff remains a separate check from the repository's mocked GitHub and admission tests.
+
+## Completed release cleanup
+
+After publication succeeds, verify the public release and its files against the qualified candidate. Confirm that the completed qualification artifact retains the collected records, supporting files and intake manifest, and keep a bounded local copy. Then remove that release's dedicated `acceptance-v<version>` draft and its assets so completed acceptance handoffs do not accumulate in the repository's release list. This cleanup is part of completing the release task; it does not need a separate maintainer action.
+
+Verify the exact evidence tag and require that it is still a draft before deletion. Preserve the shipping release, version tag, unrelated drafts and retained qualification observations, including failed attempts. Keep the handoff draft while qualification or publication is incomplete. If a later gate retry needs it, restore the original retained record/supporting bytes through the staging procedure before rerunning the gate.
+
+```bash
+EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"
+test "$(gh release view "$EVIDENCE_TAG" --json isDraft --jq .isDraft)" = true
+gh release delete "$EVIDENCE_TAG" --yes
+```

@@ -1,8 +1,12 @@
 # empack
 
+[![Latest Release](https://img.shields.io/github/v/release/inherent-design/empack?style=flat)](https://github.com/inherent-design/empack/releases/latest) [![License](https://img.shields.io/github/license/inherent-design/empack?style=flat)](LICENSE)
+
+[![Verification](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/pr-ci.yml?branch=main&style=flat&label=verification)](https://github.com/inherent-design/empack/actions/workflows/pr-ci.yml) [![Release checks](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/release.yml?style=flat&label=release%20checks)](https://github.com/inherent-design/empack/actions/workflows/release.yml)
+
 Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exact dependencies into `empack.lock`, builds launcher and server distributions, and can install and update native pack releases while preserving player-owned files.
 
-This documentation describes the **v0.8.7-beta development target**. Use the documentation at your installed release tag. Review [supported formats and older projects](docs/troubleshooting.md#older-author-projects) before opening an existing project with this development version.
+This documentation describes **v0.8.7-beta**. Use the documentation at your installed release tag. Review [supported formats and older projects](docs/troubleshooting.md#older-author-projects) before opening an existing project.
 
 ## Installation
 
