@@ -159,6 +159,7 @@ Verify the exact evidence tag and require that it is still a draft before deleti
 
 ```bash
 EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"
-test "$(gh release view "$EVIDENCE_TAG" --json isDraft --jq .isDraft)" = true
-gh release delete "$EVIDENCE_TAG" --yes
+if test "$(gh release view "$EVIDENCE_TAG" --json isDraft --jq .isDraft)" = true; then
+    gh release delete "$EVIDENCE_TAG" --yes
+fi
 ```
