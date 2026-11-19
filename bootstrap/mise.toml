@@ -1,5 +1,5 @@
 [tools]
-java = "25.0.5+8.0.LTS"
+java = "25.0.5+100000002.0.LTS"
 maven = "3.9.11"
 
 [tasks.build]
