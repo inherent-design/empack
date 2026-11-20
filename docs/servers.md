@@ -15,6 +15,21 @@ The default scripts supply `nogui` to Minecraft. The GUI scripts omit that argum
 
 On the first run, Minecraft may stop until you review and accept its EULA in `game/eula.txt`. Empack never accepts the EULA for you.
 
+## JVM options
+
+Forge and NeoForge server runtimes that use argument files load JVM options from `game/user_jvm_args.txt`. Operators can edit that file after preparation. It is seed-owned, so subsequent preparation, updates, repair and rollback preserve existing operator bytes.
+
+To supply initial defaults, authors can use either `overrides/server/user_jvm_args.txt` or `templates/server/game/user_jvm_args.txt.template`. Keep the destination's policy explicit in `empack.bindings.yml`:
+
+```yaml
+policies:
+  user_jvm_args.txt: seed
+```
+
+For example, the selected file can contain `-Xmx4G` to set a maximum heap; choose the value for the pack and leave room for native memory and the operating system. Templates use the ordinary captured rendering rules. Define this file in game content or templates, not both. Managed exports include the selected bytes in their release descriptor and assets; standalone bundled exports put them in `game/`. All other runtime paths retain their collision protections.
+
+Changing a published seed default affects new installations or a missing file; it does not replace an existing file, even if that file still contains the old default. Jar-based server runtimes do not automatically load `user_jvm_args.txt`; passing extra arguments to a start script supplies Minecraft arguments, not JVM options.
+
 ## Interactive Unix consoles
 
 Empack-supervised Java receives foreground terminal ownership before it starts. Console commands such as `list` and `stop` work through the normal start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack restores the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown; explicit operation cancellation still terminates the owned process tree.

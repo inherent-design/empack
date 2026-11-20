@@ -161,10 +161,16 @@ class CandidatePolicy(unittest.TestCase):
     def test_v087_manual_scope_requires_mac_consumers_without_erasing_other_observations(self):
         self._assert_manual_scope_requires_mac_consumers("0.8.7-beta", "v087_manual_scope", "2026-11-15")
 
-    def _assert_manual_scope_requires_mac_consumers(self, release, key, approved):
+    def test_v088_manual_scope_requires_mac_servers_without_erasing_other_observations(self):
+        self._assert_manual_scope_requires_mac_consumers("0.8.8-beta", "v088_manual_scope", "2026-11-19",
+            ["acceptance::server::managed-console", "acceptance::server::managed-gui",
+             "acceptance::server::bundled-console", "acceptance::server::bundled-gui"])
+
+    def _assert_manual_scope_requires_mac_consumers(self, release, key, approved, procedures=None):
         # Synthetic gate mechanics, never a consumer execution record.
-        procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
-                      "acceptance::server::managed-gui"]
+        if procedures is None:
+            procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
+                          "acceptance::server::managed-gui"]
         scope = dict(approved_on=approved, reason="Synthetic approved scope fixture",
                      platforms=["macos"], procedures=procedures)
         self.document["gates"] = {key: scope}
@@ -193,8 +199,8 @@ class CandidatePolicy(unittest.TestCase):
         observed = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-001")
         self.assertEqual(observed["status"], "NOT_RUN")
         self.assertEqual(observed["release_status"], "PASS")
-        self.assertEqual(result["deferred_environment_cases"], ["UX-001.operator-3"])
-        for case in observed["cases"][1:4]:
+        self.assertEqual(result["deferred_environment_cases"], [f"UX-001.operator-{len(procedures)}"])
+        for case in observed["cases"][1:1 + len(procedures)]:
             self.assertEqual(case["status"], "NOT_RUN")
             self.assertEqual(case["release_status"], "PASS")
             for variant in case["variants"]:
@@ -233,11 +239,20 @@ class CandidatePolicy(unittest.TestCase):
     def test_v087_manual_scope_refuses_expansion_or_automated_exclusions(self):
         self._assert_manual_scope_refuses_expansion("0.8.7-beta", "v087_manual_scope", "2026-11-15")
 
-    def _assert_manual_scope_refuses_expansion(self, release, key, approved):
+    def test_v088_manual_scope_refuses_expansion_or_automated_exclusions(self):
+        self._assert_manual_scope_refuses_expansion("0.8.8-beta", "v088_manual_scope", "2026-11-19",
+            ["acceptance::server::managed-console", "acceptance::server::managed-gui",
+             "acceptance::server::bundled-console", "acceptance::server::bundled-gui"])
+
+    def _assert_manual_scope_refuses_expansion(self, release, key, approved, procedures=None):
+        if procedures is None:
+            procedures = ["acceptance::prism::reference-instance", "acceptance::server::managed-console",
+                          "acceptance::server::managed-gui"]
         scope = dict(approved_on=approved, reason="Synthetic negative fixture", platforms=["macos"],
-                     procedures=["acceptance::prism::reference-instance", "acceptance::server::managed-console",
-                                 "acceptance::server::managed-gui"])
-        for change in [dict(platforms=[]), dict(procedures=["fixture::command"]),
+                     procedures=procedures)
+        for change in [dict(platforms=[]), dict(platforms=["linux", "macos"]),
+                       dict(procedures=[*procedures, "acceptance::prism::bundled-instance"]),
+                       dict(procedures=["fixture::command"]),
                        dict(procedures=[]), dict(approved_on="2026-11-10"), dict(cases=["UX-001.fixture"])]:
             self.document["gates"] = {key: dict(scope, **change)}
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, f"v{release.removesuffix('-beta')} manual scope"):

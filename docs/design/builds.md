@@ -48,6 +48,10 @@ This rule affects newly built release descriptors. Updating the empack executabl
 
 Generic native exports remain consumer-neutral and can legitimately manage a root image. Authors publishing native releases to Prism channels must explicitly retain `policies: {icon.png: seed}` in their bindings. Every Prism installation, update, repair, rollback and launch preparation validates the selected release's effective icon policy. An incompatible managed icon is rejected with publishing guidance; authenticated release policies are never rewritten on the recipient. This also prevents a conflict override from reintroducing launcher-owned managed content.
 
+### Server JVM seed
+
+Argument-file server runtimes permit an explicitly seed-owned `user_jvm_args.txt` from selected game content or a rendered server template as their initial operator configuration. The selected bytes enter the managed release projection; standalone bundled output uses the same selection. The release inventory owns the final runtime/template collision boundary. This exception does not grant replacement of launcher arguments or other runtime files. See [JVM options](../servers.md#jvm-options) for authoring and operator behavior.
+
 ## Content-layer precedence
 
 For the same game-relative file, a selected side-specific source replaces the common source as a whole file. Settings inside files are not merged.

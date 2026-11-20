@@ -72,12 +72,15 @@ def validate_requirements(document):
 
 def release_manual_scope(document, version):
     """Fixed, separately approved technical consumer scopes, not a rolling waiver."""
-    selected = {"acceptance::prism::reference-instance", "acceptance::server::managed-console",
-                "acceptance::server::managed-gui"}
+    managed = {"acceptance::prism::reference-instance", "acceptance::server::managed-console",
+               "acceptance::server::managed-gui"}
+    servers = {"acceptance::server::managed-console", "acceptance::server::managed-gui",
+               "acceptance::server::bundled-console", "acceptance::server::bundled-gui"}
     chosen = None
-    for release, key, approved in [("0.8.5-beta", "v085_manual_scope", "2026-11-11"),
-                                   ("0.8.6-beta", "v086_manual_scope", "2026-11-15"),
-                                   ("0.8.7-beta", "v087_manual_scope", "2026-11-15")]:
+    for release, key, approved, selected in [("0.8.5-beta", "v085_manual_scope", "2026-11-11", managed),
+                                             ("0.8.6-beta", "v086_manual_scope", "2026-11-15", managed),
+                                             ("0.8.7-beta", "v087_manual_scope", "2026-11-15", managed),
+                                             ("0.8.8-beta", "v088_manual_scope", "2026-11-19", servers)]:
         scope = document.get("gates", {}).get(key)
         if scope is None:
             continue

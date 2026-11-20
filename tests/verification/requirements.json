@@ -82,6 +82,19 @@
         "acceptance::server::managed-console",
         "acceptance::server::managed-gui"
       ]
+    },
+    "v088_manual_scope": {
+      "approved_on": "2026-11-19",
+      "reason": "Maintainer-approved focused server JVM seed qualification uses managed and standalone server console/GUI checks on the available Mac for default and telemetry. Retain every automated platform gate and all actual unrun manual observations.",
+      "platforms": [
+        "macos"
+      ],
+      "procedures": [
+        "acceptance::server::managed-console",
+        "acceptance::server::managed-gui",
+        "acceptance::server::bundled-console",
+        "acceptance::server::bundled-gui"
+      ]
     }
   },
   "requirements": [
@@ -8076,6 +8089,52 @@
             "Computed runtime hashes do not upgrade original source evidence; no generated EULA acceptance is supplied"
           ],
           "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.jvm-seed-projection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::authored_server_jvm_template_is_embedded_as_seed",
+            "empack-lib::engine::build::server::tests::authored_server_jvm_content_is_embedded_as_seed",
+            "empack-lib::engine::build::server::tests::authored_server_jvm_refusals_preserve_inputs_and_previous_artifacts",
+            "empack-lib::engine::build::server::tests::server_jvm_fallback_preserves_installer_bytes_and_ignores_client_only_defaults"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit seed ownership selects authored game content or rendered JVM template bytes for server snapshots and subscribed reference/bundled recipes; managed releases carry one required seed and standalone output uses the same defaults.",
+            "Missing/managed policy, competing content/template inputs, portable aliases, ancestor conflicts and replacement of other runtime files refuse before publication and preserve author inputs, attributes and prior artifacts.",
+            "Without a selected server override, installer fallback bytes and declared assertions remain unchanged; client-only defaults cannot replace them. Authored defaults do not inherit installer assertions."
+          ],
+          "remaining_group_evidence": "Synthetic argument-file composition and public build preparation; loader installer execution and actual JVM/server acceptance remain separate."
+        },
+        {
+          "id": "UX-043.jvm-seed-lifecycle",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::authored_server_jvm_defaults_preserve_operator_edits_through_update_and_rollback"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real generated server release/asset output installs rendered initial JVM defaults through native instance planning and publication.",
+            "A later independently built release switches author input from template to game content; update, repair and rollback preserve operator JVM edits and world bytes, while a fresh installation receives the new default."
+          ],
+          "remaining_group_evidence": "Connected local build/instance flow using a synthetic argument-file runtime; no loader execution, real Java startup or signed-channel transport is claimed."
         },
         {
           "id": "UX-043.template-refusals",
@@ -17249,7 +17308,9 @@
             "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_requires_mac_consumers_without_erasing_other_observations",
             "python::test_candidate_qualification.CandidatePolicy.test_v086_manual_scope_refuses_expansion_or_automated_exclusions",
             "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_requires_mac_consumers_without_erasing_other_observations",
-            "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_refuses_expansion_or_automated_exclusions"
+            "python::test_candidate_qualification.CandidatePolicy.test_v087_manual_scope_refuses_expansion_or_automated_exclusions",
+            "python::test_candidate_qualification.CandidatePolicy.test_v088_manual_scope_requires_mac_servers_without_erasing_other_observations",
+            "python::test_candidate_qualification.CandidatePolicy.test_v088_manual_scope_refuses_expansion_or_automated_exclusions"
           ],
           "required_platforms": [
             "linux",
@@ -17262,7 +17323,8 @@
           "assertions": [
             "Maintainer-approved v0.8.4 operator deferrals retain unrun observations and do not alter later release scope",
             "Automated and unknown cases cannot be excluded through environment deferrals",
-            "Separately approved v0.8.5, v0.8.6 and v0.8.7 manual scopes each require Mac managed Prism/server observations for both products; missing records block, supplied failures remain failures, and the scope never rolls forward"
+            "Separately approved v0.8.5, v0.8.6 and v0.8.7 manual scopes each require Mac managed Prism/server observations for both products; missing records block, supplied failures remain failures, and the scope never rolls forward",
+            "The separately approved v0.8.8 scope requires Mac managed and standalone server console/GUI observations for both products; automated variants stay required, missing records block, supplied failures remain failures, and the scope never rolls forward"
           ]
         }
       ],

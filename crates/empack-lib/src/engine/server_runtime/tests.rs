@@ -142,6 +142,57 @@ pub(in crate::engine) fn prepared_fixture() -> PreparedServerRuntime {
         .unwrap()
 }
 
+/// Composition-only argument-file runtime. These synthetic bytes do not execute
+/// or qualify a loader installer; installer verification has separate tests.
+pub(in crate::engine) fn prepared_arguments_fixture() -> PreparedServerRuntime {
+    let path = |name| PortableRelPath::parse(name, PathSyntax::ArchiveMember);
+    let mut prepared = prepared_fixture();
+    prepared.runtime.loader = LoaderKind::Forge;
+    prepared.runtime.loader_version =
+        Some(empack_core::model::LoaderVersion::parse("47.4.0").unwrap());
+    let unix = path("libraries/fixture/unix_args.txt").unwrap();
+    let windows = path("libraries/fixture/win_args.txt").unwrap();
+    for (destination, bytes) in [
+        (path("user_jvm_args.txt").unwrap(), b"-Xmx2G\n".as_slice()),
+        (unix.clone(), b"fixture.Main\n".as_slice()),
+        (windows.clone(), b"fixture.Main\n".as_slice()),
+    ] {
+        let observed = content(bytes);
+        let content = if destination.as_str() == "user_jvm_args.txt" {
+            // Synthetic declared evidence lets composition tests distinguish the
+            // installer's assertions from newly authored initial defaults.
+            let mut input = bytes;
+            verify_stream(
+                &mut input,
+                &ExpectedContent {
+                    digests: Some(observed.observed_digests().clone()),
+                    size: Some(bytes.len() as u64),
+                    accepted_observation: None,
+                },
+                2 << 20,
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::RequireEvidence,
+                &Cancellation::default(),
+            )
+            .unwrap()
+        } else {
+            observed
+        };
+        prepared.files.insert(
+            destination,
+            AcquiredBuildFile {
+                content,
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        );
+    }
+    prepared.launch = ServerLaunch::Arguments { unix, windows };
+    prepared
+}
+
 #[test]
 fn runtime_jars_reject_invalid_declared_utf8_before_member_discovery() {
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
