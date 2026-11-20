@@ -417,12 +417,15 @@ fn server_entry_point_requires_exact_managed_required_content() {
     let mut payload = document();
     payload.server_launch = Some(ReleaseServerLaunch::Jar {
         path: "server.jar".into(),
+        jvm_options: Vec::new(),
     });
     assert!(DecodedRelease::encode(payload.clone()).is_err());
     payload.files[0].destination = "server.jar".into();
     assert!(DecodedRelease::encode(payload.clone()).is_err()); // seed cannot authorize a runtime
     payload.files[0].policy = FilePolicy::Managed;
     let valid = DecodedRelease::encode(payload.clone()).unwrap();
+    let legacy: serde_json::Value = serde_json::from_slice(valid.bytes()).unwrap();
+    assert!(legacy["server_launch"].get("jvm_options").is_none());
     assert_eq!(
         valid
             .document()
@@ -440,6 +443,62 @@ fn server_entry_point_requires_exact_managed_required_content() {
     shadow.layer = ReleaseLayer::Server;
     shadow.client = Participation::Unsupported;
     payload.files.push(shadow);
+    assert!(DecodedRelease::encode(payload).is_err());
+}
+
+#[test]
+fn server_jvm_options_are_closed_and_require_a_supported_runtime() {
+    let mut payload = document();
+    payload.minimum_engine = ">=0.8.8-beta".into();
+    payload.runtime.loader = ReleaseLoader::Fabric {
+        version: "0.16.0".into(),
+    };
+    payload.files[0].destination = "server.jar".into();
+    payload.files[0].policy = FilePolicy::Managed;
+    payload.server_launch = Some(ReleaseServerLaunch::Jar {
+        path: "server.jar".into(),
+        jvm_options: vec![ServerJvmOption::DisableBase64Intrinsics],
+    });
+    let release = DecodedRelease::encode(payload.clone()).unwrap();
+    let mut wire: serde_json::Value = serde_json::from_slice(release.bytes()).unwrap();
+    assert_eq!(
+        wire["server_launch"]["jvm_options"],
+        serde_json::json!(["disable-base64-intrinsics"])
+    );
+    let expected: Vec<std::ffi::OsString> = [
+        "-XX:+UnlockDiagnosticVMOptions",
+        "-XX:-UseBASE64Intrinsics",
+        "-jar",
+        "server.jar",
+    ]
+    .map(Into::into)
+    .to_vec();
+    for windows in [false, true] {
+        assert_eq!(
+            release
+                .document()
+                .server_launch
+                .as_ref()
+                .unwrap()
+                .arguments(windows),
+            expected
+        );
+    }
+    for options in [
+        serde_json::json!(["-jar"]),
+        serde_json::json!(["disable-base64-intrinsics", "disable-base64-intrinsics"]),
+        serde_json::json!({"disable-base64-intrinsics":true}),
+    ] {
+        wire["server_launch"]["jvm_options"] = options;
+        assert!(DecodedRelease::decode(&serde_json::to_vec(&wire).unwrap()).is_err());
+    }
+    payload.runtime.loader = ReleaseLoader::Vanilla;
+    assert!(DecodedRelease::encode(payload.clone()).is_err());
+    payload.runtime.loader = ReleaseLoader::Fabric {
+        version: "0.16.0".into(),
+    };
+    payload.runtime.minecraft = "1.16.5".into();
+    payload.runtime.java = ReleaseJava::for_game("1.16.5", 8).unwrap();
     assert!(DecodedRelease::encode(payload).is_err());
 }
 

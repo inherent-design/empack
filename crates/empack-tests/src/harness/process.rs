@@ -449,7 +449,7 @@ pub fn expected_cli_version() -> String {
 pub fn expected_automation_version() -> String {
     let version = expected_cli_version();
     if version == "0.0.0-dev" {
-        "0.8.5-beta".to_owned()
+        "0.8.8-beta".to_owned()
     } else {
         version
     }

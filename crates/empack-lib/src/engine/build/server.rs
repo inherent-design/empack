@@ -235,8 +235,19 @@ fn runtime_start(
         }
     };
     let arguments = match launch {
-        ServerLaunch::Jar(path) if path.as_str() == "server.jar" => return script,
-        ServerLaunch::Jar(path) => format!("-jar {}", quote(path.as_str())),
+        ServerLaunch::Jar { path, jvm_options }
+            if path.as_str() == "server.jar" && jvm_options.is_empty() =>
+        {
+            return script;
+        }
+        ServerLaunch::Jar { path, jvm_options } => {
+            let mut arguments: Vec<String> = jvm_options
+                .iter()
+                .flat_map(|option| option.arguments().iter().map(|argument| quote(argument)))
+                .collect();
+            arguments.extend(["-jar".into(), quote(path.as_str())]);
+            arguments.join(" ")
+        }
         ServerLaunch::Arguments { unix, windows: win } => {
             let path = if windows { win } else { unix };
             format!(

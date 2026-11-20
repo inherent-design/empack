@@ -538,68 +538,90 @@ async fn launch_binds_the_release_selected_by_prelaunch() {
 
 #[tokio::test]
 async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
-    let root = tempfile::tempdir().unwrap();
-    let state = tempfile::tempdir().unwrap();
-    let (engine, _) = super::super::tests::engine(state.path().join("state"));
-    let mut input = install_request(b"server bytes");
-    let mut document = input.release.release().document().clone();
-    document.files[0].destination = "server-exact.jar".into();
-    document.server_launch = Some(ReleaseServerLaunch::Jar {
-        path: "server-exact.jar".into(),
-    });
-    let release = DecodedRelease::encode(document).unwrap();
-    input.release = SelectedRelease::Snapshot(
-        trust::SelectedSnapshot::select(
-            release.bytes(),
-            release.id(),
-            &semver::Version::parse("0.8.0-beta").unwrap(),
-        )
-        .unwrap(),
-    );
-    input.side = InstanceSide::Server;
-    let prepared = prepare(&engine, root.path(), input).await;
-    let approval = grant(&prepared, false);
-    let mut operation = engine.start(prepared.authorize(approval).unwrap()).unwrap();
-    assert!(matches!(
-        &*operation.wait().await,
-        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
-    ));
-    engine.release_completed(operation.id());
-    let selected_program = std::env::current_exe().unwrap();
-    let selected = || LaunchInstanceRequest {
-        java_runtime: false,
-        server: true,
-        expected_release: Some(release.id().into()),
-        program: selected_program.clone(),
-        arguments: vec!["nogui".into(), "literal argument".into()],
-    };
-    let prepared = prepare(&engine, root.path(), selected()).await;
-    let PreparedKind::Launch(launch) = &**prepared.data else {
-        panic!()
-    };
-    assert_eq!(launch.command.get_program(), selected_program.as_os_str());
-    assert_eq!(
-        launch
-            .command
-            .get_current_dir()
-            .unwrap()
-            .canonicalize()
+    for mitigation in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (engine, _) = super::super::tests::engine(state.path().join("state"));
+        let mut input = install_request(b"server bytes");
+        let mut document = input.release.release().document().clone();
+        document.files[0].destination = "server-exact.jar".into();
+        if mitigation {
+            document.runtime.loader = crate::engine::release::ReleaseLoader::Fabric {
+                version: "0.16.0".into(),
+            };
+            document.minimum_engine = ">=0.8.8-beta".into();
+        }
+        document.server_launch = Some(ReleaseServerLaunch::Jar {
+            path: "server-exact.jar".into(),
+            jvm_options: if mitigation {
+                vec![crate::engine::release::ServerJvmOption::DisableBase64Intrinsics]
+            } else {
+                Vec::new()
+            },
+        });
+        let release = DecodedRelease::encode(document).unwrap();
+        input.release = SelectedRelease::Snapshot(
+            trust::SelectedSnapshot::select(
+                release.bytes(),
+                release.id(),
+                &semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
+            )
             .unwrap(),
-        root.path().join("game").canonicalize().unwrap()
-    );
-    assert_eq!(
-        launch.command.get_args().collect::<Vec<_>>(),
-        ["-jar", "server-exact.jar", "nogui", "literal argument"]
-    );
-    drop(prepared);
-    fs::write(root.path().join("game/server-exact.jar"), b"changed").unwrap();
-    assert!(
-        engine
-            .prepare(root.path().to_owned(), selected())
-            .await
-            .is_err()
-    );
-    engine.shutdown().await;
+        );
+        input.side = InstanceSide::Server;
+        let prepared = prepare(&engine, root.path(), input).await;
+        let approval = grant(&prepared, false);
+        let mut operation = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+        assert!(matches!(
+            &*operation.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
+        ));
+        engine.release_completed(operation.id());
+        let selected_program = std::env::current_exe().unwrap();
+        let selected = || LaunchInstanceRequest {
+            java_runtime: false,
+            server: true,
+            expected_release: Some(release.id().into()),
+            program: selected_program.clone(),
+            arguments: vec!["nogui".into(), "literal argument".into()],
+        };
+        let prepared = prepare(&engine, root.path(), selected()).await;
+        let PreparedKind::Launch(launch) = &**prepared.data else {
+            panic!()
+        };
+        assert_eq!(launch.command.get_program(), selected_program.as_os_str());
+        assert_eq!(
+            launch
+                .command
+                .get_current_dir()
+                .unwrap()
+                .canonicalize()
+                .unwrap(),
+            root.path().join("game").canonicalize().unwrap()
+        );
+        let expected = if mitigation {
+            vec![
+                "-XX:+UnlockDiagnosticVMOptions",
+                "-XX:-UseBASE64Intrinsics",
+                "-jar",
+                "server-exact.jar",
+                "nogui",
+                "literal argument",
+            ]
+        } else {
+            vec!["-jar", "server-exact.jar", "nogui", "literal argument"]
+        };
+        assert_eq!(launch.command.get_args().collect::<Vec<_>>(), expected);
+        drop(prepared);
+        fs::write(root.path().join("game/server-exact.jar"), b"changed").unwrap();
+        assert!(
+            engine
+                .prepare(root.path().to_owned(), selected())
+                .await
+                .is_err()
+        );
+        engine.shutdown().await;
+    }
 }
 
 #[cfg(unix)]
@@ -613,6 +635,7 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
     let mut document = input.release.release().document().clone();
     document.server_launch = Some(ReleaseServerLaunch::Jar {
         path: "mods/a.jar".into(),
+        jvm_options: Vec::new(),
     });
     let release = DecodedRelease::encode(document).unwrap();
     input.release = SelectedRelease::Snapshot(

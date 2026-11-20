@@ -30,6 +30,8 @@ For example, the selected file can contain `-Xmx4G` to set a maximum heap; choos
 
 Changing a published seed default affects new installations or a missing file; it does not replace an existing file, even if that file still contains the old default. Jar-based server runtimes do not automatically load `user_jvm_args.txt`; passing extra arguments to a start script supplies Minecraft arguments, not JVM options.
 
+Verified loader metadata can require JVM options independently of operator configuration. For supported Fabric profiles, empack preserves the declared Base64-intrinsic mitigation in standalone scripts and managed release launches. A managed release using this option requires empack v0.8.8-beta or newer. Unknown metadata arguments remain unsupported; an authored JVM file cannot replace the loader's verified launch contract.
+
 ## Interactive Unix consoles
 
 Empack-supervised Java receives foreground terminal ownership before it starts. Console commands such as `list` and `stop` work through the normal start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack restores the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown; explicit operation cancellation still terminates the owned process tree.

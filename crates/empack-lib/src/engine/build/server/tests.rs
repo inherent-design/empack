@@ -87,7 +87,10 @@ fn generated_server_entrypoint_fixture() {
         put_invocations(&root, digest, input["engine_version"].as_str().unwrap());
     }
     let java = crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap();
-    let launch = ServerLaunch::Jar(path("server.jar").unwrap());
+    let launch = ServerLaunch::Jar {
+        path: path("server.jar").unwrap(),
+        jvm_options: Vec::new(),
+    };
     for (name, bytes) in [
         ("install_pack.sh", install_script(managed)),
         ("install_pack.bat", install_batch(managed)),
@@ -1210,7 +1213,10 @@ exit 7
                 fs::remove_file(&marker).unwrap();
             }
             let script = runtime_script(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 false,
                 cfg!(windows),
                 interface,
@@ -1344,7 +1350,10 @@ exec "$program" -jar server.jar "$@"
             root.path(),
             "start.sh",
             runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 false,
                 interface,
@@ -1426,7 +1435,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
             root.path(),
             "start.bat",
             runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 true,
                 interface,
@@ -1489,8 +1501,18 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
             "@user_jvm_args.txt\n@libraries/loader/unix_args.txt\nnogui\nuser argument\n",
         ),
         (
-            ServerLaunch::Jar(path("forge-1.12.2-14.23.5.2860.jar").unwrap()),
+            ServerLaunch::Jar {
+                path: path("forge-1.12.2-14.23.5.2860.jar").unwrap(),
+                jvm_options: Vec::new(),
+            },
             "-jar\nforge-1.12.2-14.23.5.2860.jar\nnogui\nuser argument\n",
+        ),
+        (
+            ServerLaunch::Jar {
+                path: path("server.jar").unwrap(),
+                jvm_options: vec![crate::engine::release::ServerJvmOption::DisableBase64Intrinsics],
+            },
+            "-XX:+UnlockDiagnosticVMOptions\n-XX:-UseBASE64Intrinsics\n-jar\nserver.jar\nnogui\nuser argument\n",
         ),
     ] {
         for (interface, argument) in [
@@ -1540,7 +1562,10 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
     for interface in [ServerInterface::Console, ServerInterface::Gui] {
         for windows in [false, true] {
             let launch = runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 windows,
                 interface,
@@ -1587,7 +1612,14 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
         b"@echo off\r\necho %* > arguments.txt\r\nexit /b %EMPACK_TEST_STATUS%\r\n",
     );
     for launch in [
-        ServerLaunch::Jar(path("server.jar").unwrap()),
+        ServerLaunch::Jar {
+            path: path("server.jar").unwrap(),
+            jvm_options: Vec::new(),
+        },
+        ServerLaunch::Jar {
+            path: path("server.jar").unwrap(),
+            jvm_options: vec![crate::engine::release::ServerJvmOption::DisableBase64Intrinsics],
+        },
         ServerLaunch::Arguments {
             unix: path("unix.txt").unwrap(),
             windows: path("libraries/win args.txt").unwrap(),
@@ -1622,9 +1654,14 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
                 );
                 let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
                 assert_eq!(args.contains("nogui"), !argument.is_empty());
-                match launch {
-                    ServerLaunch::Jar(_) => {
-                        assert!(args.contains(&format!("-jar server.jar {argument}")))
+                match &launch {
+                    ServerLaunch::Jar { jvm_options, .. } => {
+                        if jvm_options.is_empty() {
+                            assert!(args.contains(&format!("-jar server.jar {argument}")));
+                            assert!(!args.contains("UseBASE64Intrinsics"));
+                        } else {
+                            assert!(args.contains(&format!("\"-XX:+UnlockDiagnosticVMOptions\" \"-XX:-UseBASE64Intrinsics\" -jar \"server.jar\" {argument}")), "{args}");
+                        }
                     }
                     ServerLaunch::Arguments { .. } => {
                         assert!(args.contains(&format!(
@@ -1639,7 +1676,10 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
         root.path(),
         "start.bat",
         runtime_start(
-            &ServerLaunch::Jar(path("server.jar").unwrap()),
+            &ServerLaunch::Jar {
+                path: path("server.jar").unwrap(),
+                jvm_options: Vec::new(),
+            },
             false,
             true,
             ServerInterface::Console,

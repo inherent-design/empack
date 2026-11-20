@@ -38,20 +38,53 @@ pub struct ReleaseDocument {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReleaseServerLaunch {
-    Jar { path: String },
-    Arguments { unix: String, windows: String },
+    Jar {
+        path: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        jvm_options: Vec<ServerJvmOption>,
+    },
+    Arguments {
+        unix: String,
+        windows: String,
+    },
+}
+
+/// Closed, engine-owned JVM options; release input cannot supply arbitrary Java arguments.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServerJvmOption {
+    DisableBase64Intrinsics,
+}
+impl ServerJvmOption {
+    pub(crate) fn arguments(self) -> &'static [&'static str] {
+        match self {
+            Self::DisableBase64Intrinsics => {
+                &["-XX:+UnlockDiagnosticVMOptions", "-XX:-UseBASE64Intrinsics"]
+            }
+        }
+    }
 }
 impl ReleaseServerLaunch {
     fn paths(&self) -> Vec<&str> {
         match self {
-            Self::Jar { path } => vec![path],
+            Self::Jar { path, .. } => vec![path],
             Self::Arguments { unix, windows } => vec![unix, windows],
         }
     }
     /// Java is selected locally. Only typed, inventory-bound arguments come from the release.
     pub fn arguments(&self, windows: bool) -> Vec<std::ffi::OsString> {
         match self {
-            Self::Jar { path } => vec!["-jar".into(), path.into()],
+            Self::Jar { path, jvm_options } => jvm_options
+                .iter()
+                .flat_map(|option| {
+                    option
+                        .arguments()
+                        .iter()
+                        .copied()
+                        .map(std::ffi::OsString::from)
+                })
+                .chain(["-jar".into(), path.into()])
+                .collect(),
             Self::Arguments { unix, windows: win } => vec![
                 "@user_jvm_args.txt".into(),
                 format!("@{}", if windows { win } else { unix }).into(),
@@ -482,6 +515,15 @@ impl ReleaseDocument {
             );
         }
         if let Some(launch) = &self.server_launch {
+            if let ReleaseServerLaunch::Jar { jvm_options, .. } = launch {
+                ensure!(jvm_options.len() <= 1, "Duplicate server JVM option");
+                ensure!(
+                    jvm_options.is_empty()
+                        || (matches!(self.runtime.loader, ReleaseLoader::Fabric { .. })
+                            && self.runtime.java.minimum >= 17),
+                    "Server JVM mitigation requires a Fabric runtime with Java 17 or newer"
+                );
+            }
             for destination in launch.paths() {
                 PortableRelPath::parse(destination, PathSyntax::ProjectContent)?;
                 let matching: Vec<_> = self

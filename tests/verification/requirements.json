@@ -8179,7 +8179,8 @@
           "assertions": [
             "Real shell execution with controlled external programs preserves Java paths, user argument boundaries, console/GUI argument selection and game working directory",
             "Preparation precedes runtime launch; preparation and runtime failures retain their statuses; typed argument-file and historical-JAR launch forms remain distinct",
-            "The controlled empack/Java fixtures prove generated shell behavior, not execution of the production supervisor or Minecraft"
+            "The controlled empack/Java fixtures prove generated shell behavior, not execution of the production supervisor or Minecraft",
+            "The known Fabric JVM mitigation precedes the JAR entry point while server arguments, GUI/console choice and command status remain unchanged."
           ],
           "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
         },
@@ -8200,7 +8201,8 @@
           "assertions": [
             "Actual cmd.exe executes generated batch entry points with controlled external programs and no Bash dependency",
             "Preparation failure prevents launch; bundled startup preserves immediate-child status, arguments and informational text under unattended operation",
-            "Batch fixture substitutions remain explicit and do not claim production empack or Java execution"
+            "Batch fixture substitutions remain explicit and do not claim production empack or Java execution",
+            "The known Fabric JVM mitigation precedes the JAR entry point while server arguments, GUI/console choice and command status remain unchanged."
           ],
           "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
         },
@@ -8246,6 +8248,28 @@
             "The fresh store exercises acquisition, while later format builds may reuse verified cache; archive inspection does not execute the server"
           ],
           "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.fabric-jvm-contract",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::server_runtime::library::tests::fabric_security_jvm_options_are_retained_and_unknown_arguments_refuse",
+            "empack-lib::engine::server_runtime::library::tests::composed_runtime_rejects_wrong_bytes_and_retains_exact_library_evidence"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Current Fabric metadata JVM mitigation is retained as a closed typed launch option; incomplete, reordered, malformed, game and unknown arguments refuse rather than being ignored.",
+            "Verified library composition preserves source evidence and propagates the option into managed releases with a minimum engine of 0.8.8-beta; older engines cannot select that release."
+          ],
+          "remaining_group_evidence": "Synthetic metadata/library composition and release admission; generated scripts, native launch preparation and real server JVM execution have separate checks."
         },
         {
           "id": "UX-043.fabric-public-preparation",
@@ -8298,7 +8322,8 @@
           "assertions": [
             "Published server distributions run actual generated console entry points against the selected official vanilla/Fabric/Quilt/Forge/NeoForge runtimes",
             "Current variants reach Minecraft help without accepting an EULA; historical Forge variants preserve EULA refusal and require the explicit Java 8 prerequisite",
-            "Managed variants use the ordinary selected empack executable and preserve completed ownership plus selected game content; startup help/EULA is not an interactive console or gameplay check"
+            "Managed variants use the ordinary selected empack executable and preserve completed ownership plus selected game content; startup help/EULA is not an interactive console or gameplay check",
+            "Current Fabric runs both standalone and managed generated entry points; when metadata declares the mitigation, PrintFlagsFinal must report UseBASE64Intrinsics=false from the server JVM command line."
           ],
           "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
         },
@@ -8812,6 +8837,7 @@
       "required_assertions": "Exact release identity, integrity and optional choices retained; references versus included assets distinguished; pack identity/Java required.",
       "required_work": "Install extracted result via public instance command, with wrong descriptor digest negative.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "P"
@@ -8928,6 +8954,27 @@
             "aarch64-apple-darwin",
             "x86_64-pc-windows-msvc"
           ]
+        },
+        {
+          "id": "UX-046.server-jvm-codec",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::release::tests::server_jvm_options_are_closed_and_require_a_supported_runtime"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Release decoding rejects unknown or duplicate options and incompatible runtime/Java combinations; JAR launches without options keep their existing wire form.",
+            "Known closed options expand to the exact JVM arguments before the JAR path on both host variants; this is protocol admission and argument construction, not JVM execution."
+          ],
+          "remaining_group_evidence": "Pure release decoding/validation; native launch preparation, scripts and actual JVM startup are separately exercised."
         }
       ],
       "owner_now": [
@@ -13179,7 +13226,8 @@
           ],
           "assertions": [
             "Prepared server executable is explicitly compared with the host-selected program, the working directory with the installed game root, and the full argument vector with the completed release jar entry point plus literal host arguments",
-            "Changing the selected server entry-point bytes refuses later launch preparation"
+            "Changing the selected server entry-point bytes refuses later launch preparation",
+            "Both the original JAR launch and closed Fabric JVM mitigation retain exact host arguments; this checks command preparation rather than JVM execution."
           ],
           "remaining_group_evidence": "Command preparation and native drift checks do not establish actual Java startup, installer success or gameplay"
         },
@@ -13370,7 +13418,8 @@
           ],
           "assertions": [
             "The prepared command uses the explicit host-selected program, completed server entry point, game directory and literal arguments",
-            "Changed managed runtime bytes invalidate preparation; this case inspects a native prepared command and does not execute Java"
+            "Changed managed runtime bytes invalidate preparation; this case inspects a native prepared command and does not execute Java",
+            "Both the original JAR launch and closed Fabric JVM mitigation retain exact host arguments; this checks command preparation rather than JVM execution."
           ]
         },
         {

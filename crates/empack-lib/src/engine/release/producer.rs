@@ -195,9 +195,15 @@ impl NativeReleasePlan {
             });
         }
         document.server_launch = Some(match runtime.launch() {
-            ServerLaunch::Jar(path) => ReleaseServerLaunch::Jar {
-                path: path.as_str().into(),
-            },
+            ServerLaunch::Jar { path, jvm_options } => {
+                if !jvm_options.is_empty() {
+                    document.minimum_engine = format!("{}, >=0.8.8-beta", document.minimum_engine);
+                }
+                ReleaseServerLaunch::Jar {
+                    path: path.as_str().into(),
+                    jvm_options: jvm_options.clone(),
+                }
+            }
             ServerLaunch::Arguments { unix, windows } => ReleaseServerLaunch::Arguments {
                 unix: unix.as_str().into(),
                 windows: windows.as_str().into(),

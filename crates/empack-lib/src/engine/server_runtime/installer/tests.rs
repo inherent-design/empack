@@ -345,7 +345,7 @@ fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
             let prepared = result.unwrap();
             assert_eq!(prepared.runtime().loader, LoaderKind::Forge);
             assert_eq!(prepared.launcher_main_class(), "test.Launcher");
-            assert!(matches!(prepared.launch(), ServerLaunch::Jar(_)));
+            assert!(matches!(prepared.launch(), ServerLaunch::Jar { .. }));
             assert!(
                 !prepared
                     .files()

@@ -5,6 +5,7 @@ use super::{
     content::{AcquiredContent, InitialObservation, SourceEvidencePolicy},
     documents::validate_download_url,
     mrpack::AcquiredBuildFile,
+    release::ServerJvmOption,
     resources::ResourceRequest,
     runtime::WorkScope,
 };
@@ -331,10 +332,10 @@ impl VanillaServerPlan {
             },
         )]);
         Ok(PreparedServerRuntime {
-            launch: ServerLaunch::Jar(PortableRelPath::parse(
-                "server.jar",
-                PathSyntax::ProjectContent,
-            )?),
+            launch: ServerLaunch::Jar {
+                path: PortableRelPath::parse("server.jar", PathSyntax::ProjectContent)?,
+                jvm_options: Vec::new(),
+            },
             runtime: self.runtime,
             files,
             evidence,
@@ -362,7 +363,10 @@ pub enum LoaderRuntimeEvidence {
 /// Host-specific Java invocation bound to verified runtime files.
 #[derive(Debug, Clone)]
 pub enum ServerLaunch {
-    Jar(PortableRelPath),
+    Jar {
+        path: PortableRelPath,
+        jvm_options: Vec<ServerJvmOption>,
+    },
     Arguments {
         unix: PortableRelPath,
         windows: PortableRelPath,

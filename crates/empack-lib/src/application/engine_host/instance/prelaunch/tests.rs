@@ -302,6 +302,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
             if entrypoint {
                 document.server_launch = Some(ReleaseServerLaunch::Jar {
                     path: "server.jar".into(),
+                    jvm_options: Vec::new(),
                 });
                 document.files.push(ReleaseFile {
                     world_root: None,
