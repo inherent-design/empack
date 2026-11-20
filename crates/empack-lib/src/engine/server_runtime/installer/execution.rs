@@ -322,7 +322,10 @@ impl InstallerServerPlan {
             }
             InstallerLayout::ExecutableJar { destination, .. } => {
                 selected.insert(destination.clone());
-                ServerLaunch::Jar(destination.clone())
+                ServerLaunch::Jar {
+                    path: destination.clone(),
+                    jvm_options: Vec::new(),
+                }
             }
         };
         for path in required.keys() {
@@ -492,7 +495,14 @@ fn verify_launch(
     cancel: &Cancellation,
 ) -> Result<String> {
     match launch {
-        ServerLaunch::Jar(relative) => {
+        ServerLaunch::Jar {
+            path: relative,
+            jvm_options,
+        } => {
+            ensure!(
+                jvm_options.is_empty(),
+                "Installer JAR declares unsupported JVM options"
+            );
             let server = &files
                 .get(relative)
                 .context("Missing executable runtime")?

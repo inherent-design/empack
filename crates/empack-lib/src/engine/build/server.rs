@@ -19,7 +19,7 @@ use crate::{
         server_runtime::{PreparedServerRuntime, ServerLaunch, ServerRuntimeEvidence},
         snapshot::SnapshotLimits,
         staging::{MutableStage, PrivateFile},
-        templates::{TemplateOptions, prepare_templates},
+        templates::{RenderedTemplates, TemplateOptions, prepare_templates},
     },
 };
 use anyhow::{Result, ensure};
@@ -134,6 +134,46 @@ fn generated(bytes: &[u8], executable: bool, cancel: &Cancellation) -> Result<Ac
         },
     })
 }
+
+/// Only the argument-file runtime's operator-owned seed may replace installer defaults.
+/// Other game/template collisions with runtime files remain errors.
+fn initial_jvm_arguments(
+    game: &PreparedGameContent,
+    templates: &RenderedTemplates,
+    runtime: &PreparedServerRuntime,
+) -> Result<Option<AcquiredBuildFile>> {
+    if !matches!(runtime.launch(), ServerLaunch::Arguments { .. }) {
+        return Ok(None);
+    }
+    let destination = path("user_jvm_args.txt")?;
+    ensure!(
+        runtime.files().contains_key(&destination),
+        "Server argument-file runtime is missing user_jvm_args.txt"
+    );
+    let content = game.files().get(&destination);
+    let template = templates.files().get(&path("game/user_jvm_args.txt")?);
+    ensure!(
+        content.is_none() || template.is_none(),
+        "Define server JVM defaults in either game content or templates/server/game/user_jvm_args.txt.template, not both"
+    );
+    if content.is_none() && template.is_none() {
+        return Ok(None);
+    }
+    ensure!(
+        game.project()
+            .intent()
+            .installation_policies
+            .get(&destination)
+            == Some(&empack_core::instance::FilePolicy::Seed),
+        "Server JVM defaults require an explicit seed policy; set policies: {{user_jvm_args.txt: seed}} in empack.bindings.yml"
+    );
+    Ok(content.cloned().or_else(|| {
+        template.map(|file| AcquiredBuildFile {
+            content: file.content.clone(),
+            permissions: file.permissions,
+        })
+    }))
+}
 #[derive(Clone, Copy)]
 enum ServerInterface {
     Console,
@@ -195,8 +235,19 @@ fn runtime_start(
         }
     };
     let arguments = match launch {
-        ServerLaunch::Jar(path) if path.as_str() == "server.jar" => return script,
-        ServerLaunch::Jar(path) => format!("-jar {}", quote(path.as_str())),
+        ServerLaunch::Jar { path, jvm_options }
+            if path.as_str() == "server.jar" && jvm_options.is_empty() =>
+        {
+            return script;
+        }
+        ServerLaunch::Jar { path, jvm_options } => {
+            let mut arguments: Vec<String> = jvm_options
+                .iter()
+                .flat_map(|option| option.arguments().iter().map(|argument| quote(argument)))
+                .collect();
+            arguments.extend(["-jar".into(), quote(path.as_str())]);
+            arguments.join(" ")
+        }
         ServerLaunch::Arguments { unix, windows: win } => {
             let path = if windows { win } else { unix };
             format!(
@@ -306,6 +357,9 @@ pub(super) fn prepare_server_archive(
         )?
     };
     let templates = prepare_templates(workspace, target, &options.templates, cancel)?;
+    let jvm_arguments = initial_jvm_arguments(&game, &templates, runtime)?;
+    let jvm_destination = path("user_jvm_args.txt")?;
+    let jvm_template = path("game/user_jvm_args.txt")?;
     let mut files = BTreeMap::new();
     if managed {
         files.insert(
@@ -322,11 +376,18 @@ pub(super) fn prepare_server_archive(
             .policies
             .retain(|destination, _| game.files().contains_key(destination));
         Some(
-            NativeReleasePlan::prepare_selected(&game, release_options)?
-                .with_server_runtime(runtime)?,
+            NativeReleasePlan::prepare_selected(&game, release_options)?.with_server_runtime(
+                runtime,
+                jvm_arguments
+                    .as_ref()
+                    .filter(|_| templates.files().contains_key(&jvm_template)),
+            )?,
         )
     } else {
         for (destination, file) in game.files() {
+            if jvm_arguments.is_some() && destination == &jvm_destination {
+                continue;
+            }
             files.insert(
                 path(&format!("game/{}", destination.as_str()))?,
                 file.clone(),
@@ -344,6 +405,11 @@ pub(super) fn prepare_server_archive(
         Ok(())
     };
     for (destination, file) in runtime.files().iter().filter(|_| !managed) {
+        let file = if destination == &jvm_destination {
+            jvm_arguments.as_ref().unwrap_or(file)
+        } else {
+            file
+        };
         insert(
             path(&format!("game/{}", destination.as_str()))?,
             file.clone(),
@@ -377,6 +443,9 @@ pub(super) fn prepare_server_archive(
         }
     }
     for (destination, file) in templates.files() {
+        if jvm_arguments.is_some() && destination == &jvm_template {
+            continue;
+        }
         insert(
             destination.clone(),
             AcquiredBuildFile {
@@ -500,9 +569,9 @@ pub(super) fn prepare_server_archive(
         entry.insert(generated(&bytes, false, cancel)?);
     }
     let mut collisions = CollisionIndex::default();
-    if managed {
-        for destination in game.files().keys().chain(runtime.files().keys()) {
-            collisions.insert_file(&path(&format!("game/{}", destination.as_str()))?)?;
+    if let Some(release) = &release {
+        for file in &release.release().document().files {
+            collisions.insert_file(&path(&format!("game/{}", file.destination))?)?;
         }
     }
     let mut inventory = BTreeMap::new();

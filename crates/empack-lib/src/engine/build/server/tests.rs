@@ -87,7 +87,10 @@ fn generated_server_entrypoint_fixture() {
         put_invocations(&root, digest, input["engine_version"].as_str().unwrap());
     }
     let java = crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap();
-    let launch = ServerLaunch::Jar(path("server.jar").unwrap());
+    let launch = ServerLaunch::Jar {
+        path: path("server.jar").unwrap(),
+        jvm_options: Vec::new(),
+    };
     for (name, bytes) in [
         ("install_pack.sh", install_script(managed)),
         ("install_pack.bat", install_batch(managed)),
@@ -180,6 +183,557 @@ fn capture(root: &Path, host: &Path, name: &str) -> WorkspaceSnapshot {
             &Cancellation::default(),
         )
         .unwrap()
+}
+
+fn jvm_fixture(
+    root: &Path,
+    host: &Path,
+    policy: Option<empack_core::instance::FilePolicy>,
+) -> (BuildAcquisitions, PreparedServerRuntime) {
+    let external = fixture(root);
+    let runtime = crate::engine::server_runtime::tests::prepared_arguments_fixture();
+    let captured = capture(root, host, "server.zip");
+    let project = captured.require_resolved().unwrap();
+    let mut intent = project.intent().clone();
+    intent.metadata.name = "JVM fixture".into();
+    intent.runtime.loader = runtime.runtime().loader;
+    intent.runtime.loader_version = runtime.runtime().loader_version.clone();
+    if let Some(policy) = policy {
+        intent
+            .installation_policies
+            .insert(path("user_jvm_args.txt").unwrap(), policy);
+    }
+    let bytes = DocumentCodec.encode_intent(&intent).unwrap();
+    let decoded = DocumentCodec.decode_intent(&bytes, "fixture").unwrap();
+    let mut lock = project.lock().clone();
+    lock.runtime = runtime.runtime().clone();
+    lock.intent_revision = decoded.semantic_revision();
+    let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+    put(root, "empack.yml", &bytes);
+    put(
+        root,
+        "empack.lock",
+        &DocumentCodec.encode_lock(&project).unwrap(),
+    );
+    (external, runtime)
+}
+
+fn assert_authored_jvm_seed_export(source: &str) {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use crate::engine::release::{DecodedRelease, FilePolicy, Participation};
+    use empack_core::{distribution::UpdateAuthority, model::NonEmpty};
+    for recipe in [
+        Recipe::SERVER_REFERENCES,
+        Recipe::SERVER_BUNDLED,
+        Recipe::SERVER_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::SERVER_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        let managed = super::super::instance_managed(recipe);
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let (external, runtime) = jvm_fixture(
+            root.path(),
+            host.path(),
+            Some(empack_core::instance::FilePolicy::Seed),
+        );
+        let expected = b"# JVM fixture\n-Xms1G\n-Xmx12G\n-XX:+UseG1GC\n";
+        let input = if source.starts_with("templates/") {
+            b"# {{NAME}}\n-Xms1G\n-Xmx12G\n-XX:+UseG1GC\n".as_slice()
+        } else {
+            expected.as_slice()
+        };
+        put(root.path(), source, input);
+        let permissions = fs::metadata(root.path().join(source))
+            .unwrap()
+            .permissions();
+        let build = prepare_build_batch(
+            capture(root.path(), host.path(), "server.zip"),
+            NonEmpty::new(vec![DistributionRequest::Server {
+                recipe,
+                artifact: path("server.zip").unwrap(),
+                options: options(DistributionArchive::Zip),
+                runtime: Box::new(runtime),
+            }])
+            .unwrap(),
+            &external,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        build
+            .publish(
+                &Publisher::open(&host.path().join("private")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        let mut zip =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist/server.zip")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        if managed {
+            zip.by_name(".empack-consumer/release.json")
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+            let release = DecodedRelease::decode(&bytes).unwrap();
+            assert_eq!(
+                release.document().require_subscription,
+                recipe.update_authority() == UpdateAuthority::Empack
+            );
+            let entries: Vec<_> = release
+                .document()
+                .files
+                .iter()
+                .filter(|file| file.destination == "user_jvm_args.txt")
+                .collect();
+            assert_eq!(entries.len(), 1);
+            let file = entries[0];
+            assert_eq!(file.policy, FilePolicy::Seed);
+            assert_eq!(file.server, Participation::Required);
+            assert_eq!(file.client, Participation::Unsupported);
+            assert!(
+                file.assertions.is_empty(),
+                "Authored bytes must not inherit installer assertions"
+            );
+            assert!(
+                !zip.file_names()
+                    .any(|name| name.unwrap() == "game/user_jvm_args.txt")
+            );
+            bytes.clear();
+            zip.by_name(&format!(".empack-consumer/{}", file.asset_path().unwrap()))
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+        } else {
+            zip.by_name("game/user_jvm_args.txt")
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+        }
+        assert_eq!(bytes, expected);
+        assert_eq!(fs::read(root.path().join(source)).unwrap(), input);
+        assert_eq!(
+            fs::metadata(root.path().join(source))
+                .unwrap()
+                .permissions(),
+            permissions
+        );
+    }
+}
+
+#[test]
+fn authored_server_jvm_template_is_embedded_as_seed() {
+    assert_authored_jvm_seed_export("templates/server/game/user_jvm_args.txt.template");
+}
+
+#[test]
+fn authored_server_jvm_content_is_embedded_as_seed() {
+    assert_authored_jvm_seed_export("overrides/server/user_jvm_args.txt");
+}
+
+#[test]
+fn server_jvm_fallback_preserves_installer_bytes_and_ignores_client_only_defaults() {
+    use crate::engine::release::{DecodedRelease, FilePolicy, Participation};
+    for managed in [false, true] {
+        for source in [
+            None,
+            Some("overrides/client/user_jvm_args.txt"),
+            Some("templates/client/game/user_jvm_args.txt.template"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let (external, runtime) = jvm_fixture(
+                root.path(),
+                host.path(),
+                source.map(|_| empack_core::instance::FilePolicy::Seed),
+            );
+            if let Some(source) = source {
+                put(root.path(), source, b"-Xmx12G\n");
+            }
+            let expected = runtime.files()[&path("user_jvm_args.txt").unwrap()]
+                .content
+                .observed_digests()
+                .values()
+                .to_vec();
+            prepare_server_build(
+                capture(root.path(), host.path(), "server.zip"),
+                path("server.zip").unwrap(),
+                &external,
+                &options(DistributionArchive::Zip),
+                &runtime,
+                managed,
+                &Cancellation::default(),
+            )
+            .unwrap()
+            .publish(
+                &Publisher::open(&host.path().join("private")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+            let mut zip =
+                zip::ZipArchive::new(fs::File::open(root.path().join("dist/server.zip")).unwrap())
+                    .unwrap();
+            let mut bytes = Vec::new();
+            if managed {
+                zip.by_name(".empack-consumer/release.json")
+                    .unwrap()
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+                let release = DecodedRelease::decode(&bytes).unwrap();
+                let files: Vec<_> = release
+                    .document()
+                    .files
+                    .iter()
+                    .filter(|file| file.destination == "user_jvm_args.txt")
+                    .collect();
+                assert_eq!(files.len(), 1);
+                let file = files[0];
+                assert_eq!(file.policy, FilePolicy::Seed);
+                assert_eq!(file.server, Participation::Required);
+                assert_eq!(file.client, Participation::Unsupported);
+                assert_eq!(file.assertions.len(), expected.len());
+                for (actual, expected) in file.assertions.iter().zip(&expected) {
+                    assert_eq!(actual.algorithm, expected.algorithm().name());
+                    assert_eq!(actual.value, expected.hex());
+                }
+                bytes.clear();
+                zip.by_name(&format!(".empack-consumer/{}", file.asset_path().unwrap()))
+                    .unwrap()
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+            } else {
+                zip.by_name("game/user_jvm_args.txt")
+                    .unwrap()
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+            }
+            assert_eq!(bytes, b"-Xmx2G\n");
+            if let Some(source) = source {
+                assert_eq!(fs::read(root.path().join(source)).unwrap(), b"-Xmx12G\n");
+            }
+        }
+    }
+}
+
+#[test]
+fn authored_server_jvm_refusals_preserve_inputs_and_previous_artifacts() {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::{instance::FilePolicy, model::NonEmpty};
+    for recipe in [Recipe::SERVER_REFERENCES, Recipe::SERVER_BUNDLED] {
+        for (source, policy, duplicate, diagnostic) in [
+            (
+                "templates/server/game/user_jvm_args.txt.template",
+                None,
+                false,
+                "explicit seed policy",
+            ),
+            (
+                "overrides/server/user_jvm_args.txt",
+                None,
+                false,
+                "explicit seed policy",
+            ),
+            (
+                "templates/server/game/user_jvm_args.txt.template",
+                Some(FilePolicy::Managed),
+                false,
+                "explicit seed policy",
+            ),
+            (
+                "overrides/server/user_jvm_args.txt",
+                Some(FilePolicy::Managed),
+                false,
+                "explicit seed policy",
+            ),
+            (
+                "templates/server/game/user_jvm_args.txt.template",
+                Some(FilePolicy::Seed),
+                true,
+                "not both",
+            ),
+            (
+                "templates/server/game/User_Jvm_Args.txt",
+                Some(FilePolicy::Seed),
+                false,
+                "collid",
+            ),
+            (
+                "overrides/server/User_Jvm_Args.txt",
+                Some(FilePolicy::Seed),
+                false,
+                "collid",
+            ),
+            (
+                "templates/server/game/user_jvm_args.txt/nested",
+                Some(FilePolicy::Seed),
+                false,
+                "ancestor",
+            ),
+            (
+                "overrides/server/user_jvm_args.txt/nested",
+                Some(FilePolicy::Seed),
+                false,
+                "ancestor",
+            ),
+            (
+                "templates/server/game/libraries/fixture/unix_args.txt",
+                Some(FilePolicy::Seed),
+                false,
+                "collid",
+            ),
+            (
+                "overrides/server/libraries/fixture/unix_args.txt",
+                Some(FilePolicy::Seed),
+                false,
+                "collid",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let (external, runtime) = jvm_fixture(root.path(), host.path(), policy);
+            put(root.path(), source, b"-Xmx12G\n");
+            let mut names = vec!["empack.yml", "empack.lock", source, "dist/server.zip"];
+            if duplicate {
+                put(
+                    root.path(),
+                    "overrides/server/user_jvm_args.txt",
+                    b"-Xmx6G\n",
+                );
+                names.push("overrides/server/user_jvm_args.txt");
+            }
+            put(root.path(), "dist/server.zip", b"previous archive");
+            let before: Vec<_> = names
+                .into_iter()
+                .map(|name| {
+                    let file = root.path().join(name);
+                    (
+                        name,
+                        fs::read(&file).unwrap(),
+                        fs::metadata(file).unwrap().permissions(),
+                    )
+                })
+                .collect();
+            let result = prepare_build_batch(
+                capture(root.path(), host.path(), "server.zip"),
+                NonEmpty::new(vec![DistributionRequest::Server {
+                    recipe,
+                    artifact: path("server.zip").unwrap(),
+                    options: options(DistributionArchive::Zip),
+                    runtime: Box::new(runtime),
+                }])
+                .unwrap(),
+                &external,
+                &Cancellation::default(),
+            );
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("invalid server JVM defaults must fail: {source}"),
+            };
+            assert!(
+                format!("{error:#}").contains(diagnostic),
+                "{source}: {error:#}"
+            );
+            if diagnostic == "explicit seed policy" {
+                assert!(format!("{error:#}").contains("policies: {user_jvm_args.txt: seed}"));
+            }
+            for (name, bytes, permissions) in before {
+                let file = root.path().join(name);
+                assert_eq!(fs::read(&file).unwrap(), bytes, "{source}: {name}");
+                assert_eq!(fs::metadata(file).unwrap().permissions(), permissions);
+            }
+        }
+    }
+}
+
+#[test]
+fn authored_server_jvm_defaults_preserve_operator_edits_through_update_and_rollback() {
+    use crate::engine::{
+        instance::*,
+        release::{DecodedRelease, ReleaseSource, trust::SelectedSnapshot},
+    };
+    fn export(
+        root: &Path,
+        host: &Path,
+        external: &BuildAcquisitions,
+        runtime: &PreparedServerRuntime,
+        output: &Path,
+    ) -> DecodedRelease {
+        prepare_server_build(
+            capture(root, host, "server.zip"),
+            path("server.zip").unwrap(),
+            external,
+            &options(DistributionArchive::Zip),
+            runtime,
+            true,
+            &Cancellation::default(),
+        )
+        .unwrap()
+        .publish(
+            &Publisher::open(&host.join("private")).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+        zip::ZipArchive::new(fs::File::open(root.join("dist/server.zip")).unwrap())
+            .unwrap()
+            .extract(output)
+            .unwrap();
+        DecodedRelease::decode(&fs::read(output.join(".empack-consumer/release.json")).unwrap())
+            .unwrap()
+    }
+    fn install(
+        root: &Path,
+        host: &Path,
+        external: &BuildAcquisitions,
+        release: &DecodedRelease,
+        output: &Path,
+        action: InstanceAction,
+    ) {
+        let supplied = release
+            .document()
+            .files
+            .iter()
+            .filter(|file| matches!(file.source, ReleaseSource::Url { .. }))
+            .map(|file| {
+                (
+                    file.key.clone(),
+                    external.locked.values().next().unwrap().content.clone(),
+                )
+            })
+            .collect();
+        let plan = crate::engine::instance::plan(
+            root,
+            InstanceSelection {
+                require_subscription: false,
+                conflicts: Vec::new(),
+                release: SelectedRelease::Snapshot(
+                    SelectedSnapshot::select(
+                        release.bytes(),
+                        release.id(),
+                        &semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
+                    )
+                    .unwrap(),
+                ),
+                side: InstanceSide::Server,
+                layout: Some(InstanceLayout::Game),
+                choices: vec![],
+                action,
+            },
+            RecoveryReader::new(host.join("instance-state")),
+            SnapshotLimits::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+        plan.stage(
+            &supplied,
+            &BTreeMap::new(),
+            Some(&output.join(".empack-consumer")),
+            &Cancellation::default(),
+        )
+        .unwrap()
+        .publish(
+            &Publisher::open(&host.join("instance-state")).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    }
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let instance = tempfile::tempdir().unwrap();
+    let first_output = tempfile::tempdir().unwrap();
+    let second_output = tempfile::tempdir().unwrap();
+    let (external, runtime) = jvm_fixture(
+        root.path(),
+        host.path(),
+        Some(empack_core::instance::FilePolicy::Seed),
+    );
+    let source = "templates/server/game/user_jvm_args.txt.template";
+    put(
+        root.path(),
+        source,
+        b"# {{NAME}}\n-Xms1G\n-Xmx12G\n-XX:+UseG1GC\n",
+    );
+    let first = export(
+        root.path(),
+        host.path(),
+        &external,
+        &runtime,
+        first_output.path(),
+    );
+    install(
+        instance.path(),
+        host.path(),
+        &external,
+        &first,
+        first_output.path(),
+        InstanceAction::Ensure,
+    );
+    assert_eq!(
+        fs::read(instance.path().join("game/user_jvm_args.txt")).unwrap(),
+        b"# JVM fixture\n-Xms1G\n-Xmx12G\n-XX:+UseG1GC\n"
+    );
+    put(
+        instance.path(),
+        "game/user_jvm_args.txt",
+        b"-Xms2G\n-Xmx6G\n",
+    );
+    put(instance.path(), "game/world/level.dat", b"operator world");
+    fs::remove_file(root.path().join(source)).unwrap();
+    put(
+        root.path(),
+        "overrides/server/user_jvm_args.txt",
+        b"-Xms1G\n-Xmx16G\n",
+    );
+    let second = export(
+        root.path(),
+        host.path(),
+        &external,
+        &runtime,
+        second_output.path(),
+    );
+    assert_ne!(first.id(), second.id());
+    for (release, output, action) in [
+        (&second, second_output.path(), InstanceAction::Apply),
+        (&second, second_output.path(), InstanceAction::Repair),
+        (&first, first_output.path(), InstanceAction::Rollback),
+    ] {
+        install(
+            instance.path(),
+            host.path(),
+            &external,
+            release,
+            output,
+            action,
+        );
+        assert_eq!(
+            fs::read(instance.path().join("game/user_jvm_args.txt")).unwrap(),
+            b"-Xms2G\n-Xmx6G\n"
+        );
+        assert_eq!(
+            fs::read(instance.path().join("game/world/level.dat")).unwrap(),
+            b"operator world"
+        );
+        let record = InstanceRecord::decode(
+            &fs::read(instance.path().join(".empack/instance.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record.release, release.id());
+    }
+    let fresh = tempfile::tempdir().unwrap();
+    install(
+        fresh.path(),
+        host.path(),
+        &external,
+        &second,
+        second_output.path(),
+        InstanceAction::Ensure,
+    );
+    assert_eq!(
+        fs::read(fresh.path().join("game/user_jvm_args.txt")).unwrap(),
+        b"-Xms1G\n-Xmx16G\n"
+    );
 }
 #[test]
 fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
@@ -659,7 +1213,10 @@ exit 7
                 fs::remove_file(&marker).unwrap();
             }
             let script = runtime_script(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 false,
                 cfg!(windows),
                 interface,
@@ -793,7 +1350,10 @@ exec "$program" -jar server.jar "$@"
             root.path(),
             "start.sh",
             runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 false,
                 interface,
@@ -875,7 +1435,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
             root.path(),
             "start.bat",
             runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 true,
                 interface,
@@ -938,8 +1501,18 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
             "@user_jvm_args.txt\n@libraries/loader/unix_args.txt\nnogui\nuser argument\n",
         ),
         (
-            ServerLaunch::Jar(path("forge-1.12.2-14.23.5.2860.jar").unwrap()),
+            ServerLaunch::Jar {
+                path: path("forge-1.12.2-14.23.5.2860.jar").unwrap(),
+                jvm_options: Vec::new(),
+            },
             "-jar\nforge-1.12.2-14.23.5.2860.jar\nnogui\nuser argument\n",
+        ),
+        (
+            ServerLaunch::Jar {
+                path: path("server.jar").unwrap(),
+                jvm_options: vec![crate::engine::release::ServerJvmOption::DisableBase64Intrinsics],
+            },
+            "-XX:+UnlockDiagnosticVMOptions\n-XX:-UseBASE64Intrinsics\n-jar\nserver.jar\nnogui\nuser argument\n",
         ),
     ] {
         for (interface, argument) in [
@@ -989,7 +1562,10 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
     for interface in [ServerInterface::Console, ServerInterface::Gui] {
         for windows in [false, true] {
             let launch = runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                &ServerLaunch::Jar {
+                    path: path("server.jar").unwrap(),
+                    jvm_options: Vec::new(),
+                },
                 true,
                 windows,
                 interface,
@@ -1036,7 +1612,14 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
         b"@echo off\r\necho %* > arguments.txt\r\nexit /b %EMPACK_TEST_STATUS%\r\n",
     );
     for launch in [
-        ServerLaunch::Jar(path("server.jar").unwrap()),
+        ServerLaunch::Jar {
+            path: path("server.jar").unwrap(),
+            jvm_options: Vec::new(),
+        },
+        ServerLaunch::Jar {
+            path: path("server.jar").unwrap(),
+            jvm_options: vec![crate::engine::release::ServerJvmOption::DisableBase64Intrinsics],
+        },
         ServerLaunch::Arguments {
             unix: path("unix.txt").unwrap(),
             windows: path("libraries/win args.txt").unwrap(),
@@ -1071,9 +1654,14 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
                 );
                 let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
                 assert_eq!(args.contains("nogui"), !argument.is_empty());
-                match launch {
-                    ServerLaunch::Jar(_) => {
-                        assert!(args.contains(&format!("-jar server.jar {argument}")))
+                match &launch {
+                    ServerLaunch::Jar { jvm_options, .. } => {
+                        if jvm_options.is_empty() {
+                            assert!(args.contains(&format!("-jar server.jar {argument}")));
+                            assert!(!args.contains("UseBASE64Intrinsics"));
+                        } else {
+                            assert!(args.contains(&format!("\"-XX:+UnlockDiagnosticVMOptions\" \"-XX:-UseBASE64Intrinsics\" -jar \"server.jar\" {argument}")), "{args}");
+                        }
                     }
                     ServerLaunch::Arguments { .. } => {
                         assert!(args.contains(&format!(
@@ -1088,7 +1676,10 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
         root.path(),
         "start.bat",
         runtime_start(
-            &ServerLaunch::Jar(path("server.jar").unwrap()),
+            &ServerLaunch::Jar {
+                path: path("server.jar").unwrap(),
+                jvm_options: Vec::new(),
+            },
             false,
             true,
             ServerInterface::Console,

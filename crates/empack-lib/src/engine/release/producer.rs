@@ -86,6 +86,7 @@ impl NativeReleasePlan {
     pub(crate) fn with_server_runtime(
         mut self,
         runtime: &crate::engine::server_runtime::PreparedServerRuntime,
+        initial_jvm_args: Option<&AcquiredBuildFile>,
     ) -> Result<Self> {
         use crate::engine::server_runtime::ServerLaunch;
         ensure!(
@@ -103,8 +104,18 @@ impl NativeReleasePlan {
             document.server_launch.is_none(),
             "Release already contains a server runtime"
         );
+        ensure!(
+            initial_jvm_args.is_none()
+                || (matches!(runtime.launch(), ServerLaunch::Arguments { .. })
+                    && runtime
+                        .files()
+                        .keys()
+                        .any(|path| path.as_str() == "user_jvm_args.txt")),
+            "Initial JVM arguments require an argument-file server runtime"
+        );
         let mut collisions = crate::engine::layout::CollisionIndex::default();
-        // Runtime paths cannot alias any game layer or its parent, including inactive variants.
+        // Reserve authored destinations first. Only the exact required JVM seed
+        // may share a runtime destination; portable aliases remain errors.
         let mut seen = BTreeSet::new();
         for file in &document.files {
             let destination =
@@ -115,7 +126,28 @@ impl NativeReleasePlan {
             }
         }
         for (destination, supplied) in runtime.files() {
+            let jvm_seed = matches!(runtime.launch(), ServerLaunch::Arguments { .. })
+                && destination.as_str() == "user_jvm_args.txt";
+            if jvm_seed
+                && let Some(authored) = document
+                    .files
+                    .iter()
+                    .find(|file| file.destination == "user_jvm_args.txt")
+            {
+                ensure!(
+                    initial_jvm_args.is_none()
+                        && authored.policy == FilePolicy::Seed
+                        && authored.server == Participation::Required,
+                    "Authored server JVM arguments must be one required server seed"
+                );
+                continue;
+            }
             collisions.insert_file(destination)?;
+            let supplied = if jvm_seed {
+                initial_jvm_args.unwrap_or(supplied)
+            } else {
+                supplied
+            };
             let address = hex_address(supplied.content.lease().id().bytes());
             let asset = format!("assets/{address}");
             let assertions = match supplied.content.evidence() {
@@ -163,9 +195,15 @@ impl NativeReleasePlan {
             });
         }
         document.server_launch = Some(match runtime.launch() {
-            ServerLaunch::Jar(path) => ReleaseServerLaunch::Jar {
-                path: path.as_str().into(),
-            },
+            ServerLaunch::Jar { path, jvm_options } => {
+                if !jvm_options.is_empty() {
+                    document.minimum_engine = format!("{}, >=0.8.8-beta", document.minimum_engine);
+                }
+                ReleaseServerLaunch::Jar {
+                    path: path.as_str().into(),
+                    jvm_options: jvm_options.clone(),
+                }
+            }
             ServerLaunch::Arguments { unix, windows } => ReleaseServerLaunch::Arguments {
                 unix: unix.as_str().into(),
                 windows: windows.as_str().into(),

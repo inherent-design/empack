@@ -2168,6 +2168,7 @@ async fn server_release_updates_runtime_and_rolls_back_without_touching_user_dat
         doc.runtime.minecraft = version.into();
         doc.server_launch = Some(ReleaseServerLaunch::Jar {
             path: destination.into(),
+            jvm_options: Vec::new(),
         });
         let mut input = replace_document(input, doc);
         input.side = InstanceSide::Server;

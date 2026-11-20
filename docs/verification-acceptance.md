@@ -18,6 +18,8 @@ The [release scope registry](../tests/verification/requirements.json) owns the r
 
 A registered scope selecting managed Prism reference and managed server console/GUI on macOS requires six checks: three workflows for both default and telemetry products. Perform the registered checks without asking the maintainer to run or approve each one. Review affected workflows when implementation, consumer dependencies or packaging change; a reduction of required coverage must be an explicit scope decision rather than a workaround for missing evidence.
 
+The v0.8.8 scope selects managed and standalone bundled server console/GUI workflows on macOS for both products: eight checks. Include a Forge/NeoForge argument-file runtime with an authored JVM seed, verify the effective settings and preserve an operator edit through preparation and update or repair. All automated platform gates remain required.
+
 The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 
 When required by the selected release scope, Prism, platform-import and server consumer records cover Linux, macOS, and Windows for default and telemetry products. The registered-browser handoff procedure is Windows-specific. The selected host for human tasks is macOS. A result on one host does not supply evidence for another. Actual-consumer and human tasks remain unperformed until their records exist; helper tests cannot supply them.
@@ -129,7 +131,7 @@ python3 scripts/acceptance-assets.py stage \
 
 Repeat `--record` for the other reviewed records and attempts. Staging preserves their bytes and checks supporting files and candidate coordinates; the gate still establishes the product, procedure and outcome bindings. The output directory must be new. Its `staging.json` lists the files to upload. Record asset names contain the archive-evidence digest and the record's own digest; supporting assets use their content digest. Different attempts have different names, and shared supporting bytes need only one asset.
 
-The container is a temporary dedicated draft release named `acceptance-v<version>`, such as `acceptance-v0.8.4-beta`. Create or reuse it as part of the authorized release task. It contains acceptance data and remains separate from the shipping release. Remove it after completing the release as described below. For example, using Bash:
+The container is a temporary dedicated draft release named `acceptance-v<version>`. Create or reuse it as part of the authorized release task. It contains acceptance data and remains separate from the shipping release. Remove it after completing the release as described below. For example, using Bash:
 
 ```bash
 EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"

@@ -35,6 +35,7 @@ fn contract(main: &str, shaded: bool) -> LauncherContract {
         launch_main: main.into(),
         declared_main: None,
         shaded,
+        jvm_options: Vec::new(),
     }
 }
 #[test]
@@ -81,6 +82,53 @@ fn catalog_binds_runtime_coordinates_and_preserves_legacy_launcher_layout() {
     arguments["arguments"]["jvm"] = serde_json::json!(["-Dignored=true"]);
     assert!(plan(&arguments, "0.16.0").is_err());
 }
+
+#[test]
+fn fabric_security_jvm_options_are_retained_and_unknown_arguments_refuse() {
+    let mut data = metadata("0.16.0");
+    // Fabric meta 6baa73e adds this pair to server profiles from 1.18-pre2 onward.
+    data["arguments"]["jvm"] =
+        serde_json::json!(["-XX:+UnlockDiagnosticVMOptions", "-XX:-UseBASE64Intrinsics"]);
+    let accepted = plan(&data, "0.16.0")
+        .expect("Current Fabric server profile must retain its JVM mitigation");
+    assert_eq!(
+        accepted.launcher.jvm_options,
+        [ServerJvmOption::DisableBase64Intrinsics]
+    );
+    for invalid in [
+        serde_json::json!(["-XX:-UseBASE64Intrinsics"]),
+        serde_json::json!(["-XX:-UseBASE64Intrinsics", "-XX:+UnlockDiagnosticVMOptions"]),
+        serde_json::json!([
+            "-XX:+UnlockDiagnosticVMOptions",
+            "-XX:-UseBASE64Intrinsics",
+            "-jar"
+        ]),
+        serde_json::json!(["-Dignored=true"]),
+        serde_json::json!([{"value":"-XX:-UseBASE64Intrinsics"}]),
+        serde_json::json!("-XX:-UseBASE64Intrinsics"),
+    ] {
+        data["arguments"]["jvm"] = invalid;
+        let error = plan(&data, "0.16.0")
+            .err()
+            .expect("Unsupported JVM arguments must refuse");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported JVM launch arguments")
+        );
+    }
+    data["arguments"]["jvm"] = serde_json::json!([]);
+    data["arguments"]["game"] = serde_json::json!(["--unrecognized"]);
+    assert!(plan(&data, "0.16.0").is_err());
+    let mut quilt = quilt_metadata();
+    quilt["arguments"]["jvm"] =
+        serde_json::json!(["-XX:+UnlockDiagnosticVMOptions", "-XX:-UseBASE64Intrinsics"]);
+    assert!(
+        quilt_plan(&quilt).is_err(),
+        "A different upstream contract needs its own qualification"
+    );
+}
+
 fn jar(extra: bool) -> AcquiredContent {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for (name, bytes) in [
@@ -216,11 +264,13 @@ async fn composed_runtime_rejects_wrong_bytes_and_retains_exact_library_evidence
         resources::{ResourceGovernor, ResourceRequest},
         runtime::{OperationOutcome, OperationRuntime},
     };
-    for (family, corrupt) in [
-        (LoaderKind::Fabric, false),
-        (LoaderKind::Fabric, true),
-        (LoaderKind::Quilt, false),
-        (LoaderKind::Quilt, true),
+    for (family, corrupt, mitigation) in [
+        (LoaderKind::Fabric, false, false),
+        (LoaderKind::Fabric, true, false),
+        (LoaderKind::Fabric, false, true),
+        (LoaderKind::Fabric, true, true),
+        (LoaderKind::Quilt, false, false),
+        (LoaderKind::Quilt, true, false),
     ] {
         let governor = ResourceGovernor::new(ResourceRequest {
             jobs: 2,
@@ -233,7 +283,16 @@ async fn composed_runtime_rejects_wrong_bytes_and_retains_exact_library_evidence
             .start(move |mut scope| async move {
                 let mut plan = match family {
                     LoaderKind::Quilt => quilt_plan(&quilt_metadata()).unwrap(),
-                    _ => plan(&metadata("0.16.0"), "0.16.0").unwrap(),
+                    _ => {
+                        let mut data = metadata("0.16.0");
+                        if mitigation {
+                            data["arguments"]["jvm"] = serde_json::json!([
+                                "-XX:+UnlockDiagnosticVMOptions",
+                                "-XX:-UseBASE64Intrinsics"
+                            ]);
+                        }
+                        plan(&data, "0.16.0").unwrap()
+                    }
                 };
                 let expected = jar(false);
                 for library in &mut plan.libraries {
@@ -267,6 +326,16 @@ async fn composed_runtime_rejects_wrong_bytes_and_retains_exact_library_evidence
                 assert_eq!(evidence.family, family);
                 assert_eq!(evidence.libraries.len(), 2);
                 assert!(!evidence.shaded);
+                let expected_options = if mitigation {
+                    vec![ServerJvmOption::DisableBase64Intrinsics]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(evidence.jvm_options, expected_options);
+                assert!(
+                    matches!(runtime.launch(), ServerLaunch::Jar { jvm_options, .. }
+                    if *jvm_options == expected_options)
+                );
                 assert_eq!(runtime.files().len(), 5);
                 let launcher = &runtime.files()
                     [&PortableRelPath::parse("server.jar", PathSyntax::ProjectContent).unwrap()];
@@ -275,6 +344,82 @@ async fn composed_runtime_rejects_wrong_bytes_and_retains_exact_library_evidence
                     governor.status().reserved.scratch_bytes,
                     launcher.content.lease().len()
                 );
+                if family == LoaderKind::Fabric {
+                    use crate::engine::{
+                        mrpack::LockedFileKey,
+                        release::{
+                            producer::{NativeReleaseOptions, NativeReleasePlan},
+                            trust::SelectedSnapshot,
+                        },
+                    };
+                    let project = crate::engine::mrpack::tests::project(false, false);
+                    let acquired = project
+                        .lock()
+                        .dependencies
+                        .iter()
+                        .flat_map(|(key, dependency)| {
+                            dependency.files.as_slice().iter().map(|file| {
+                                (
+                                    LockedFileKey {
+                                        dependency: key.clone(),
+                                        slot: file.slot.clone(),
+                                    },
+                                    AcquiredBuildFile {
+                                        content: content(b"payload"),
+                                        permissions: FilePermissions {
+                                            readonly: false,
+                                            executable: false,
+                                        },
+                                    },
+                                )
+                            })
+                        })
+                        .collect();
+                    let plan = NativeReleasePlan::prepare(
+                        &project,
+                        &acquired,
+                        Vec::new(),
+                        NativeReleaseOptions::from_project(&project).unwrap(),
+                    )
+                    .unwrap()
+                    .with_server_runtime(runtime, None)
+                    .unwrap();
+                    let release = plan.release();
+                    for (version, accepted) in [("0.8.7-beta", !mitigation), ("0.8.8-beta", true)] {
+                        assert_eq!(
+                            SelectedSnapshot::select(
+                                release.bytes(),
+                                release.id(),
+                                &semver::Version::parse(version).unwrap()
+                            )
+                            .is_ok(),
+                            accepted
+                        );
+                    }
+                    let expected: Vec<std::ffi::OsString> = if mitigation {
+                        [
+                            "-XX:+UnlockDiagnosticVMOptions",
+                            "-XX:-UseBASE64Intrinsics",
+                            "-jar",
+                            "server.jar",
+                        ]
+                        .map(Into::into)
+                        .to_vec()
+                    } else {
+                        ["-jar", "server.jar"].map(Into::into).to_vec()
+                    };
+                    for windows in [false, true] {
+                        assert_eq!(
+                            release
+                                .document()
+                                .server_launch
+                                .as_ref()
+                                .unwrap()
+                                .arguments(windows),
+                            expected
+                        );
+                    }
+                }
             }
             OperationOutcome::Completed(Err(_)) => assert!(corrupt),
             OperationOutcome::Failed(error) => panic!("{error}"),

@@ -6,7 +6,7 @@
 
 Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exact dependencies into `empack.lock`, builds launcher and server distributions, and can install and update native pack releases while preserving player-owned files.
 
-This documentation describes **v0.8.7-beta**. Use the documentation at your installed release tag. Review [supported formats and older projects](docs/troubleshooting.md#older-author-projects) before opening an existing project.
+This documentation covers **v0.8.8-beta**. Use the documentation at your installed release tag. Review [supported formats and older projects](docs/troubleshooting.md#older-author-projects) before opening an existing project with this version.
 
 ## Installation
 

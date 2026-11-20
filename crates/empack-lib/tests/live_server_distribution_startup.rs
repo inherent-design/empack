@@ -104,7 +104,7 @@ async fn verify_live_distribution(
         .map(|home| PathBuf::from(home).join("bin").join(executable))
         .unwrap_or_else(|| executable.into());
     let root = tempfile::tempdir()?;
-    package_runtime(runtime, java.clone(), root.path(), managed).await?;
+    let mitigation = package_runtime(runtime, java.clone(), root.path(), managed).await?;
     let entrypoint = |name: &str| {
         if cfg!(windows) {
             let mut command = std::process::Command::new("cmd.exe");
@@ -256,6 +256,11 @@ async fn verify_live_distribution(
     if !historical {
         command.arg("--help");
     }
+    if mitigation {
+        // Observe the actual server JVM, not merely the generated script text.
+        // This diagnostic option does not disable the intrinsic itself.
+        command.env("JAVA_TOOL_OPTIONS", "-XX:+PrintFlagsFinal");
+    }
     let started = std::time::Instant::now();
     let output = probe_launcher(command, Duration::from_secs(90))
         .await
@@ -266,6 +271,19 @@ async fn verify_live_distribution(
         "Actual server launcher failed: {}",
         output.error_output()
     );
+    if mitigation {
+        anyhow::ensure!(
+            output.stdout.lines().any(|line| {
+                line.split_whitespace()
+                    .collect::<Vec<_>>()
+                    .windows(3)
+                    .any(|words| words == ["UseBASE64Intrinsics", "=", "false"])
+                    && line.contains("{command line}")
+            }),
+            "Generated server launch did not apply the declared JVM mitigation: {}",
+            output.error_output()
+        );
+    }
     if managed {
         anyhow::ensure!(
             !output.stderr.contains("distribution-local engine refused")
@@ -315,7 +333,7 @@ async fn package_runtime(
     java: PathBuf,
     destination: &std::path::Path,
     managed: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     use empack_core::{distribution::Recipe, model::NonEmpty};
     use empack_core::{
         inventory::OptionalPolicy,
@@ -478,7 +496,7 @@ async fn package_runtime(
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let result = handle.wait().await;
     engine.shutdown().await;
-    match &*result {
+    let mitigation = match &*result {
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
             receipt,
         ))) => {
@@ -486,6 +504,9 @@ async fn package_runtime(
                 receipt.artifacts.len() == 1 && receipt.artifacts[0].server_runtime.is_some(),
                 "Published archive lacks runtime evidence"
             );
+            matches!(receipt.artifacts[0].server_runtime.as_ref().unwrap().loader.as_ref(),
+                Some(empack_lib::engine::server_runtime::LoaderRuntimeEvidence::Libraries(evidence))
+                if evidence.jvm_options.contains(&empack_lib::engine::release::ServerJvmOption::DisableBase64Intrinsics))
         }
         OperationOutcome::Completed(
             ExecutionOutcome::FailedBeforePublication(error)
@@ -495,7 +516,7 @@ async fn package_runtime(
             anyhow::bail!("Runtime publication requires recovery: {cause:#}")
         }
         _ => anyhow::bail!("Runtime build did not complete"),
-    }
+    };
     zip::ZipArchive::new(fs::File::open(project.path().join("dist/server.zip"))?)?
         .extract(destination)?;
     if managed {
@@ -504,7 +525,7 @@ async fn package_runtime(
             "Managed content must be activated through the engine"
         );
     }
-    Ok(())
+    Ok(mitigation)
 }
 
 #[tokio::test]
@@ -515,9 +536,11 @@ async fn runtime_server_vanilla() {
 #[tokio::test]
 #[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
 async fn runtime_server_fabric_classpath() {
-    verify_live_runtime("1.20.1", Some(("0.16.0", LoaderKind::Fabric)))
-        .await
-        .unwrap();
+    for managed in [false, true] {
+        verify_live_distribution("1.20.1", Some(("0.16.0", LoaderKind::Fabric)), managed)
+            .await
+            .unwrap();
+    }
 }
 #[tokio::test]
 #[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]

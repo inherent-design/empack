@@ -42,6 +42,7 @@ pub(super) struct LauncherContract {
     launch_main: String,
     declared_main: Option<String>,
     shaded: bool,
+    jvm_options: Vec<ServerJvmOption>,
 }
 pub struct LibraryServerPlan {
     runtime: RuntimeResolution,
@@ -73,6 +74,7 @@ pub struct LibraryRuntimeEvidence {
     pub libraries: Vec<LibraryFileEvidence>,
     pub launcher: ContentId,
     pub main_class: String,
+    pub jvm_options: Vec<ServerJvmOption>,
 }
 
 impl LibraryServerPlan {
@@ -197,15 +199,32 @@ impl LibraryServerPlan {
         } else {
             None
         };
-        for argument in ["game", "jvm"] {
-            ensure!(
-                value["arguments"][argument].is_null()
-                    || value["arguments"][argument]
-                        .as_array()
-                        .is_some_and(|args| args.is_empty()),
-                "Library runtime metadata declares unsupported launch arguments"
-            );
-        }
+        ensure!(
+            value["arguments"]["game"].is_null()
+                || value["arguments"]["game"]
+                    .as_array()
+                    .is_some_and(|args| args.is_empty()),
+            "Library runtime metadata declares unsupported game launch arguments"
+        );
+        // Fabric meta 6baa73e adds a paired JVM mitigation. Recognize its exact
+        // contract rather than dropping declared arguments or accepting Java entry-point overrides.
+        let jvm_options = match &value["arguments"]["jvm"] {
+            Value::Null => Vec::new(),
+            Value::Array(args) if args.is_empty() => Vec::new(),
+            Value::Array(args)
+                if kind == LibraryKind::Fabric
+                    && args.as_slice()
+                        == [
+                            Value::from("-XX:+UnlockDiagnosticVMOptions"),
+                            Value::from("-XX:-UseBASE64Intrinsics"),
+                        ] =>
+            {
+                vec![ServerJvmOption::DisableBase64Intrinsics]
+            }
+            _ => {
+                anyhow::bail!("Library runtime metadata declares unsupported JVM launch arguments")
+            }
+        };
         let libraries = value["libraries"]
             .as_array()
             .context("Library runtime metadata lacks libraries")?;
@@ -310,6 +329,7 @@ impl LibraryServerPlan {
                 launch_main,
                 declared_main,
                 shaded,
+                jvm_options,
             },
             libraries: planned,
         })
@@ -434,6 +454,11 @@ impl LibraryServerPlan {
             "Library runtime base runtime differs from selected Minecraft"
         );
         ensure!(
+            self.launcher.jvm_options.is_empty()
+                || vanilla.evidence.java_major.is_some_and(|major| major >= 17),
+            "Fabric JVM mitigation requires verified Minecraft Java 17 or newer metadata"
+        );
+        ensure!(
             libraries.len() == self.libraries.len(),
             "Library runtime library acquisition is incomplete"
         );
@@ -555,6 +580,10 @@ impl LibraryServerPlan {
             },
         );
         let family = self.runtime.loader;
+        vanilla.launch = ServerLaunch::Jar {
+            path: PortableRelPath::parse("server.jar", PathSyntax::ProjectContent)?,
+            jvm_options: self.launcher.jvm_options.clone(),
+        };
         vanilla.runtime = self.runtime;
         vanilla.evidence.loader = Some(LoaderRuntimeEvidence::Libraries(LibraryRuntimeEvidence {
             metadata: self.metadata,
@@ -563,6 +592,7 @@ impl LibraryServerPlan {
             libraries: evidence,
             launcher: launcher_id,
             main_class: main,
+            jvm_options: self.launcher.jvm_options,
         }));
         Ok(vanilla)
     }
