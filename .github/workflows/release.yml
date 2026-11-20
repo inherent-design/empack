@@ -222,7 +222,7 @@ jobs:
   archive-gate:
     name: Verify every final archive and stage the same bytes
     needs: [build, test-archives]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     outputs:
       evidence_sha256: ${{ steps.admit.outputs.evidence_sha256 }}
@@ -261,7 +261,7 @@ jobs:
 
   consumer:
     name: Qualify supported consumer parser
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -431,7 +431,7 @@ jobs:
     needs: [archive-gate, consumer, auxiliary, candidate-execution]
     # A failed/blocked execution still supplies observations for the report.
     if: ${{ always() && needs.archive-gate.result == 'success' && needs.consumer.result == 'success' && needs.auxiliary.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # GitHub only lists draft releases for callers with repository push access.
     # The collector uses GET only; publication remains in the tag-only release job.

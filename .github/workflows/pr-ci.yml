@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   plan:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       native: ${{ steps.select.outputs.native }}
@@ -48,7 +48,7 @@ jobs:
 
   tooling:
     needs: [plan, bootstrap]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -214,7 +214,7 @@ jobs:
   live:
     needs: [plan, lint, bootstrap]
     if: needs.plan.outputs.live == 'true' && needs.plan.outputs.trusted == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -261,7 +261,7 @@ jobs:
   consumer:
     needs: plan
     if: needs.plan.outputs.consumer == 'true' && needs.plan.outputs.trusted == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -280,7 +280,7 @@ jobs:
   survey:
     needs: [plan, bootstrap]
     if: needs.plan.outputs.survey == 'true' && needs.plan.outputs.trusted == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -377,7 +377,7 @@ jobs:
     name: verification-gate
     needs: [plan, bootstrap, tooling, lint, test, cross-build, coverage, live, consumer, survey]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
