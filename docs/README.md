@@ -15,14 +15,15 @@ Use the documentation at your installed release tag. The main branch can describ
 
 ## Development and reference
 
-| Reference                                                                       | Purpose                                                                    |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [Contributing](../CONTRIBUTING.md)                                              | Toolchain, checks and contribution conventions                             |
-| [Testing](testing.md)                                                           | Deterministic tests and external consumer acceptance                       |
-| [Dependency maintenance](dependencies.md)                                       | Update inputs, coupled tools, owned patches, and validation                |
-| [v0.9 browser authoring candidate](candidates/v0.9.0-beta-browser-authoring.md) | Proposed portable editing engine and browser capabilities; not implemented |
-| [Design contracts](design/README.md)                                            | Engine boundaries, formats and guarantees                                  |
-| [Modrinth integration](reference/MODRINTH.md)                                   | Provider identity and format behavior                                      |
-| [CurseForge integration](reference/CURSEFORGE.md)                               | Provider identity and download constraints                                 |
+| Reference                                                                       | Purpose                                                                       |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [Contributing](../CONTRIBUTING.md)                                              | Toolchain, checks and contribution conventions                                |
+| [Testing](testing.md)                                                           | Deterministic tests and external consumer acceptance                          |
+| [Release verification](releasing.md)                                            | Product builds, archive checks, exact-candidate qualification and publication |
+| [Dependency maintenance](dependencies.md)                                       | Update inputs, coupled tools, owned patches, and validation                   |
+| [v0.9 browser authoring candidate](candidates/v0.9.0-beta-browser-authoring.md) | Proposed portable editing engine and browser capabilities; not implemented    |
+| [Design contracts](design/README.md)                                            | Engine boundaries, formats and guarantees                                     |
+| [Modrinth integration](reference/MODRINTH.md)                                   | Provider identity and format behavior                                         |
+| [CurseForge integration](reference/CURSEFORGE.md)                               | Provider identity and download constraints                                    |
 
 Generated Rust API documentation defines callable interfaces. Design documents explain their contracts; they are not required reading for ordinary pack operations.

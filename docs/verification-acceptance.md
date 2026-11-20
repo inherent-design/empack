@@ -131,7 +131,7 @@ python3 scripts/acceptance-assets.py stage \
 
 Repeat `--record` for the other reviewed records and attempts. Staging preserves their bytes and checks supporting files and candidate coordinates; the gate still establishes the product, procedure and outcome bindings. The output directory must be new. Its `staging.json` lists the files to upload. Record asset names contain the archive-evidence digest and the record's own digest; supporting assets use their content digest. Different attempts have different names, and shared supporting bytes need only one asset.
 
-The container is a temporary dedicated draft release named `acceptance-v<version>`, such as `acceptance-v0.8.4-beta`. Create or reuse it as part of the authorized release task. It contains acceptance data and remains separate from the shipping release. Remove it after completing the release as described below. For example, using Bash:
+The container is a temporary dedicated draft release named `acceptance-v<version>`. Create or reuse it as part of the authorized release task. It contains acceptance data and remains separate from the shipping release. Remove it after completing the release as described below. For example, using Bash:
 
 ```bash
 EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"
