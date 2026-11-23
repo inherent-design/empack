@@ -16385,10 +16385,28 @@
           "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
         },
         {
+          "id": "UX-086.bootstrap-source-admission",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_product_build.ProductBuild.test_bootstrap_admission_requires_rebuild_after_project_license_changes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "The bootstrap producer admission accepts an exact source-bound candidate, rejects it after the project LICENSE changes, and accepts a rebuilt identity without changing the inert JAR bytes"
+          ],
+          "remaining_group_evidence": "Helper/source-binding fixture only; ordinary native product compilation verifies the Rust embedding. This fixture needs no downloaded Cargo packages and does not qualify Java execution or native compilation."
+        },
+        {
           "id": "UX-086.cargo-build-evidence-validator",
           "boundary": "N",
           "test_ids": [
-            "python::test_product_build.ProductBuild.test_native_embedding_requires_rebuild_after_project_license_changes",
             "python::test_product_build.ProductBuild.test_missing_failed_truncated_or_inconsistent_build_records_are_rejected",
             "python::test_product_build.ProductBuild.test_real_default_telemetry_and_cached_artifacts_are_audited",
             "python::test_product_build.ProductBuild.test_real_transitive_test_feature_and_package_leakage_are_rejected",
