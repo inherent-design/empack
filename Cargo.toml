@@ -3,10 +3,11 @@ resolver = "2"
 members = ["crates/empack-core", "crates/empack-lib", "crates/empack", "crates/empack-tests"]
 
 [workspace.package]
-authors = ["mannie.exe <mannie@inherent.design>"]
+authors = ["inherent.design contributors"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/inherent-design/empack"
+description = "Modpack lifecycle manager for Minecraft with Modrinth and CurseForge support"
 version = "0.0.0-dev"
 
 [workspace.metadata.empack]

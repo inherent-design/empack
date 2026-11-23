@@ -2,6 +2,10 @@
   "schema": 1,
   "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
   "tests": [
+    {"id": "python::test_release_archive.ReleaseArchiveAdmission.test_license_is_preserved_without_changing_executable_identity", "boundary": "H", "requirements": ["UX-085"]},
+    {"id": "python::test_release_archive.ReleaseArchiveAdmission.test_license_cannot_replace_the_executable_or_admit_unsafe_members", "boundary": "H", "requirements": ["UX-085"]},
+    {"id": "python::test_release_archive.ReleaseArchiveAdmission.test_duplicate_license_members_are_rejected", "boundary": "H", "requirements": ["UX-085"]},
+    {"id": "python::test_product_build.ProductBuild.test_native_embedding_requires_rebuild_after_project_license_changes", "boundary": "N", "requirements": ["UX-086"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v088_manual_scope_requires_mac_servers_without_erasing_other_observations", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_v088_manual_scope_refuses_expansion_or_automated_exclusions", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.SuiteEvidence.test_server_compilation_preserves_graph_selection_and_private_driver_suites", "boundary": "U", "requirements": ["UX-080"]},

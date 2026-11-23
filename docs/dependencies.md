@@ -42,6 +42,8 @@ Build the source-bound bootstrap JAR before native compilation and use that same
 
 ## Update procedure
 
+The root `LICENSE` is a bootstrap build input. After changing it, rebuild the JAR and its source identity before native compilation; both the Python admission check and the native build script reject stale inputs.
+
 1. Identify the reason for the change, upstream release/source, affected behavior, and the checks that can detect a regression. Separate a dependency correction from a new product capability. Keep author projects, instances, and credentials outside experiments.
 2. Inspect workspace and crate manifests, the lockfile, feature declarations, target-specific dependencies, and build/probe scripts. Review coupled libraries together, particularly the telemetry stack, archive codecs, and native filesystem/process adapters. Do not enable test utilities in the ordinary product graph to make tests compile.
 3. Make the narrow manifest and lockfile change. For a selected Rust package, replace `PACKAGE` and `VERSION` in `cargo update -p PACKAGE --precise VERSION`; review transitive changes rather than accepting the whole lockfile diff blindly. Subsequent builds and checks use `--locked`. A compiler-only or tool-only update may not need a dependency change.

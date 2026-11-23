@@ -3,6 +3,7 @@ tests/verification/*.json text eol=lf
 scripts/**/*.py text eol=lf
 rust-toolchain.toml text eol=lf
 Cargo.lock text eol=lf
+LICENSE text eol=lf
 bootstrap/pom.xml text eol=lf
 bootstrap/mise.toml text eol=lf
 bootstrap/src/**/*.java text eol=lf

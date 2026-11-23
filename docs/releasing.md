@@ -18,13 +18,15 @@ Curated large-pack workflows run through the production CLI and resource profile
 
 ## Extracted archive checks
 
+Native release archives contain the executable and the repository's `LICENSE`. The bootstrap JAR carries the same notice at `META-INF/empack/LICENSE`, separately from its dependency notices. Archive admission also accepts older executable-only releases; any included license must be a regular root `LICENSE` of at most 64 KiB.
+
 Set `RELEASE_VERSION` to the reviewed version without the leading `v`, and `ARCHIVE` to its absolute archive path. Run the fixed offline CLI suite on the archive's native execution host:
 
 ```sh
 python3 scripts/check-release-archive.py --archive "$ARCHIVE" --sha256 EXPECTED_ARCHIVE_SHA256 --version "$RELEASE_VERSION" --target aarch64-apple-darwin
 ```
 
-The checker captures and hashes the archive before extraction, admits only the expected regular executable, checks Unix executable attributes, and extracts outside the checkout into a path containing spaces. It invokes the shared `cli` suite with the extracted executable's exact digest and version, without discovery or rebuilding the product. Each public command still uses the harness's isolated home, state and cache. Missing native execution support is `BLOCKED`; cross compilation is not a substitute. The test harness itself is compiled from the current test checkout.
+The checker captures and hashes the archive before extraction, admits only the expected regular executable and optional license notice, checks Unix executable attributes, and extracts outside the checkout into a path containing spaces. It invokes the shared `cli` suite with the extracted executable's exact digest and version, without discovery or rebuilding the product. Each public command still uses the harness's isolated home, state and cache. Missing native execution support is `BLOCKED`; cross compilation is not a substitute. The test harness itself is compiled from the current test checkout.
 
 `target/verification-packages/` retains one package record and the underlying suite receipt, compiler inventory, JUnit and bounded logs per attempt. Archive and executable digests are rechecked afterward. A changed, failed or unexecuted archive cannot pass. The record distinguishes the test-source revision from the product's caller-supplied identity; it does not establish the product's build provenance by itself. The release workflow joins this evidence to the corresponding build record. It executes each of the five archives on its native target, including ARM64 Linux; cross-compilation alone does not satisfy execution. The gate rechecks source, version, profile, features, archive/executable digests and the underlying compiler inventory and JUnit results. Unix packaging excludes host filesystem metadata, including macOS AppleDouble entries. Only those tested archives enter the publication payload. Publication verifies its checksums and the gate's evidence digest again, without rebuilding.
 

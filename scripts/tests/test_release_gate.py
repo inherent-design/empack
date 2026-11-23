@@ -45,8 +45,9 @@ class ReleaseArchiveGate(unittest.TestCase):
         (self.root / "bootstrap/src/main").mkdir(parents=True)
         for name in ("pom.xml", "mise.toml"):
             (self.root / "bootstrap" / name).write_text("synthetic bootstrap input")
+        (self.root / "LICENSE").write_text("Synthetic fixture license")
         (self.root / ".gitignore").write_text("target/\n")
-        self.git("add", "tests", "scripts", "crates", "bootstrap", ".gitignore")
+        self.git("add", "tests", "scripts", "crates", "bootstrap", "LICENSE", ".gitignore")
         self.git("commit", "-qm", "fixture registry")
         self.revision = self.git("rev-parse", "HEAD")
         self.version = "0.8.4-beta"

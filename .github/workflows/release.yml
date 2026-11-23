@@ -130,6 +130,7 @@ jobs:
           rm -rf package
           mkdir -p package
           cp "target/${{ matrix.target }}/release/${BINARY_NAME}${{ matrix.binary_ext }}" "package/${BINARY_NAME}${{ matrix.binary_ext }}"
+          cp LICENSE package/LICENSE
           COPYFILE_DISABLE=1 tar -czf "$archive" -C package .
           echo "ARCHIVE_NAME=$archive" >> "$GITHUB_ENV"
           echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
@@ -142,6 +143,7 @@ jobs:
           if (Test-Path package) { Remove-Item package -Recurse -Force }
           New-Item -ItemType Directory -Path package | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${env:BINARY_NAME}${{ matrix.binary_ext }}" "package/${env:BINARY_NAME}${{ matrix.binary_ext }}"
+          Copy-Item LICENSE "package/LICENSE"
           if (Test-Path $archive) { Remove-Item $archive -Force }
           Compress-Archive -Path "package/*" -DestinationPath $archive
           "ARCHIVE_NAME=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

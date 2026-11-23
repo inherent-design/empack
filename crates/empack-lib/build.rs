@@ -27,6 +27,7 @@ fn main() {
     )
     .expect("Read bootstrap build identity");
     let mut names = vec![
+        root.join("LICENSE"),
         root.join("bootstrap/pom.xml"),
         root.join("bootstrap/mise.toml"),
     ];

@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-repository = "https://github.com/inherent-design/empack/crates/empack-lib"
+repository.workspace = true
+description = "Minecraft modpack lifecycle engine and application services"
 
 [features]
 default = []

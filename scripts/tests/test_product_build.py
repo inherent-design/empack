@@ -52,6 +52,8 @@ def fixture(root, leak=""):
 def fixture_bootstrap(root):
     import tomllib
     from verification.bootstrap import sources
+    if not (root / "LICENSE").exists():
+        (root / "LICENSE").write_text("Synthetic fixture license")
     target = root / "bootstrap/target"
     target.mkdir(exist_ok=True)
     (target / "empack-bootstrap.jar").write_bytes(b"synthetic bootstrap producer input")
@@ -157,6 +159,43 @@ class CompilerOutputEvidence(unittest.TestCase):
 
 
 class ProductBuild(unittest.TestCase):
+    def test_native_embedding_requires_rebuild_after_project_license_changes(self):
+        import tomllib
+        repository = Path(__file__).resolve().parents[2]
+        dependencies = tomllib.loads((repository / "Cargo.toml").read_text())["workspace"]["dependencies"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text(
+                '[workspace]\nmembers = ["crates/empack-lib"]\nresolver = "2"\n'
+                '[workspace.package]\nversion = "0.0.0-dev"\n')
+            crate = root / "crates/empack-lib"
+            (crate / "src").mkdir(parents=True)
+            (crate / "src/lib.rs").write_text("")
+            (crate / "Cargo.toml").write_text(
+                '[package]\nname = "empack-lib"\nversion.workspace = true\nedition = "2024"\n'
+                '[build-dependencies]\n' + ''.join(
+                    f'{name} = {json.dumps(dependencies[name])}\n' for name in ("sha2", "serde_json")))
+            shutil.copyfile(repository / "crates/empack-lib/build.rs", crate / "build.rs")
+            (root / "bootstrap/src/main").mkdir(parents=True)
+            for name in ("pom.xml", "mise.toml"):
+                (root / "bootstrap" / name).write_text("synthetic compiler input")
+            fixture_bootstrap(root)
+            environment = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"))
+
+            def check():
+                return subprocess.run(["cargo", "check", "--offline", "--quiet"], cwd=root,
+                                      env=environment, capture_output=True, text=True, timeout=120)
+
+            result = check()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            (root / "LICENSE").write_text("Changed synthetic project license")
+            result = check()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Bootstrap source changed; rebuild it", result.stderr)
+            fixture_bootstrap(root)
+            result = check()
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_fixed_release_builder_retains_actual_default_and_telemetry_units(self):
         from verification.product_build import compile_product, inspect_compilation
         from verification.bootstrap import stage

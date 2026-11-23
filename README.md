@@ -41,4 +41,4 @@ The [manifest guide](docs/manifest.md) describes compact sources, pins and build
 
 ## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Empack is licensed under [Apache 2.0](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Empack is developed by inherent.design contributors and licensed under [Apache-2.0](LICENSE).

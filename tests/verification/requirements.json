@@ -16204,6 +16204,28 @@
           ]
         },
         {
+          "id": "UX-085.archive-member-admission",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_release_archive.ReleaseArchiveAdmission.test_license_is_preserved_without_changing_executable_identity",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_license_cannot_replace_the_executable_or_admit_unsafe_members",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_duplicate_license_members_are_rejected"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "TAR and ZIP containers admit a bounded regular root LICENSE alongside the required executable, in either order, while retaining the executable identity and license bytes",
+            "A license alone cannot replace the executable; duplicate names, links, traversal and oversized notices are rejected"
+          ],
+          "remaining_group_evidence": "Controlled archive fixtures exercise admission, not execution or qualification of final release archives."
+        },
+        {
           "id": "UX-085.image-header-admission",
           "boundary": "U",
           "test_ids": [
@@ -16366,6 +16388,7 @@
           "id": "UX-086.cargo-build-evidence-validator",
           "boundary": "N",
           "test_ids": [
+            "python::test_product_build.ProductBuild.test_native_embedding_requires_rebuild_after_project_license_changes",
             "python::test_product_build.ProductBuild.test_missing_failed_truncated_or_inconsistent_build_records_are_rejected",
             "python::test_product_build.ProductBuild.test_real_default_telemetry_and_cached_artifacts_are_audited",
             "python::test_product_build.ProductBuild.test_real_transitive_test_feature_and_package_leakage_are_rejected",

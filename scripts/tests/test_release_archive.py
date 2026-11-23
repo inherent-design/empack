@@ -32,6 +32,8 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         self.checkout.mkdir()
         self.destination = self.root / "extracted"
         self.destination.mkdir()
+        self.license = (Path(__file__).resolve().parents[2] / "LICENSE").read_bytes()
+        (self.root / "LICENSE").write_bytes(self.license)
 
     def tar(self, entries):
         path = self.root / "fixture.tar.gz"
@@ -96,6 +98,7 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         archive = self.root / f"empack-0.8.4-beta-{target}.tar.gz"
         extracted, _, _ = package.extract_binary(archive, self.destination, target)
         self.assertEqual(extracted.read_bytes(), binary.read_bytes())
+        self.assertEqual((self.destination / "LICENSE").read_bytes(), self.license)
         if sys.platform == "darwin":
             self.assertEqual(subprocess.check_output(
                 ["xattr", "-p", "com.empack.fixture", str(binary)], timeout=15).strip(),
@@ -114,6 +117,55 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         with self.assertRaises(zipfile.BadZipFile):
             package.extract_binary(path, self.destination, "x86_64-pc-windows-msvc")
 
+    def test_license_is_preserved_without_changing_executable_identity(self):
+        for layout in ("tar", "zip"):
+            for license_first in (True, False):
+                with self.subTest(layout=layout, license_first=license_first), tempfile.TemporaryDirectory(dir=self.root) as output:
+                    binary_name = "empack.exe" if layout == "zip" else "empack"
+                    entries = [(binary_name, b"inert bytes"), ("LICENSE", self.license)]
+                    if license_first:
+                        entries.reverse()
+                    if layout == "zip":
+                        path = self.root / "fixture.zip"
+                        with zipfile.ZipFile(path, "w") as archive:
+                            for name, data in entries:
+                                archive.writestr(name, data)
+                        target = "x86_64-pc-windows-msvc"
+                    else:
+                        path = self.tar([(name, tarfile.REGTYPE, 0o755 if name == binary_name else 0o644, data)
+                                         for name, data in entries])
+                        target = "x86_64-unknown-linux-gnu"
+                    binary, digest, length = package.extract_binary(path, Path(output), target)
+                    self.assertEqual(binary.read_bytes(), b"inert bytes")
+                    self.assertEqual((digest, length), (package.sha256(binary), 11))
+                    self.assertEqual((Path(output) / "LICENSE").read_bytes(), self.license)
+
+    def test_license_cannot_replace_the_executable_or_admit_unsafe_members(self):
+        for name, mode, data, include_binary in [
+            ("LICENSE", 0o100644, b"notice only", False),
+            ("LICENSE", 0o120777, b"../outside", True),
+            ("../LICENSE", 0o100644, b"notice", True),
+            ("LICENSE", 0o100644, b"x" * (archive_reader.MAX_LICENSE + 1), True),
+        ]:
+            for layout in ("tar", "zip"):
+                with self.subTest(layout=layout, name=name, mode=mode, include_binary=include_binary), tempfile.TemporaryDirectory(dir=self.root) as output:
+                    if layout == "zip":
+                        path = self.root / "fixture.zip"
+                        with zipfile.ZipFile(path, "w") as archive:
+                            if include_binary:
+                                archive.writestr("empack.exe", b"inert")
+                            info = zipfile.ZipInfo(name)
+                            info.external_attr = mode << 16
+                            archive.writestr(info, data)
+                        target = "x86_64-pc-windows-msvc"
+                    else:
+                        entries = [("empack", tarfile.REGTYPE, 0o755, b"inert")] if include_binary else []
+                        kind = tarfile.SYMTYPE if stat.S_ISLNK(mode) else tarfile.REGTYPE
+                        path = self.tar(entries + [(name, kind, stat.S_IMODE(mode), data)])
+                        target = "x86_64-unknown-linux-gnu"
+                    with self.assertRaises(ValueError):
+                        package.extract_binary(path, Path(output), target)
+
     def test_zip_rejects_links_duplicates_and_other_member_names(self):
         for name, mode in (("../empack.exe", 0o100644), ("empack.exe", 0o120777),
                            ("folder/empack.exe", 0o100644), ("empack.exe/", 0o40755)):
@@ -130,6 +182,23 @@ class ReleaseArchiveAdmission(unittest.TestCase):
             archive.writestr("unexpected", b"extra")
         with self.assertRaises(ValueError):
             package.extract_binary(path, self.destination, "x86_64-pc-windows-msvc")
+
+    def test_duplicate_license_members_are_rejected(self):
+        for layout in ("tar", "zip"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory(dir=self.root) as output:
+                if layout == "zip":
+                    path = self.root / "fixture.zip"
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr("LICENSE", b"first notice")
+                        with self.assertWarns(UserWarning):
+                            archive.writestr("LICENSE", b"second notice")
+                    target = "x86_64-pc-windows-msvc"
+                else:
+                    path = self.tar([("LICENSE", tarfile.REGTYPE, 0o644, b"first notice"),
+                                     ("./LICENSE", tarfile.REGTYPE, 0o644, b"second notice")])
+                    target = "x86_64-unknown-linux-gnu"
+                with self.assertRaisesRegex(ValueError, "duplicate"):
+                    package.extract_binary(path, Path(output), target)
 
     def test_capture_checks_the_bytes_it_copies_and_cannot_overwrite_an_existing_output(self):
         original = self.root / "source"

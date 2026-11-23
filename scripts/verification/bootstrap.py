@@ -9,7 +9,7 @@ from .evidence import sha256, write_json
 
 def sources(root):
     root = Path(root)
-    names = ["bootstrap/pom.xml", "bootstrap/mise.toml"]
+    names = ["LICENSE", "bootstrap/pom.xml", "bootstrap/mise.toml"]
     names += [p.relative_to(root).as_posix() for p in (root / "bootstrap/src/main").rglob("*") if p.is_file()]
     return {name: sha256(root / name) for name in sorted(names)}
 

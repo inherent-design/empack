@@ -84,6 +84,13 @@ class BootstrapTests(unittest.TestCase):
             expected = json.loads(identity.read_text())["version"]
             self.assertEqual(version.stdout.decode().strip(), "empack-bootstrap " + expected)
 
+    def test_packaged_project_license_is_retained_separately_from_dependencies(self):
+        with zipfile.ZipFile(JAR) as archive:
+            self.assertEqual(archive.read("META-INF/empack/LICENSE"),
+                             (ROOT.parent / "LICENSE").read_bytes())
+            self.assertIn("META-INF/LICENSE.txt", archive.namelist())
+            self.assertIn("META-INF/NOTICE.txt", archive.namelist())
+
     def test_packaged_base_classes_target_java8(self):
         with zipfile.ZipFile(JAR) as archive:
             classes = [n for n in archive.namelist()
@@ -396,6 +403,8 @@ class ArchiveTests(unittest.TestCase):
         corrupt_crc[-8] ^= 1
         samples = {
             "good": good,
+            "licensed": self.tar([("LICENSE", (ROOT.parent / "LICENSE").read_bytes(), tarfile.REGTYPE),
+                                  ("empack", payload, tarfile.REGTYPE)]),
             "truncated": good[:-1],
             "gzip-crc": bytes(corrupt_crc),
             "traversal": self.tar([("../outside", payload, tarfile.REGTYPE)]),
@@ -411,7 +420,7 @@ class ArchiveTests(unittest.TestCase):
                 archive.write_bytes(archive_bytes)
                 output.mkdir()
                 result = self.unpack(archive, output, target)
-                if label == "good":
+                if label in ("good", "licensed"):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), hashlib.sha256(payload).hexdigest().encode())
                 else:
@@ -428,7 +437,7 @@ class ArchiveTests(unittest.TestCase):
                 warnings.simplefilter("ignore", UserWarning)
                 with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
                     for name in names:
-                        archive.writestr(name, payload)
+                        archive.writestr(name, (ROOT.parent / "LICENSE").read_bytes() if name == "LICENSE" else payload)
             return output.getvalue()
         good = encode(["empack.exe"])
         corrupt = bytearray(good)
@@ -436,7 +445,8 @@ class ArchiveTests(unittest.TestCase):
             entry = archive.getinfo("empack.exe")
             offset = entry.header_offset + 30 + len(entry.filename.encode()) + len(entry.extra)
         corrupt[offset + len(payload) - 1] ^= 1
-        samples = {"good": good, "crc": bytes(corrupt), "truncated": good[:-1],
+        samples = {"good": good, "licensed": encode(["empack.exe", "LICENSE"]),
+                   "crc": bytes(corrupt), "truncated": good[:-1],
                    "duplicate": encode(["empack.exe", "empack.exe"]),
                    "traversal": encode(["../outside"])}
         for label, archive_bytes in samples.items():
@@ -446,8 +456,8 @@ class ArchiveTests(unittest.TestCase):
                 archive.write_bytes(archive_bytes)
                 output.mkdir()
                 result = self.unpack(archive, output, target)
-                self.assertEqual(result.returncode == 0, label == "good", result.stderr)
-                if label == "good":
+                self.assertEqual(result.returncode == 0, label in ("good", "licensed"), result.stderr)
+                if label in ("good", "licensed"):
                     self.assertEqual(result.stdout.strip(), hashlib.sha256(payload).hexdigest().encode())
                 self.assertFalse((base / "outside").exists())
 
